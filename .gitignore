@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.env
+.venv
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Database
+*.db
+
+# Configuration files containing sensitive information
+config.ini
+
+# Other
+.DS_Store 
