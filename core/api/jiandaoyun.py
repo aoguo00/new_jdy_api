@@ -113,7 +113,7 @@ class JianDaoYunAPI:
         :param site_name: 场站名称
         :return: 设备数据列表
         """
-        print(f"\n开始查询场站 '{site_name}' 的设备数据")
+        # print(f"\n开始查询场站 '{site_name}' 的设备数据")
         all_data = []
         last_data_id = None
         batch_size = 100  # API限制
@@ -143,8 +143,8 @@ class JianDaoYunAPI:
             if last_data_id:
                 params["data_id"] = last_data_id
 
-            print("\n发送的请求参数:")
-            print(params)
+            # print("\n发送的请求参数:")
+            # print(params)
 
             try:
                 # 发送请求
@@ -161,11 +161,11 @@ class JianDaoYunAPI:
                 
                 # 解析响应数据
                 result = response.json()
-                print("\n收到的API响应:")
-                print(result)
+                # print("\n收到的API响应:")
+                # print(result)
                 
                 current_batch = result.get('data', [])
-                print(f"\n当前批次数据数量: {len(current_batch)}")
+                # print(f"\n当前批次数据数量: {len(current_batch)}")
                 
                 # 添加到结果集
                 all_data.extend(current_batch)
@@ -178,11 +178,11 @@ class JianDaoYunAPI:
                 last_data_id = current_batch[-1]['_id']
                 
             except Exception as e:
-                print(f"\n发生错误: {str(e)}")
+                # print(f"\n发生错误: {str(e)}")
                 logging.error(f"获取场站设备数据失败: {str(e)}")
                 raise
 
-        print(f"\n总共获取到 {len(all_data)} 条设备数据")
+        # print(f"\n总共获取到 {len(all_data)} 条设备数据")
         return all_data
 
     def upload_hmi_points(self, points_data: List[Dict], hmi_type: str):

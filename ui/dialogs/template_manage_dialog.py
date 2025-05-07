@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
                                QPushButton, QHeaderView, QMessageBox,
                                QDialogButtonBox, QComboBox)
 from PySide6.QtCore import Qt
-from core.third_device.template_manager import TemplateManager
+from core.devices import TemplateManager
 
 class TemplateManageDialog(QDialog):
     """设备模板管理对话框"""
@@ -58,10 +58,15 @@ class TemplateManageDialog(QDialog):
         self.delete_template_btn = QPushButton("删除模板")
         self.delete_template_btn.clicked.connect(self.delete_template)
         self.delete_template_btn.setEnabled(False)
+        
+        self.export_template_btn = QPushButton("导出模板")
+        self.export_template_btn.clicked.connect(self.export_template)
+        self.export_template_btn.setEnabled(False)
 
         template_btn_layout.addWidget(self.new_template_btn)
         template_btn_layout.addWidget(self.copy_template_btn)
         template_btn_layout.addWidget(self.delete_template_btn)
+        template_btn_layout.addWidget(self.export_template_btn)
 
         template_list_layout.addLayout(template_btn_layout)
         template_list_group.setLayout(template_list_layout)
@@ -76,6 +81,7 @@ class TemplateManageDialog(QDialog):
         info_form = QFormLayout()
 
         self.template_name_input = QLineEdit()
+        self.template_name_input.textChanged.connect(self.template_name_changed)
         info_form.addRow("模板名称:", self.template_name_input)
 
         template_detail_layout.addLayout(info_form)
@@ -173,6 +179,7 @@ class TemplateManageDialog(QDialog):
                 # 禁用按钮
                 self.copy_template_btn.setEnabled(False)
                 self.delete_template_btn.setEnabled(False)
+                self.export_template_btn.setEnabled(False)
                 self.add_point_btn.setEnabled(False)
                 self.edit_point_btn.setEnabled(False)
                 self.delete_point_btn.setEnabled(False)
@@ -227,6 +234,7 @@ class TemplateManageDialog(QDialog):
             # 启用按钮
             self.copy_template_btn.setEnabled(True)
             self.delete_template_btn.setEnabled(True)
+            self.export_template_btn.setEnabled(True)
             self.add_point_btn.setEnabled(True)
             self.edit_point_btn.setEnabled(True)
             self.delete_point_btn.setEnabled(True)
@@ -246,6 +254,7 @@ class TemplateManageDialog(QDialog):
 
             self.copy_template_btn.setEnabled(False)
             self.delete_template_btn.setEnabled(False)
+            self.export_template_btn.setEnabled(False)
             self.add_point_btn.setEnabled(False)
             self.edit_point_btn.setEnabled(False)
             self.delete_point_btn.setEnabled(False)
@@ -256,103 +265,125 @@ class TemplateManageDialog(QDialog):
         # 创建新模板对话框
         dialog = QDialog(self)
         dialog.setWindowTitle("创建新模板")
-
+        
         layout = QVBoxLayout(dialog)
         form = QFormLayout()
-
+        
+        # 模板名称输入
         name_input = QLineEdit()
         form.addRow("模板名称:", name_input)
-
+        
         layout.addLayout(form)
-
+        
+        # 对话框按钮
         button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         button_box.accepted.connect(dialog.accept)
         button_box.rejected.connect(dialog.reject)
         layout.addWidget(button_box)
-
+        
         if dialog.exec() != QDialog.Accepted:
             return
-
+            
+        # 获取输入数据
         name = name_input.text().strip()
-
+        
         if not name:
-            QMessageBox.warning(self, "输入错误", "模板名称不能为空")
+            QMessageBox.warning(self, "错误", "模板名称不能为空")
             return
-
-        # 创建空模板
+            
+        # 检查名称是否已存在
+        if any(item.text() == name for item in self.template_list.findItems(name, Qt.MatchFlag.MatchExactly)):
+            QMessageBox.warning(self, "错误", f"模板名称 '{name}' 已存在")
+            return
+            
+        # 创建模板数据
         template_data = {
-            '点位': []
+            "标识符": name,  # 使用名称作为标识符
+            "变量前缀": "",  # 默认空前缀
+            "点位": []  # 默认没有点位
         }
+        
+        try:
+            # 创建新模板
+            template = self.template_manager.create_template(name, template_data)
+            if not template:
+                QMessageBox.warning(self, "错误", "创建模板失败")
+                return
+                
+            # 添加到列表
+            row = self.template_list.rowCount()
+            self.template_list.insertRow(row)
+            item = QTableWidgetItem(name)
+            item.setData(Qt.ItemDataRole.UserRole + 1, template['id'])
+            self.template_list.setItem(row, 0, item)
+            
+            # 选中新模板
+            self.template_list.selectRow(row)
+            
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"创建模板时发生错误：{str(e)}")
+            import traceback
+            traceback.print_exc()
 
-        # 添加到数据库
-        template_id = self.template_manager.add_template(name, template_data)
-
-        if template_id:
-            QMessageBox.information(self, "创建成功", f"模板 '{name}' 已创建")
-
-            # 刷新模板列表
-            self.load_templates()
-
-            # 选中新创建的模板
-            for row in range(self.template_list.rowCount()):
-                if self.template_list.item(row, 0).data(Qt.ItemDataRole.UserRole + 1) == template_id:
-                    self.template_list.selectRow(row)
-                    break
-        else:
-            QMessageBox.warning(self, "创建失败", "无法创建模板，可能已存在同名模板")
+    def template_name_changed(self):
+        """模板名称修改处理"""
+        if not self.current_template_id:
+            return
+            
+        self.template_modified = True
+        self.save_template_btn.setEnabled(True)
 
     def copy_template(self):
         """复制模板"""
         if not self.current_template_id:
             return
-
-        # 创建复制对话框
-        dialog = QDialog(self)
-        dialog.setWindowTitle("复制模板")
-
-        layout = QVBoxLayout(dialog)
-        form = QFormLayout()
-
-        name_input = QLineEdit()
-        name_input.setText(f"{self.template_name_input.text()}_副本")
-        form.addRow("新模板名称:", name_input)
-
-        layout.addLayout(form)
-
-        button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        button_box.accepted.connect(dialog.accept)
-        button_box.rejected.connect(dialog.reject)
-        layout.addWidget(button_box)
-
-        if dialog.exec() != QDialog.Accepted:
+            
+        # 获取当前模板
+        template = self.template_manager.get_template_by_id(self.current_template_id)
+        if not template:
+            QMessageBox.warning(self, "错误", "获取模板信息失败")
             return
-
-        new_name = name_input.text().strip()
-
-        if not new_name:
-            QMessageBox.warning(self, "输入错误", "模板名称不能为空")
-            return
-
-        # 复制模板
-        new_template_id = self.template_manager.copy_template(self.current_template_id, new_name)
-
-        if new_template_id:
-            QMessageBox.information(self, "复制成功", f"已复制模板为 '{new_name}'")
-
-            # 刷新模板列表
-            self.load_templates()
-
-            # 选中新创建的模板
-            for row in range(self.template_list.rowCount()):
-                if self.template_list.item(row, 0).data(Qt.ItemDataRole.UserRole + 1) == new_template_id:
-                    self.template_list.selectRow(row)
-                    break
-        else:
-            QMessageBox.warning(self, "复制失败", "无法复制模板")
+            
+        # 生成新名称
+        base_name = template['name']
+        new_name = f"{base_name} - 副本"
+        counter = 1
+        
+        # 确保名称唯一
+        while any(item.text() == new_name for item in self.template_list.findItems(new_name, Qt.MatchFlag.MatchExactly)):
+            counter += 1
+            new_name = f"{base_name} - 副本 {counter}"
+            
+        # 创建新模板数据
+        template_data = {
+            "标识符": new_name,  # 使用新名称作为标识符
+            "变量前缀": template.get('变量前缀', ''),
+            "点位": template.get('点位', [])
+        }
+        
+        try:
+            # 创建新模板
+            new_template = self.template_manager.create_template(new_name, template_data)
+            if not new_template:
+                QMessageBox.warning(self, "错误", "复制模板失败")
+                return
+                
+            # 添加到列表
+            row = self.template_list.rowCount()
+            self.template_list.insertRow(row)
+            item = QTableWidgetItem(new_name)
+            item.setData(Qt.ItemDataRole.UserRole + 1, new_template['id'])
+            self.template_list.setItem(row, 0, item)
+            
+            # 选中新模板
+            self.template_list.selectRow(row)
+            
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"复制模板时发生错误：{str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def delete_template(self):
         """删除模板"""
@@ -388,6 +419,7 @@ class TemplateManageDialog(QDialog):
             # 禁用按钮
             self.copy_template_btn.setEnabled(False)
             self.delete_template_btn.setEnabled(False)
+            self.export_template_btn.setEnabled(False)
             self.add_point_btn.setEnabled(False)
             self.edit_point_btn.setEnabled(False)
             self.delete_point_btn.setEnabled(False)
@@ -551,22 +583,95 @@ class TemplateManageDialog(QDialog):
         # 构建更新数据
         template_data = {
             'name': name,
+            '标识符': name,  # 使用名称作为标识符
+            '变量前缀': "",  # 默认空前缀
             '点位': points
         }
 
         # 更新模板
-        success = self.template_manager.update_template(self.current_template_id, template_data)
+        try:
+            success = self.template_manager.update_template(self.current_template_id, template_data)
 
-        if success:
-            QMessageBox.information(self, "保存成功", "模板更新成功")
+            if success:
+                QMessageBox.information(self, "保存成功", "模板更新成功")
 
-            # 刷新模板列表
-            self.load_templates()
+                # 刷新模板列表
+                self.load_templates()
 
-            # 重置修改标记
-            self.template_modified = False
-        else:
-            QMessageBox.warning(self, "保存失败", "无法更新模板")
+                # 重置修改标记
+                self.template_modified = False
+            else:
+                QMessageBox.warning(self, "保存失败", "无法更新模板")
+        except Exception as e:
+            QMessageBox.critical(self, "保存失败", f"更新模板时发生错误：{str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def export_template(self):
+        """导出模板到Excel"""
+        if not self.current_template_id:
+            return
+            
+        try:
+            # 获取当前模板
+            template = self.template_manager.get_template_by_id(self.current_template_id)
+            if not template:
+                QMessageBox.warning(self, "错误", "获取模板信息失败")
+                return
+                
+            # 选择保存路径
+            from PySide6.QtWidgets import QFileDialog
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "导出模板",
+                f"{template['name']}.xlsx",
+                "Excel Files (*.xlsx)"
+            )
+            
+            if not file_path:
+                return
+                
+            # 创建Excel工作簿
+            from openpyxl import Workbook
+            wb = Workbook()
+            ws = wb.active
+            ws.title = template['name']
+            
+            # 添加模板基本信息
+            ws.append(["模板名称", template['name']])
+            ws.append(["标识符", template.get('标识符', '')])
+            ws.append(["变量前缀", template.get('变量前缀', '')])
+            ws.append([])  # 空行
+            
+            # 添加点位表头
+            ws.append(["变量名后缀", "描述后缀", "数据类型"])
+            
+            # 添加点位数据
+            for point in template.get('点位', []):
+                ws.append([
+                    point.get('变量名后缀', ''),
+                    point.get('描述后缀', ''),
+                    point.get('类型', '')
+                ])
+                
+            # 调整列宽
+            for column in ws.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                adjusted_width = (max_length + 2) * 1.2
+                ws.column_dimensions[column_letter].width = adjusted_width
+                
+            # 保存文件
+            wb.save(file_path)
+            QMessageBox.information(self, "导出成功", f"模板已导出到：{file_path}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "导出失败", f"导出模板时发生错误：{str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def closeEvent(self, event):
         """关闭对话框时检查是否有未保存的修改"""

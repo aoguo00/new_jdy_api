@@ -13,12 +13,5 @@ venv/
 
 # Logs
 *.log
-
-# Database
-*.db
-
-# Configuration files containing sensitive information
-config.ini
-
 # Other
 .DS_Store 

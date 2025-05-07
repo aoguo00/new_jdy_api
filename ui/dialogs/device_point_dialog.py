@@ -5,8 +5,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
                                QTableWidgetItem, QPushButton, QHeaderView,
                                QSplitter, QWidget, QMessageBox)
 from PySide6.QtCore import Qt
-from core.third_device import template_db
-from core.point_manager import PointManager
+from core.devices import TemplateManager
 from ui.dialogs.template_manage_dialog import TemplateManageDialog
 
 class DevicePointDialog(QDialog):
@@ -18,60 +17,18 @@ class DevicePointDialog(QDialog):
         self.resize(900, 700)
 
         self.template_name = template_name
-        # device_name和device_count参数在当前实现中未使用
         self.device_points = []
         self.current_template_id = None
         self.template = None
         self.template_modified = False
         self.configured = False
-        self.point_manager = PointManager()
-
-        # 获取主窗口已配置的设备点位
-        if parent and hasattr(parent, 'device_manager'):
-            self.device_points = parent.device_manager.get_device_points()
+        self.template_manager = TemplateManager()
 
         self.setup_ui()
 
-        # 如果有已配置的点位，加载配置
-        if self.device_points:
-            self.load_existing_config()
-
     def load_existing_config(self):
-        """加载已有的配置"""
-        try:
-            if not self.device_points:
-                return
-
-            # 从第一个点位中提取变量名前缀
-            first_point = self.device_points[0]
-            var_name = first_point['变量名']
-            var_parts = var_name.split('_')
-            if len(var_parts) >= 2:
-                prefix = var_parts[0]
-                self.prefix_input.setText(prefix)
-
-            # 根据变量名后缀找到对应的模板
-            templates = template_db.get_all_templates()
-            for template in templates:
-                if not template.get('点位'):
-                    continue
-
-                # 检查第一个点位的变量名后缀是否匹配模板中的点位
-                template_point = template['点位'][0]
-                if template_point['变量名后缀'] in var_name:
-                    # 找到匹配的模板，设置为当前选中
-                    index = self.template_combo.findText(template['name'])
-                    if index >= 0:
-                        self.template_combo.setCurrentIndex(index)
-                        break
-
-            # 更新预览表格
-            self.update_preview()
-
-        except Exception as e:
-            print(f"加载已有配置时发生错误: {e}")
-            import traceback
-            traceback.print_exc()
+        """加载已有的配置 - 此方法已弃用"""
+        pass  # 不再自动加载已有配置
 
     def setup_ui(self):
         """设置UI界面"""
@@ -83,16 +40,17 @@ class DevicePointDialog(QDialog):
 
         # 模板选择
         self.template_combo = QComboBox()
-        self.load_templates()
+        self.load_template_list()
         if self.template_name:
             index = self.template_combo.findText(self.template_name)
             if index >= 0:
                 self.template_combo.setCurrentIndex(index)
-        self.template_combo.currentIndexChanged.connect(self.template_changed)
+        self.template_combo.currentIndexChanged.connect(self.template_selected)
         info_layout.addRow("设备模板:", self.template_combo)
 
         # 变量名输入
         self.prefix_input = QLineEdit()
+        self.prefix_input.clear()  # 确保输入框为空
         self.prefix_input.setPlaceholderText("请输入变量名")
         self.prefix_input.textChanged.connect(self.update_preview)
         info_layout.addRow("变量名:", self.prefix_input)
@@ -180,12 +138,12 @@ class DevicePointDialog(QDialog):
 
         # 加载初始模板
         if self.template_combo.count() > 0:
-            self.template_changed()
+            self.template_selected(0)
 
-    def load_templates(self):
+    def load_template_list(self):
         """加载模板列表"""
         self.template_combo.clear()
-        templates = template_db.get_all_templates()
+        templates = self.template_manager.get_all_templates()  # 使用实例方法
         for template in templates:
             self.template_combo.addItem(template['name'], template['id'])
 
@@ -195,31 +153,53 @@ class DevicePointDialog(QDialog):
         if dialog.exec() == QDialog.Accepted:
             # 刷新模板列表
             current_id = self.template_combo.currentData()
-            self.load_templates()
+            self.load_template_list()
             # 尝试恢复之前选中的模板
             if current_id:
                 index = self.template_combo.findData(current_id)
                 if index >= 0:
                     self.template_combo.setCurrentIndex(index)
 
-    def template_changed(self):
-        """模板变更处理"""
-        if self.template_combo.currentIndex() < 0:
+    def template_selected(self, index):
+        """模板选择改变时的处理"""
+        if index < 0:
             return
 
         self.current_template_id = self.template_combo.currentData()
         if not self.current_template_id:
             return
 
-        self.template = template_db.get_template_by_id(self.current_template_id)
+        self.template = self.template_manager.get_template_by_id(self.current_template_id)  # 使用实例方法
         if not self.template:
             return
 
-        # 填充变量前缀
-        if '变量前缀' in self.template:
+        # 更新变量前缀输入框
+        if self.template.get('变量前缀'):
             self.prefix_input.setText(self.template['变量前缀'])
 
-        # 填充点位表格
+        # 更新点位表格
+        self.update_point_table()
+
+    def find_template_by_suffix(self, suffix):
+        """根据变量名后缀找到对应的模板"""
+        try:
+            # 根据变量名后缀找到对应的模板
+            templates = self.template_manager.get_all_templates()  # 使用实例方法
+            for template in templates:
+                template_data = self.template_manager.get_template(template['name'])  # 使用实例方法
+                if not template_data or '点位' not in template_data:
+                    continue
+
+                for point in template_data['点位']:
+                    if point.get('变量名后缀') == suffix:
+                        return template_data
+            return None
+        except Exception as e:
+            logger.error(f"查找模板失败: {e}")
+            return None
+
+    def update_point_table(self):
+        """更新点位表格"""
         self.point_table.setRowCount(0)
         if '点位' in self.template:
             for point in self.template['点位']:
@@ -228,9 +208,6 @@ class DevicePointDialog(QDialog):
                 self.point_table.setItem(row, 0, QTableWidgetItem(point['变量名后缀']))
                 self.point_table.setItem(row, 1, QTableWidgetItem(point['描述后缀']))
                 self.point_table.setItem(row, 2, QTableWidgetItem(point['类型']))
-
-        # 更新预览
-        self.update_preview()
 
     def update_preview(self):
         """更新预览表格"""

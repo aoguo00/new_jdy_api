@@ -6,7 +6,8 @@ import sys
 import logging
 from PySide6.QtWidgets import QApplication
 from ui.main_window import MainWindow
-from core.third_device import template_db
+from core.devices import TemplateManager  # 更新导入语句
+
 
 
 def setup_logging():
@@ -20,17 +21,19 @@ def setup_logging():
         ]
     )
 
-if __name__ == '__main__':
+def main():
+    """主函数"""
     try:
         # 设置日志
         setup_logging()
         logger = logging.getLogger(__name__)
         logger.info("应用程序启动")
 
-        # 初始化数据库
-        template_db.init_db()
-        logger.info("数据库初始化完成")
+        # 初始化模板管理器
+        template_manager = TemplateManager()  # 创建实例
+        logger.info("模板管理器初始化完成")
 
+        
         # 启动应用
         app = QApplication(sys.argv)
         
@@ -41,4 +44,8 @@ if __name__ == '__main__':
         
         sys.exit(app.exec())
     except Exception as e:
-        logging.error(f"程序发生异常: {str(e)}", exc_info=True)
+        logger.error(f"程序启动失败: {e}")
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()

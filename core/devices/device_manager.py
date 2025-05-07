@@ -1,44 +1,52 @@
-"""第三方设备管理模块，处理第三方设备相关的业务逻辑"""
+"""设备管理模块，处理设备相关的所有操作"""
 import logging
-from core.third_device import template_db
+from typing import List, Dict, Optional
+from .template_manager import TemplateManager
 
 logger = logging.getLogger(__name__)
 
-class ThirdPartyDeviceManager:
-    """第三方设备管理类，负责第三方设备相关的业务逻辑"""
+class DeviceManager:
+    """设备管理类，负责设备相关的所有操作"""
 
     def __init__(self):
-        """初始化第三方设备管理器"""
-        self.device_points = []
-        try:
-            # 确保模板数据库已初始化
-            template_db.init_db()
-        except Exception as e:
-            logger.error(f"初始化模板数据库失败: {e}")
-            raise RuntimeError("初始化第三方设备管理器失败，请检查数据库连接") from e
+        """初始化设备管理器"""
+        self.device_points = []  # 存储设备点位配置
+        self.template_manager = TemplateManager()
 
-    def get_device_points(self):
+    def get_device_points(self) -> List[Dict]:
         """获取设备点位列表"""
         return self.device_points
 
-    def set_device_points(self, points):
-        """设置设备点位列表（替换现有点位）"""
+    def set_device_points(self, points: List[Dict]) -> None:
+        """设置设备点位列表（替换现有点位）
+
+        Args:
+            points: 新的点位列表
+        """
         if not isinstance(points, list):
             raise ValueError("点位数据必须是列表格式")
         self.device_points = points
 
-    def add_device_points(self, points):
-        """添加设备点位（追加到现有点位）"""
+    def add_device_points(self, points: List[Dict]) -> None:
+        """添加设备点位（追加到现有点位）
+
+        Args:
+            points: 要添加的点位列表
+        """
         if not isinstance(points, list):
             raise ValueError("点位数据必须是列表格式")
         self.device_points.extend(points)
 
-    def clear_device_points(self):
+    def clear_device_points(self) -> None:
         """清空设备点位列表"""
         self.device_points = []
 
-    def update_third_party_table_data(self):
-        """获取第三方设备表格数据"""
+    def update_third_party_table_data(self) -> List[Dict]:
+        """获取第三方设备表格数据，用于UI显示
+
+        Returns:
+            List[Dict]: 设备统计数据列表，每项包含模板名称、变量前缀、点位数量和状态
+        """
         if not self.device_points:
             return []
 
@@ -86,8 +94,15 @@ class ThirdPartyDeviceManager:
 
         return table_data
 
-    def get_template_name_by_suffix(self, suffix):
-        """根据变量名后缀获取模板名称"""
+    def get_template_name_by_suffix(self, suffix: str) -> str:
+        """根据变量名后缀获取模板名称
+
+        Args:
+            suffix: 变量名后缀
+
+        Returns:
+            str: 模板名称，如果未找到则返回"未知模板"
+        """
         try:
             # 首先从已配置的点位中查找匹配的后缀
             for point in self.device_points:
@@ -95,14 +110,14 @@ class ThirdPartyDeviceManager:
                     return point['模板名称']
 
             # 如果在已配置点位中没找到，从模板库中查找
-            templates = template_db.get_all_templates()
+            templates = self.template_manager.get_all_templates()
             for template in templates:
-                template_points = template_db.get_template(template['name'])
-                if not template_points or '点位' not in template_points:
+                template_data = self.template_manager.get_template(template['name'])
+                if not template_data or '点位' not in template_data:
                     continue
 
                 # 检查每个点位的变量名后缀
-                for point in template_points['点位']:
+                for point in template_data['点位']:
                     if point.get('变量名后缀', '') == suffix:
                         return template['name']
 
@@ -113,8 +128,12 @@ class ThirdPartyDeviceManager:
             logger.error(f"获取模板名称时发生错误: {e}, 后缀: {suffix}")
             return "未知模板"
 
-    def export_to_excel(self, file_path):
-        """导出点表为Excel格式，按模板类型分工作簿"""
+    def export_to_excel(self, file_path: str) -> None:
+        """导出点表为Excel格式，按模板类型分工作簿
+
+        Args:
+            file_path: Excel文件保存路径
+        """
         from openpyxl import Workbook
 
         # 按模板类型分组点位
@@ -158,4 +177,4 @@ class ThirdPartyDeviceManager:
                 ws.column_dimensions[column_letter].width = adjusted_width
 
         # 保存Excel文件
-        wb.save(file_path)
+        wb.save(file_path) 

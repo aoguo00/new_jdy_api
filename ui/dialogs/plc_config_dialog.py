@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QComboBox, QPushButton, QTableWidget,
                            QTableWidgetItem, QHeaderView, QMessageBox)
 from PySide6.QtCore import Qt
-from core.plc.hollysys.lk_db import PLCModuleManager  # 修改为使用PLCModuleManager
+from core.plc.hollysys.plc_manager import PLCManager  # 导入PLCManager
 
 class PLCConfigDialog(QDialog):
     """PLC配置对话框"""
@@ -12,7 +12,7 @@ class PLCConfigDialog(QDialog):
         self.setWindowTitle("PLC配置")
         self.resize(1200, 700)  # 增加对话框宽度
         
-        self.module_manager = None  # 初始化为None
+        self.plc_manager = PLCManager()  # 创建PLC管理器
         self.rack_slots = ['' for _ in range(11)]  # LK117有11个槽位
         self.setup_ui()
         self.setup_connections()
@@ -159,8 +159,7 @@ class PLCConfigDialog(QDialog):
 
     def init_series(self):
         """初始化PLC系列"""
-        temp_manager = PLCModuleManager()  # 临时创建一个管理器来获取系列列表
-        series_list = temp_manager.get_all_series()
+        series_list = self.plc_manager.get_all_series()
         
         for series in series_list:
             self.series_combo.addItem(series['name'], series['description'])
@@ -171,11 +170,16 @@ class PLCConfigDialog(QDialog):
             
     def on_series_changed(self, series_name):
         """处理系列选择变更"""
-        self.module_manager = PLCModuleManager(series_name)
+        if not self.plc_manager.set_series(series_name):
+            QMessageBox.warning(self, "错误", "系列选择失败")
+            return
         self.load_modules()
 
     def load_modules(self):
         """加载模块列表"""
+        if not self.plc_manager:
+            return
+            
         self.module_table.setRowCount(0)
         module_type = self.type_combo.currentText()
         
@@ -183,10 +187,10 @@ class PLCConfigDialog(QDialog):
             # 获取所有类型的模块
             modules = []
             for type_ in ['AI', 'AO', 'DI', 'DO']:
-                modules.extend(self.module_manager.get_modules_by_type(type_))
+                modules.extend(self.plc_manager.get_modules_by_type(type_))
         else:
             # 获取指定类型的模块
-            modules = self.module_manager.get_modules_by_type(module_type)
+            modules = self.plc_manager.get_modules_by_type(module_type)
             
         for module in modules:
             row = self.module_table.rowCount()
@@ -237,7 +241,7 @@ class PLCConfigDialog(QDialog):
         for slot, model in enumerate(self.rack_slots, 1):
             if model:  # 如果槽位有模块
                 # 从数据库获取模块信息
-                module_info = self.module_manager.get_module_info(model)
+                module_info = self.plc_manager.get_module_info(model)
                 
                 if module_info:
                     row = self.config_table.rowCount()

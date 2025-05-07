@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QTableWidgetItem, QHeaderView, QMessageBox,
                            QComboBox, QGroupBox)
 from PySide6.QtCore import Qt
-from core.plc.hollysys.series import PLCSeriesManager
+from core.plc.hollysys.plc_manager import PLCManager  # 导入PLCManager
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +16,7 @@ class ModuleManagerDialog(QDialog):
         self.setWindowTitle("模块管理")
         self.resize(800, 800)  # 增加对话框高度以容纳系列管理部分
         
-        self.series_manager = PLCSeriesManager()  # 用于管理所有系列
-        self.current_series_manager = None  # 当前选中的系列管理器
+        self.plc_manager = PLCManager()  # 创建PLC管理器
         
         self.setup_ui()
         self.setup_connections()
@@ -164,7 +163,7 @@ class ModuleManagerDialog(QDialog):
 
     def load_series_table(self):
         """加载系列表格"""
-        series_list = self.series_manager.get_all_series()
+        series_list = self.plc_manager.get_all_series()
         
         self.series_table.setRowCount(0)
         for series in series_list:
@@ -179,7 +178,7 @@ class ModuleManagerDialog(QDialog):
             
     def load_series_combo(self):
         """加载系列下拉框"""
-        series_list = self.series_manager.get_all_series()
+        series_list = self.plc_manager.get_all_series()
         
         current_text = self.series_combo.currentText()
         self.series_combo.clear()
@@ -197,65 +196,66 @@ class ModuleManagerDialog(QDialog):
             
     def add_series(self):
         """添加新系列"""
-        name = self.series_name_input.text().strip()
+        name = self.series_name_input.text().strip().upper()  # 转换为大写
         description = self.series_desc_input.text().strip()
         
         if not name:
-            QMessageBox.warning(self, "警告", "请输入系列名称")
+            QMessageBox.warning(self, "错误", "系列名称不能为空")
             return
             
-        try:
-            if self.series_manager.add_series(name, description):
-                # 清空输入
-                self.series_name_input.clear()
-                self.series_desc_input.clear()
-                
-                # 刷新系列列表
-                self.load_series_table()
-                self.load_series_combo()
-            else:
-                QMessageBox.warning(self, "错误", "添加系列失败")
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"添加系列失败: {str(e)}")
+        # 检查系列是否已存在
+        existing_series = self.plc_manager.db_manager.get_series_by_name(name)
+        if existing_series:
+            QMessageBox.warning(self, "错误", f"系列 {name} 已存在")
+            return
+            
+        # 添加新系列
+        if self.plc_manager.db_manager.add_plc_series(name, description):
+            self.series_name_input.clear()
+            self.series_desc_input.clear()
+            self.load_series_table()
+            self.load_series_combo()
+        else:
+            QMessageBox.warning(self, "错误", "添加系列失败")
             
     def delete_series(self, series_name):
         """删除系列"""
         reply = QMessageBox.question(
-            self, "确认删除",
-            f"确定要删除系列 {series_name} 吗？这将同时删除该系列下的所有模块！",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            self,
+            "确认删除",
+            f"确定要删除系列 {series_name} 吗？\n此操作将同时删除该系列下的所有模块！",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
         )
         
-        if reply == QMessageBox.StandardButton.Yes:
-            try:
-                if self.series_manager.delete_series(series_name):
-                    # 刷新系列列表
-                    self.load_series_table()
-                    self.load_series_combo()
-                else:
-                    QMessageBox.warning(self, "错误", "删除系列失败")
-            except Exception as e:
-                QMessageBox.critical(self, "错误", f"删除系列失败: {str(e)}")
-            
+        if reply == QMessageBox.Yes:
+            # 获取系列ID并删除
+            series = self.plc_manager.db_manager.get_series_by_name(series_name)
+            if series and self.plc_manager.db_manager.delete_plc_series(series['id']):
+                self.load_series_table()
+                self.load_series_combo()
+            else:
+                QMessageBox.warning(self, "错误", "删除系列失败")
+                
     def on_series_changed(self, series_name):
         """处理系列选择变更"""
-        if not series_name:
+        if not series_name:  # 如果系列名称为空，直接返回
             return
-        self.current_series_manager = PLCSeriesManager(series_name)
+            
+        if not self.plc_manager.set_series(series_name):
+            logger.error(f"设置系列 {series_name} 失败")
+            return
+            
         self.load_modules()
         
     def load_modules(self):
         """加载模块列表"""
-        if not self.current_series_manager:
-            return
-            
         self.module_table.setRowCount(0)
+        module_type = self.type_combo.currentText()
+        modules = self.plc_manager.get_modules_by_type(module_type)
         
-        # 获取所有类型的模块
-        for module_type in ['AI', 'AO', 'DI', 'DO']:
-            modules = self.current_series_manager.get_modules_by_type(module_type)
-            for module in modules:
-                self.add_module_to_table(module)
+        for module in modules:
+            self.add_module_to_table(module)
             
     def add_module_to_table(self, module):
         """添加模块到表格"""
@@ -275,58 +275,52 @@ class ModuleManagerDialog(QDialog):
         
     def add_module(self):
         """添加新模块"""
-        if not self.current_series_manager:
+        if not self.plc_manager:
+            QMessageBox.warning(self, "错误", "请先选择PLC系列")
             return
             
         model = self.model_input.text().strip()
         module_type = self.type_combo.currentText()
-        channels = self.channels_input.text().strip()
+        channels_text = self.channels_input.text().strip()
         description = self.desc_input.text().strip()
         
-        # 验证输入
-        if not all([model, channels]):
-            QMessageBox.warning(self, "警告", "请填写完整的模块信息")
+        # 输入验证
+        if not model:
+            QMessageBox.warning(self, "错误", "模块型号不能为空")
             return
             
         try:
-            channels = int(channels)
+            channels = int(channels_text)
             if channels <= 0:
-                raise ValueError()
-        except ValueError:
-            QMessageBox.warning(self, "警告", "通道数必须为正整数")
+                raise ValueError("通道数必须大于0")
+        except ValueError as e:
+            QMessageBox.warning(self, "错误", f"无效的通道数: {str(e)}")
             return
             
-        # 添加到数据库
-        try:
-            if self.current_series_manager.add_module(model, module_type, channels, description):
-                # 刷新列表
-                self.load_modules()
-                
-                # 清空输入
-                self.model_input.clear()
-                self.channels_input.clear()
-                self.desc_input.clear()
-            else:
-                QMessageBox.warning(self, "错误", "添加模块失败")
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"添加模块失败: {str(e)}")
+        # 添加模块
+        if self.plc_manager.add_module(model, module_type, channels, description):
+            self.model_input.clear()
+            self.channels_input.clear()
+            self.desc_input.clear()
+            self.load_modules()
+        else:
+            QMessageBox.warning(self, "错误", "添加模块失败")
             
     def delete_module(self, model):
         """删除模块"""
-        if not self.current_series_manager:
+        if not self.plc_manager:
             return
             
         reply = QMessageBox.question(
-            self, "确认删除",
+            self,
+            "确认删除",
             f"确定要删除模块 {model} 吗？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
         )
         
-        if reply == QMessageBox.StandardButton.Yes:
-            try:
-                if self.current_series_manager.delete_module(model):
-                    self.load_modules()
-                else:
-                    QMessageBox.warning(self, "错误", "删除模块失败")
-            except Exception as e:
-                QMessageBox.critical(self, "错误", f"删除模块失败: {str(e)}")
+        if reply == QMessageBox.Yes:
+            if self.plc_manager.delete_module(model):
+                self.load_modules()
+            else:
+                QMessageBox.warning(self, "错误", "删除模块失败")
