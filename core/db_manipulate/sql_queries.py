@@ -44,13 +44,13 @@ PLC_SQL = {
     ''',
     
     'GET_SERIES_BY_NAME': '''
-    SELECT id, name, description 
+    SELECT id, name, description, created_at
     FROM hollysys_plc_series 
     WHERE name = ?
     ''',
     
     'GET_ALL_SERIES': '''
-    SELECT id, name, description 
+    SELECT id, name, description, created_at
     FROM hollysys_plc_series 
     ORDER BY name
     ''',
@@ -67,16 +67,23 @@ PLC_SQL = {
     ''',
     
     'GET_MODULES_BY_TYPE': '''
-    SELECT model, module_type, channels, description
+    SELECT id, series_id, model, module_type, channels, description, created_at
     FROM hollysys_plc_modules
     WHERE series_id = ? AND module_type = ?
     ORDER BY model
     ''',
     
     'GET_MODULE_INFO': '''
-    SELECT model, module_type, channels, description
+    SELECT id, series_id, model, module_type, channels, description, created_at
     FROM hollysys_plc_modules
     WHERE series_id = ? AND model = ?
+    ''',
+
+    'GET_MODULES_BY_SERIES_ID': '''
+    SELECT id, series_id, model, module_type, channels, description, created_at
+    FROM hollysys_plc_modules
+    WHERE series_id = ?
+    ORDER BY model
     '''
 }
 

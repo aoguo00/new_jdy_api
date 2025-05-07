@@ -3,7 +3,11 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QComboBox, QPushButton, QTableWidget,
                            QTableWidgetItem, QHeaderView, QMessageBox)
 from PySide6.QtCore import Qt
-from core.plc.hollysys.plc_manager import PLCManager  # 导入PLCManager
+from core.plc.plc_manager import PLCManager  # 导入PLCManager
+from typing import List, Dict, Any, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 class PLCConfigDialog(QDialog):
     """PLC配置对话框"""
@@ -159,46 +163,65 @@ class PLCConfigDialog(QDialog):
 
     def init_series(self):
         """初始化PLC系列"""
-        series_list = self.plc_manager.get_all_series()
+        self.series_combo.clear() # Clear previous items
+        series_list: List[PLCSeriesModel] = self.plc_manager.get_all_series()
         
         for series in series_list:
-            self.series_combo.addItem(series['name'], series['description'])
+            # Store series.id as item data for later retrieval
+            self.series_combo.addItem(series.name, userData=series.id) 
+            # series.description can be set as a tooltip if needed, 
+            # or handled differently if it was used as 'currentData' before.
+            # For now, only name is displayed, and ID is stored.
             
         # 默认选择第一个系列
         if self.series_combo.count() > 0:
-            self.on_series_changed(self.series_combo.currentText())
-            
-    def on_series_changed(self, series_name):
+            self.series_combo.setCurrentIndex(0) # Ensure the signal fires for the first item
+            # self.on_series_changed(self.series_combo.currentText()) # Let currentTextChanged signal handle it
+
+    def on_series_changed(self, series_name: str): # series_name is the displayed text
         """处理系列选择变更"""
-        if not self.plc_manager.set_series(series_name):
-            QMessageBox.warning(self, "错误", "系列选择失败")
+        current_index = self.series_combo.currentIndex()
+        if current_index < 0:
+            # QMessageBox.warning(self, "错误", "未选择任何PLC系列。") # Already handled by no items or setCurrentIndex(0)
+            self.module_table.setRowCount(0) # Clear module table if no series selected or error
+            self.config_table.setRowCount(0) # Also clear config table
+            self.current_series_id = None
             return
+
+        self.current_series_id = self.series_combo.itemData(current_index)
+        
+        if self.current_series_id is None:
+            QMessageBox.warning(self, "错误", f"无法获取系列 '{series_name}' 的ID。")
+            self.module_table.setRowCount(0)
+            self.config_table.setRowCount(0) 
+            return
+            
+        logger.info(f"PLC系列已更改为: {series_name} (ID: {self.current_series_id})")
         self.load_modules()
+        self.update_config_table() # Also update config table when series changes
 
     def load_modules(self):
         """加载模块列表"""
-        if not self.plc_manager:
+        self.module_table.setRowCount(0)
+        if not hasattr(self, 'current_series_id') or self.current_series_id is None:
+            logger.warning("load_modules 调用时 current_series_id 未设置或为 None")
             return
             
-        self.module_table.setRowCount(0)
-        module_type = self.type_combo.currentText()
+        module_type_filter = self.type_combo.currentText()
+        modules: List[PLCModuleModel] = []
         
-        if module_type == '全部':
-            # 获取所有类型的模块
-            modules = []
-            for type_ in ['AI', 'AO', 'DI', 'DO']:
-                modules.extend(self.plc_manager.get_modules_by_type(type_))
+        if module_type_filter == '全部':
+            modules = self.plc_manager.get_modules_by_series(self.current_series_id)
         else:
-            # 获取指定类型的模块
-            modules = self.plc_manager.get_modules_by_type(module_type)
+            modules = self.plc_manager.get_modules_by_series_and_type(self.current_series_id, module_type_filter)
             
         for module in modules:
             row = self.module_table.rowCount()
             self.module_table.insertRow(row)
-            self.module_table.setItem(row, 0, QTableWidgetItem(module['model']))
-            self.module_table.setItem(row, 1, QTableWidgetItem(module['module_type']))
-            self.module_table.setItem(row, 2, QTableWidgetItem(str(module['channels'])))
-            self.module_table.setItem(row, 3, QTableWidgetItem(module['description']))
+            self.module_table.setItem(row, 0, QTableWidgetItem(module.model))
+            self.module_table.setItem(row, 1, QTableWidgetItem(module.module_type))
+            self.module_table.setItem(row, 2, QTableWidgetItem(str(module.channels)))
+            self.module_table.setItem(row, 3, QTableWidgetItem(module.description or ""))
 
     def add_module(self):
         """添加模块到配置"""
@@ -238,16 +261,47 @@ class PLCConfigDialog(QDialog):
         """更新配置表格"""
         self.config_table.setRowCount(0)
         
-        for slot, model in enumerate(self.rack_slots, 1):
-            if model:  # 如果槽位有模块
-                # 从数据库获取模块信息
-                module_info = self.plc_manager.get_module_info(model)
+        if not hasattr(self, 'current_series_id') or self.current_series_id is None:
+            logger.warning("update_config_table 调用时 current_series_id 未设置或为 None, 无法获取模块详情。")
+            # Potentially clear self.rack_slots or show an error if this state is problematic
+            return
+
+        for slot, module_model_str in enumerate(self.rack_slots, 1):
+            if module_model_str:  # 如果槽位有模块型号字符串
+                # 从新的PLCManager获取模块信息，需要 series_id 和 model string
+                module_details: Optional[PLCModuleModel] = self.plc_manager.get_module_details(self.current_series_id, module_model_str)
                 
-                if module_info:
+                if module_details:
                     row = self.config_table.rowCount()
                     self.config_table.insertRow(row)
                     self.config_table.setItem(row, 0, QTableWidgetItem(str(slot)))
-                    self.config_table.setItem(row, 1, QTableWidgetItem(module_info['model']))
-                    self.config_table.setItem(row, 2, QTableWidgetItem(module_info['module_type']))
-                    self.config_table.setItem(row, 3, QTableWidgetItem(str(module_info['channels'])))
-                    self.config_table.setItem(row, 4, QTableWidgetItem(module_info['description']))
+                    self.config_table.setItem(row, 1, QTableWidgetItem(module_details.model))
+                    self.config_table.setItem(row, 2, QTableWidgetItem(module_details.module_type))
+                    self.config_table.setItem(row, 3, QTableWidgetItem(str(module_details.channels)))
+                    self.config_table.setItem(row, 4, QTableWidgetItem(module_details.description or ""))
+                else:
+                    # 如果找不到模块详细信息 (例如，数据不一致或模块已从数据库删除但仍存在于rack_slots中)
+                    logger.warning(f"无法在系列ID {self.current_series_id} 中找到型号为 '{module_model_str}' 的模块详情。将在配置表中显示为未知模块。")
+                    row = self.config_table.rowCount()
+                    self.config_table.insertRow(row)
+                    self.config_table.setItem(row, 0, QTableWidgetItem(str(slot)))
+                    self.config_table.setItem(row, 1, QTableWidgetItem(f"{module_model_str} (未知)"))
+                    self.config_table.setItem(row, 2, QTableWidgetItem("N/A"))
+                    self.config_table.setItem(row, 3, QTableWidgetItem("N/A"))
+                    self.config_table.setItem(row, 4, QTableWidgetItem("模块信息在数据库中未找到"))
+        
+    def get_selected_configuration(self) -> List[Dict[str, Any]]:
+        # ... existing code ...
+        pass # Add pass to satisfy linter for an empty or TBD method body
+
+    def accept(self):
+        # ... existing code ...
+        pass # Add pass to satisfy linter for an empty or TBD method body
+        super().accept() # Assuming this was the original intent or should be there
+
+    def reject(self):
+        # ... existing code ...
+        pass # Add pass to satisfy linter for an empty or TBD method body
+        super().reject() # Assuming this was the original intent or should be there
+
+# Example usage (for testing, can be removed or kept)

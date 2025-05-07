@@ -6,6 +6,9 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
                                QDialogButtonBox, QComboBox)
 from PySide6.QtCore import Qt
 from core.devices import TemplateManager
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TemplateManageDialog(QDialog):
     """设备模板管理对话框"""
@@ -51,22 +54,12 @@ class TemplateManageDialog(QDialog):
         self.new_template_btn = QPushButton("新建模板")
         self.new_template_btn.clicked.connect(self.create_new_template)
 
-        self.copy_template_btn = QPushButton("复制模板")
-        self.copy_template_btn.clicked.connect(self.copy_template)
-        self.copy_template_btn.setEnabled(False)
-
         self.delete_template_btn = QPushButton("删除模板")
         self.delete_template_btn.clicked.connect(self.delete_template)
         self.delete_template_btn.setEnabled(False)
-        
-        self.export_template_btn = QPushButton("导出模板")
-        self.export_template_btn.clicked.connect(self.export_template)
-        self.export_template_btn.setEnabled(False)
 
         template_btn_layout.addWidget(self.new_template_btn)
-        template_btn_layout.addWidget(self.copy_template_btn)
         template_btn_layout.addWidget(self.delete_template_btn)
-        template_btn_layout.addWidget(self.export_template_btn)
 
         template_list_layout.addLayout(template_btn_layout)
         template_list_group.setLayout(template_list_layout)
@@ -154,111 +147,114 @@ class TemplateManageDialog(QDialog):
     def load_templates(self):
         """加载模板列表"""
         self.template_list.setRowCount(0)
+        try:
+            templates = self.template_manager.get_all_templates() # Returns List[DeviceTemplateModel]
+            if not templates:
+                 # Optionally, show a message or disable some UI elements
+                 return
 
-        templates = self.template_manager.get_all_templates()
+            for i, template_model in enumerate(templates):
+                self.template_list.insertRow(i)
+                item = QTableWidgetItem(template_model.name) # Use attribute access
 
-        for i, template in enumerate(templates):
-            self.template_list.insertRow(i)
-            item = QTableWidgetItem(template['name'])
+                # 保存模板ID以便后续操作
+                if template_model.id is not None:
+                    item.setData(Qt.ItemDataRole.UserRole + 1, template_model.id) # Use attribute access
+                else:
+                    # Log warning if ID is None, though it should usually be present from DB
+                    logger.warning(f"Template '{template_model.name}' loaded without an ID.")
 
-            # 保存模板ID以便后续操作
-            item.setData(Qt.ItemDataRole.UserRole + 1, template['id'])
-
-            self.template_list.setItem(i, 0, item)
+                self.template_list.setItem(i, 0, item)
+        except Exception as e:
+            logger.error(f"加载模板列表时出错: {e}", exc_info=True)
+            QMessageBox.critical(self, "错误", f"加载模板列表失败: {str(e)}")
 
     def template_selected(self, selected, deselected):
         """模板选中时的处理"""
         try:
             selected_items = self.template_list.selectedItems()
             if not selected_items:
-                # 清空详情区域
+                # Clear details area
                 self.template_name_input.clear()
                 self.point_table.setRowCount(0)
                 self.current_template_id = None
-
-                # 禁用按钮
-                self.copy_template_btn.setEnabled(False)
+                # Disable buttons
                 self.delete_template_btn.setEnabled(False)
-                self.export_template_btn.setEnabled(False)
                 self.add_point_btn.setEnabled(False)
                 self.edit_point_btn.setEnabled(False)
                 self.delete_point_btn.setEnabled(False)
                 self.save_template_btn.setEnabled(False)
-
                 return
 
-            # 获取选中行的第一个单元格
             item = selected_items[0]
             if not item:
                 return
 
-            row = item.row()
             template_id = item.data(Qt.ItemDataRole.UserRole + 1)
             if not template_id:
-                print("警告：未找到模板ID")
+                logger.warning("未找到选中模板的ID")
                 return
 
             self.current_template_id = template_id
 
-            # 获取模板详情
-            template = self.template_manager.get_template_by_id(template_id)
-            if not template:
-                print(f"警告：未找到ID为{template_id}的模板")
+            # Get template details (returns DeviceTemplateModel or None)
+            template_model = self.template_manager.get_template_by_id(template_id)
+            
+            if not template_model:
+                logger.warning(f"未找到ID为 {template_id} 的模板详情")
+                # Clear UI and disable buttons if template not found
+                self.template_name_input.clear()
+                self.point_table.setRowCount(0)
+                self.current_template_id = None 
+                self.delete_template_btn.setEnabled(False)
+                self.add_point_btn.setEnabled(False)
+                self.edit_point_btn.setEnabled(False)
+                self.delete_point_btn.setEnabled(False)
+                self.save_template_btn.setEnabled(False)
                 return
 
-            # 检查模板数据的完整性
-            if not isinstance(template, dict):
-                print(f"警告：模板数据格式错误 - {type(template)}")
-                return
+            # Populate template details using attribute access
+            self.template_name_input.setText(template_model.name or '')
 
-            if '点位' not in template or not isinstance(template['点位'], list):
-                print(f"警告：模板点位数据无效")
-                template['点位'] = []
-
-            # 填充模板详情
-            self.template_name_input.setText(template.get('name', ''))
-
-            # 填充点位表格
+            # Populate points table using attribute access
             self.point_table.setRowCount(0)
+            if template_model.points: # Check if the points list exists and is not empty
+                for i, point_model in enumerate(template_model.points): # Iterate through TemplatePointModel objects
+                    self.point_table.insertRow(i)
+                    # Use attribute access for point details
+                    self.point_table.setItem(i, 0, QTableWidgetItem(point_model.var_suffix or '')) 
+                    self.point_table.setItem(i, 1, QTableWidgetItem(point_model.desc_suffix or ''))
+                    self.point_table.setItem(i, 2, QTableWidgetItem(point_model.data_type or 'BOOL')) # Default if empty, though should have a value
+            # else: # If template_model.points is empty or None
+                # The table is already cleared, nothing more needed here.
+                # logger.debug(f"Template '{template_model.name}' has no points to display.")
 
-            for i, point in enumerate(template['点位']):
-                if not isinstance(point, dict):
-                    print(f"警告：点位数据格式错误 - {point}")
-                    continue
-
-                self.point_table.insertRow(i)
-                self.point_table.setItem(i, 0, QTableWidgetItem(str(point.get('变量名后缀', ''))))
-                self.point_table.setItem(i, 1, QTableWidgetItem(str(point.get('描述后缀', ''))))
-                self.point_table.setItem(i, 2, QTableWidgetItem(str(point.get('类型', 'BOOL'))))
-
-            # 启用按钮
-            self.copy_template_btn.setEnabled(True)
+            # Enable relevant buttons
             self.delete_template_btn.setEnabled(True)
-            self.export_template_btn.setEnabled(True)
             self.add_point_btn.setEnabled(True)
-            self.edit_point_btn.setEnabled(True)
-            self.delete_point_btn.setEnabled(True)
-            self.save_template_btn.setEnabled(True)
-
-            # 重置修改标记
-            self.template_modified = False
+            # Enable edit/delete point buttons only if points exist and one is selected
+            # We need a separate connection for point selection to handle this accurately.
+            # For now, enable them if points exist.
+            has_points = bool(template_model.points)
+            self.edit_point_btn.setEnabled(has_points)
+            self.delete_point_btn.setEnabled(has_points)
+            
+            self.save_template_btn.setEnabled(False) # Enable save only when modified
+            self.template_modified = False # Reset modification flag
 
         except Exception as e:
-            print(f"模板选择处理时发生错误: {e}")
-            import traceback
-            traceback.print_exc()
-            # 出错时清空并禁用界面
+            logger.error(f"模板选择处理时发生错误: {e}", exc_info=True)
+            # Clear UI on error
             self.template_name_input.clear()
             self.point_table.setRowCount(0)
             self.current_template_id = None
-
-            self.copy_template_btn.setEnabled(False)
+            # Disable buttons
             self.delete_template_btn.setEnabled(False)
-            self.export_template_btn.setEnabled(False)
             self.add_point_btn.setEnabled(False)
             self.edit_point_btn.setEnabled(False)
             self.delete_point_btn.setEnabled(False)
             self.save_template_btn.setEnabled(False)
+            QMessageBox.critical(self, "错误", f"加载模板详情时出错: {str(e)}")
 
     def create_new_template(self):
         """创建新模板"""
@@ -307,7 +303,7 @@ class TemplateManageDialog(QDialog):
         
         try:
             # 创建新模板
-            template = self.template_manager.create_template(name, template_data)
+            template = self.template_manager.create_template(name, template_data) # Returns Optional[DeviceTemplateModel]
             if not template:
                 QMessageBox.warning(self, "错误", "创建模板失败")
                 return
@@ -315,8 +311,11 @@ class TemplateManageDialog(QDialog):
             # 添加到列表
             row = self.template_list.rowCount()
             self.template_list.insertRow(row)
-            item = QTableWidgetItem(name)
-            item.setData(Qt.ItemDataRole.UserRole + 1, template['id'])
+            item = QTableWidgetItem(template.name) # Use attribute access for name
+            if template.id is not None: # Check if id exists before setting data
+                 item.setData(Qt.ItemDataRole.UserRole + 1, template.id) # Use attribute access for id
+            else:
+                 logger.warning(f"Newly created template '{template.name}' has no ID.")
             self.template_list.setItem(row, 0, item)
             
             # 选中新模板
@@ -334,56 +333,6 @@ class TemplateManageDialog(QDialog):
             
         self.template_modified = True
         self.save_template_btn.setEnabled(True)
-
-    def copy_template(self):
-        """复制模板"""
-        if not self.current_template_id:
-            return
-            
-        # 获取当前模板
-        template = self.template_manager.get_template_by_id(self.current_template_id)
-        if not template:
-            QMessageBox.warning(self, "错误", "获取模板信息失败")
-            return
-            
-        # 生成新名称
-        base_name = template['name']
-        new_name = f"{base_name} - 副本"
-        counter = 1
-        
-        # 确保名称唯一
-        while any(item.text() == new_name for item in self.template_list.findItems(new_name, Qt.MatchFlag.MatchExactly)):
-            counter += 1
-            new_name = f"{base_name} - 副本 {counter}"
-            
-        # 创建新模板数据
-        template_data = {
-            "标识符": new_name,  # 使用新名称作为标识符
-            "变量前缀": template.get('变量前缀', ''),
-            "点位": template.get('点位', [])
-        }
-        
-        try:
-            # 创建新模板
-            new_template = self.template_manager.create_template(new_name, template_data)
-            if not new_template:
-                QMessageBox.warning(self, "错误", "复制模板失败")
-                return
-                
-            # 添加到列表
-            row = self.template_list.rowCount()
-            self.template_list.insertRow(row)
-            item = QTableWidgetItem(new_name)
-            item.setData(Qt.ItemDataRole.UserRole + 1, new_template['id'])
-            self.template_list.setItem(row, 0, item)
-            
-            # 选中新模板
-            self.template_list.selectRow(row)
-            
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"复制模板时发生错误：{str(e)}")
-            import traceback
-            traceback.print_exc()
 
     def delete_template(self):
         """删除模板"""
@@ -417,9 +366,7 @@ class TemplateManageDialog(QDialog):
             self.current_template_id = None
 
             # 禁用按钮
-            self.copy_template_btn.setEnabled(False)
             self.delete_template_btn.setEnabled(False)
-            self.export_template_btn.setEnabled(False)
             self.add_point_btn.setEnabled(False)
             self.edit_point_btn.setEnabled(False)
             self.delete_point_btn.setEnabled(False)
@@ -604,72 +551,6 @@ class TemplateManageDialog(QDialog):
                 QMessageBox.warning(self, "保存失败", "无法更新模板")
         except Exception as e:
             QMessageBox.critical(self, "保存失败", f"更新模板时发生错误：{str(e)}")
-            import traceback
-            traceback.print_exc()
-
-    def export_template(self):
-        """导出模板到Excel"""
-        if not self.current_template_id:
-            return
-            
-        try:
-            # 获取当前模板
-            template = self.template_manager.get_template_by_id(self.current_template_id)
-            if not template:
-                QMessageBox.warning(self, "错误", "获取模板信息失败")
-                return
-                
-            # 选择保存路径
-            from PySide6.QtWidgets import QFileDialog
-            file_path, _ = QFileDialog.getSaveFileName(
-                self,
-                "导出模板",
-                f"{template['name']}.xlsx",
-                "Excel Files (*.xlsx)"
-            )
-            
-            if not file_path:
-                return
-                
-            # 创建Excel工作簿
-            from openpyxl import Workbook
-            wb = Workbook()
-            ws = wb.active
-            ws.title = template['name']
-            
-            # 添加模板基本信息
-            ws.append(["模板名称", template['name']])
-            ws.append(["标识符", template.get('标识符', '')])
-            ws.append(["变量前缀", template.get('变量前缀', '')])
-            ws.append([])  # 空行
-            
-            # 添加点位表头
-            ws.append(["变量名后缀", "描述后缀", "数据类型"])
-            
-            # 添加点位数据
-            for point in template.get('点位', []):
-                ws.append([
-                    point.get('变量名后缀', ''),
-                    point.get('描述后缀', ''),
-                    point.get('类型', '')
-                ])
-                
-            # 调整列宽
-            for column in ws.columns:
-                max_length = 0
-                column_letter = column[0].column_letter
-                for cell in column:
-                    if cell.value:
-                        max_length = max(max_length, len(str(cell.value)))
-                adjusted_width = (max_length + 2) * 1.2
-                ws.column_dimensions[column_letter].width = adjusted_width
-                
-            # 保存文件
-            wb.save(file_path)
-            QMessageBox.information(self, "导出成功", f"模板已导出到：{file_path}")
-            
-        except Exception as e:
-            QMessageBox.critical(self, "导出失败", f"导出模板时发生错误：{str(e)}")
             import traceback
             traceback.print_exc()
 

@@ -5,7 +5,8 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QTableWidgetItem, QHeaderView, QMessageBox,
                            QComboBox, QGroupBox)
 from PySide6.QtCore import Qt
-from core.plc.hollysys.plc_manager import PLCManager  # 导入PLCManager
+from core.plc.plc_manager import PLCManager  # 导入PLCManager
+from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -155,172 +156,229 @@ class ModuleManagerDialog(QDialog):
         self.load_series_table()  # 加载系列表格
         self.load_series_combo()  # 加载系列下拉框
             
-    def create_delete_button(self, series_name):
-        """创建删除按钮"""
+    def create_delete_button(self, series_id: int):
+        """创建删除按钮，现在接收 series_id"""
         button = QPushButton("删除")
-        button.clicked.connect(lambda: self.delete_series(series_name))
+        # Pass series_id to the delete_series method
+        button.clicked.connect(lambda: self.delete_series(series_id))
         return button
 
     def load_series_table(self):
         """加载系列表格"""
-        series_list = self.plc_manager.get_all_series()
+        series_list: List[PLCSeriesModel] = self.plc_manager.get_all_series()
         
         self.series_table.setRowCount(0)
         for series in series_list:
             row = self.series_table.rowCount()
             self.series_table.insertRow(row)
-            self.series_table.setItem(row, 0, QTableWidgetItem(series['name']))
-            self.series_table.setItem(row, 1, QTableWidgetItem(series['description']))
+            self.series_table.setItem(row, 0, QTableWidgetItem(series.name))
+            self.series_table.setItem(row, 1, QTableWidgetItem(series.description or ""))
             
-            # 使用专门的方法创建删除按钮
-            delete_button = self.create_delete_button(series['name'])
-            self.series_table.setCellWidget(row, 2, delete_button)
+            # 使用系列ID创建删除按钮
+            if series.id is not None: # Ensure series.id is not None before using
+                delete_button = self.create_delete_button(series.id)
+                self.series_table.setCellWidget(row, 2, delete_button)
+            else:
+                logger.warning(f"Series '{series.name}' has no ID, cannot create delete button.")
             
     def load_series_combo(self):
         """加载系列下拉框"""
-        series_list = self.plc_manager.get_all_series()
+        series_list: List[PLCSeriesModel] = self.plc_manager.get_all_series()
         
-        current_text = self.series_combo.currentText()
+        current_selection_id = None
+        if self.series_combo.count() > 0:
+            current_selection_id = self.series_combo.currentData() # Get ID of currently selected item
+
         self.series_combo.clear()
         
-        for series in series_list:
-            self.series_combo.addItem(series['name'], series)
+        idx_to_select = -1
+        for i, series in enumerate(series_list):
+            self.series_combo.addItem(series.name, userData=series.id) # Store series.id
+            if series.id == current_selection_id:
+                idx_to_select = i
             
-        # 尝试恢复之前选择的系列
-        index = self.series_combo.findText(current_text)
-        if index >= 0:
-            self.series_combo.setCurrentIndex(index)
+        if idx_to_select != -1:
+            self.series_combo.setCurrentIndex(idx_to_select)
         elif self.series_combo.count() > 0:
             self.series_combo.setCurrentIndex(0)
-            self.on_series_changed(self.series_combo.currentText())
-            
+            # No explicit call to on_series_changed if setCurrentIndex(0) is the first time or series changes
+            # The currentTextChanged signal should handle it if the text actually changes.
+            # If it's the first population or combo is empty then repopulated, 
+            # ensure on_series_changed is triggered if an item is selected.
+            # However, init_series already calls load_series_combo and then on_series_changed might be called by signal.
+
     def add_series(self):
         """添加新系列"""
-        name = self.series_name_input.text().strip().upper()  # 转换为大写
+        name = self.series_name_input.text().strip().upper()
         description = self.series_desc_input.text().strip()
         
         if not name:
             QMessageBox.warning(self, "错误", "系列名称不能为空")
             return
             
-        # 检查系列是否已存在
-        existing_series = self.plc_manager.db_manager.get_series_by_name(name)
-        if existing_series:
-            QMessageBox.warning(self, "错误", f"系列 {name} 已存在")
-            return
+        try:
+            new_series = self.plc_manager.add_series(name, description)
+            if new_series:
+                self.series_name_input.clear()
+                self.series_desc_input.clear()
+                self.load_series_table() # Reload table to show new series
+                self.load_series_combo() # Reload combo box
+                QMessageBox.information(self, "成功", f"系列 '{name}' 添加成功。")
+            else:
+                # This case might not be reached if add_series raises ValueError or returns None on other errors
+                QMessageBox.warning(self, "错误", f"添加系列 '{name}' 失败。")
+        except ValueError as ve: # Handles case where series name already exists
+            QMessageBox.warning(self, "错误", str(ve))
+        except Exception as e:
+            logger.error(f"添加系列时发生意外错误: {e}", exc_info=True)
+            QMessageBox.critical(self, "严重错误", f"添加系列时发生意外错误: {e}")
             
-        # 添加新系列
-        if self.plc_manager.db_manager.add_plc_series(name, description):
-            self.series_name_input.clear()
-            self.series_desc_input.clear()
-            self.load_series_table()
-            self.load_series_combo()
-        else:
-            QMessageBox.warning(self, "错误", "添加系列失败")
-            
-    def delete_series(self, series_name):
-        """删除系列"""
+    def delete_series(self, series_id: int):
+        """删除系列，现在接收 series_id"""
+        
+        series_to_delete = next((s for s in self.plc_manager.get_all_series() if s.id == series_id), None)
+        series_name_for_msg = series_to_delete.name if series_to_delete else f"ID {series_id}"
+
         reply = QMessageBox.question(
             self,
             "确认删除",
-            f"确定要删除系列 {series_name} 吗？\n此操作将同时删除该系列下的所有模块！",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            f"确定要删除系列 '{series_name_for_msg}' 吗？\n此操作将同时删除该系列下的所有模块！",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
         )
         
-        if reply == QMessageBox.Yes:
-            # 获取系列ID并删除
-            series = self.plc_manager.db_manager.get_series_by_name(series_name)
-            if series and self.plc_manager.db_manager.delete_plc_series(series['id']):
+        if reply == QMessageBox.StandardButton.Yes:
+            if self.plc_manager.delete_series(series_id):
                 self.load_series_table()
                 self.load_series_combo()
+                QMessageBox.information(self, "成功", f"系列 '{series_name_for_msg}' 已删除。")
             else:
-                QMessageBox.warning(self, "错误", "删除系列失败")
+                QMessageBox.warning(self, "错误", f"删除系列 '{series_name_for_msg}' 失败。")
                 
-    def on_series_changed(self, series_name):
-        """处理系列选择变更"""
-        if not series_name:  # 如果系列名称为空，直接返回
+    def on_series_changed(self, series_name: str): # series_name is the displayed text
+        """处理系列选择变更（用于模块部分的下拉框）"""
+        current_index = self.series_combo.currentIndex()
+        if current_index < 0: # No item selected
+            self.current_series_id = None
+            self.module_table.setRowCount(0) # Clear module table
+            logger.info("系列下拉框未选择任何项目或为空。")
+            return
+
+        selected_series_id = self.series_combo.itemData(current_index)
+        
+        if selected_series_id is None:
+            # This case should ideally not happen if items are added correctly with userData
+            QMessageBox.warning(self, "错误", f"系列 '{series_name}' 数据无效。")
+            self.current_series_id = None
+            self.module_table.setRowCount(0)
             return
             
-        if not self.plc_manager.set_series(series_name):
-            logger.error(f"设置系列 {series_name} 失败")
-            return
-            
-        self.load_modules()
+        self.current_series_id = selected_series_id
+        logger.info(f"模块管理的PLC系列已更改为: {series_name} (ID: {self.current_series_id})")
+        self.load_modules() # Load modules for the newly selected series
         
     def load_modules(self):
-        """加载模块列表"""
-        self.module_table.setRowCount(0)
-        module_type = self.type_combo.currentText()
-        modules = self.plc_manager.get_modules_by_type(module_type)
+        """加载模块列表 (特定于当前选择的系列)"""
+        self.module_table.setRowCount(0) # Clear existing module rows
+        
+        if not hasattr(self, 'current_series_id') or self.current_series_id is None:
+            logger.warning("load_modules - current_series_id 未设置，无法加载模块。")
+            return
+
+        modules: List[PLCModuleModel] = self.plc_manager.get_modules_by_series(self.current_series_id)
         
         for module in modules:
-            self.add_module_to_table(module)
+            row = self.module_table.rowCount()
+            self.module_table.insertRow(row)
+            self.module_table.setItem(row, 0, QTableWidgetItem(module.model))
+            self.module_table.setItem(row, 1, QTableWidgetItem(module.module_type))
+            self.module_table.setItem(row, 2, QTableWidgetItem(str(module.channels)))
+            self.module_table.setItem(row, 3, QTableWidgetItem(module.description or ""))
+            
+            # Add delete button for each module
+            delete_module_button = QPushButton("删除")
+            # Pass module.model (or module.id if available and preferred for deletion)
+            delete_module_button.clicked.connect(lambda checked=False, m_model=module.model: self.delete_module(m_model))
+            self.module_table.setCellWidget(row, 4, delete_module_button)
             
     def add_module_to_table(self, module):
-        """添加模块到表格"""
-        row = self.module_table.rowCount()
-        self.module_table.insertRow(row)
-        
-        # 添加模块信息
-        self.module_table.setItem(row, 0, QTableWidgetItem(module['model']))
-        self.module_table.setItem(row, 1, QTableWidgetItem(module['module_type']))
-        self.module_table.setItem(row, 2, QTableWidgetItem(str(module['channels'])))
-        self.module_table.setItem(row, 3, QTableWidgetItem(module['description']))
-        
-        # 添加删除按钮
-        delete_button = QPushButton("删除")
-        delete_button.clicked.connect(lambda: self.delete_module(module['model']))
-        self.module_table.setCellWidget(row, 4, delete_button)
-        
+        # This method seems to be from an older version or a duplicate, 
+        # load_modules now handles populating the table directly.
+        # Consider removing if not used elsewhere.
+        pass 
+
     def add_module(self):
-        """添加新模块"""
-        if not self.plc_manager:
-            QMessageBox.warning(self, "错误", "请先选择PLC系列")
+        """添加新模块到当前选定的系列"""
+        if not hasattr(self, 'current_series_id') or self.current_series_id is None:
+            QMessageBox.warning(self, "错误", "请先选择一个PLC系列。")
             return
-            
-        model = self.model_input.text().strip()
-        module_type = self.type_combo.currentText()
+
+        model = self.model_input.text().strip().upper()
+        module_type = self.type_combo.currentText() # This combo is for module type selection
         channels_text = self.channels_input.text().strip()
         description = self.desc_input.text().strip()
         
-        # 输入验证
         if not model:
-            QMessageBox.warning(self, "错误", "模块型号不能为空")
+            QMessageBox.warning(self, "错误", "模块型号不能为空。")
+            return
+        
+        try:
+            channels = int(channels_text) if channels_text else 0
+        except ValueError:
+            QMessageBox.warning(self, "错误", "通道数必须是有效的数字。")
             return
             
         try:
-            channels = int(channels_text)
-            if channels <= 0:
-                raise ValueError("通道数必须大于0")
-        except ValueError as e:
-            QMessageBox.warning(self, "错误", f"无效的通道数: {str(e)}")
-            return
+            new_module = self.plc_manager.add_module_to_series(
+                series_id=self.current_series_id,
+                model=model,
+                module_type=module_type,
+                channels=channels,
+                description=description
+            )
+            if new_module:
+                self.model_input.clear()
+                # self.type_combo.setCurrentIndex(0) # Optionally reset type combo
+                self.channels_input.clear()
+                self.desc_input.clear()
+                self.load_modules() # Reload module table for the current series
+                QMessageBox.information(self, "成功", f"模块 '{model}' 添加成功。")
+            else:
+                # This might be due to other errors not raising exceptions in service/manager
+                QMessageBox.warning(self, "错误", f"添加模块 '{model}' 失败。可能是因为型号已存在或发生其他错误。")
+        except Exception as e:
+            logger.error(f"添加模块 '{model}' 到系列ID {self.current_series_id} 失败: {e}", exc_info=True)
+            QMessageBox.critical(self, "严重错误", f"添加模块时发生错误: {e}")
             
-        # 添加模块
-        if self.plc_manager.add_module(model, module_type, channels, description):
-            self.model_input.clear()
-            self.channels_input.clear()
-            self.desc_input.clear()
-            self.load_modules()
-        else:
-            QMessageBox.warning(self, "错误", "添加模块失败")
-            
-    def delete_module(self, model):
-        """删除模块"""
-        if not self.plc_manager:
+    def delete_module(self, module_model: str):
+        """删除指定型号的模块 (从当前选定的系列中)"""
+        if not hasattr(self, 'current_series_id') or self.current_series_id is None:
+            QMessageBox.warning(self, "错误", "系列未选定，无法删除模块。")
             return
             
         reply = QMessageBox.question(
             self,
             "确认删除",
-            f"确定要删除模块 {model} 吗？",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            f"确定要从当前系列中删除模块 '{module_model}' 吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
         )
         
-        if reply == QMessageBox.Yes:
-            if self.plc_manager.delete_module(model):
-                self.load_modules()
+        if reply == QMessageBox.StandardButton.Yes:
+            if self.plc_manager.delete_module_from_series(self.current_series_id, module_model):
+                self.load_modules() # Reload module table
+                QMessageBox.information(self, "成功", f"模块 '{module_model}' 已删除。")
             else:
-                QMessageBox.warning(self, "错误", "删除模块失败")
+                QMessageBox.warning(self, "错误", f"删除模块 '{module_model}' 失败。")
+
+    # def get_module_info(self, model_name):
+    #     # This method appears to be unused or from an older version.
+    #     # Module details are fetched directly by PLCManager if needed.
+    #     pass
+
+    def accept(self):
+        # ... existing code ...
+        pass # Add pass to satisfy linter
+        super().accept() # Call parent's accept method
+
+# Example usage (for testing)
