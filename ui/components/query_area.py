@@ -12,7 +12,6 @@ class QueryArea(QGroupBox):
     upload_hmi_requested = Signal(str)  # HMI类型
     upload_plc_requested = Signal(str)  # PLC类型
     plc_config_requested = Signal()  # PLC配置信号
-    module_manage_requested = Signal()  # 模块管理信号
 
     def __init__(self, parent=None):
         super().__init__("查询条件", parent)
@@ -74,14 +73,11 @@ class QueryArea(QGroupBox):
 
         # 新增PLC配置按钮
         self.plc_config_button = QPushButton("PLC配置")
-        
-        # 新增模块管理按钮
-        self.module_manage_button = QPushButton("模块管理")
 
         # 统一设置按钮大小
         buttons = [self.query_btn, self.clear_btn, self.generate_btn, 
                   self.upload_hmi_btn, self.upload_plc_btn, 
-                  self.plc_config_button, self.module_manage_button]
+                  self.plc_config_button]
         for btn in buttons:
             btn.setFixedWidth(100)
             button_layout.addWidget(btn)
@@ -110,9 +106,6 @@ class QueryArea(QGroupBox):
 
         # PLC配置按钮连接
         self.plc_config_button.clicked.connect(self.plc_config_requested.emit)
-
-        # 模块管理按钮连接
-        self.module_manage_button.clicked.connect(self.module_manage_requested.emit)
 
     def _on_query_clicked(self):
         """处理查询按钮点击"""

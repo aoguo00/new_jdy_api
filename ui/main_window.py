@@ -29,7 +29,8 @@ from ui.components.third_party_device_area import ThirdPartyDeviceArea
 
 # Dialogs
 from ui.dialogs.plc_config_dialog import PLCConfigDialog
-from ui.dialogs.module_manager_dialog import ModuleManagerDialog
+# 移除模块管理对话框导入
+# from ui.dialogs.module_manager_dialog import ModuleManagerDialog
 
 # logger setup should ideally be in main.py or a dedicated logging config module
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -130,7 +131,8 @@ class MainWindow(QMainWindow):
         self.query_area.clear_requested.connect(self._handle_clear)
         self.query_area.generate_points_requested.connect(self._handle_generate_points)
         self.query_area.plc_config_requested.connect(self.show_plc_config_dialog)
-        self.query_area.module_manage_requested.connect(self.show_module_manager)
+        # 移除模块管理信号连接
+        # self.query_area.module_manage_requested.connect(self.show_module_manager)
 
         # 项目列表信号
         self.project_list_area.project_selected.connect(self._handle_project_selected)
@@ -217,16 +219,15 @@ class MainWindow(QMainWindow):
 
     def show_plc_config_dialog(self):
         """显示PLC配置对话框"""
-        if not self.plc_hardware_service:
-            QMessageBox.warning(self, "错误", "PLC硬件服务不可用。")
-            return
-        dialog = PLCConfigDialog(plc_hardware_service=self.plc_hardware_service, parent=self)
+        # 使用新的不依赖数据库的PLC配置对话框
+        dialog = PLCConfigDialog(parent=self)
         dialog.exec()
 
-    def show_module_manager(self):
-        """显示模块管理对话框"""
-        if not self.plc_hardware_service:
-            QMessageBox.warning(self, "错误", "PLC硬件服务不可用。")
-            return
-        dialog = ModuleManagerDialog(plc_hardware_service=self.plc_hardware_service, parent=self)
-        dialog.exec()
+    # 移除模块管理对话框方法
+    # def show_module_manager(self):
+    #    """显示模块管理对话框"""
+    #    if not self.plc_hardware_service:
+    #        QMessageBox.warning(self, "错误", "PLC硬件服务不可用。")
+    #        return
+    #    dialog = ModuleManagerDialog(plc_hardware_service=self.plc_hardware_service, parent=self)
+    #    dialog.exec()
