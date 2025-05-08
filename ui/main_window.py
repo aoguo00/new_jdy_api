@@ -3,6 +3,7 @@
 import logging
 from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QMessageBox
 from PySide6.QtCore import Qt
+from typing import List, Dict, Any, Optional
 
 # API and old DeviceManager (if still needed for other parts, though ideally not for third_party)
 from core.query_area import JianDaoYunAPI, PLCHardwareService
@@ -16,6 +17,9 @@ from core.database.database_service import DatabaseService # New DatabaseService
 from core.third_party_config_area.database.dao import TemplateDAO, ConfiguredDeviceDAO
 from core.third_party_config_area.template_service import TemplateService
 from core.third_party_config_area.config_service import ConfigService
+
+# 导入新的 IO 数据加载器
+from core.io_table import IODataLoader
 
 # Import new data processors
 from core.project_list_area import format_project_data_for_ui, ProjectService
@@ -68,6 +72,9 @@ class MainWindow(QMainWindow):
             self.tp_template_service = TemplateService(self.template_dao)
             self.tp_config_service = ConfigService(self.config_dao)
             
+            # 初始化IO数据加载器
+            self.io_data_loader = IODataLoader()
+            
         except Exception as e:
             logger.error(f"核心服务初始化失败: {e}", exc_info=True)
             # Make sure other services are also set to None or handled
@@ -83,6 +90,7 @@ class MainWindow(QMainWindow):
             self.config_dao = None
             self.tp_template_service = None
             self.tp_config_service = None
+            self.io_data_loader = None
             QMessageBox.critical(self, "初始化错误", f"核心服务初始化失败: {str(e)}\n请检查数据库或配置文件。应用部分功能可能无法使用。")
 
         self.setup_ui()
@@ -217,17 +225,100 @@ class MainWindow(QMainWindow):
             logger.error(f"获取场站 '{site_name}' 的设备数据失败: {e}", exc_info=True)
             QMessageBox.critical(self, "数据加载错误", f"获取场站设备数据失败: {str(e)}")
 
+    def get_current_devices(self) -> List[Dict[str, Any]]:
+        """获取当前加载的设备数据，用于传递给其他对话框"""
+        try:
+            # 从设备列表区域获取当前加载的设备数据
+            if hasattr(self, 'device_list_area') and self.device_list_area:
+                # 获取表格中的数据
+                devices_data = []
+                table = self.device_list_area.device_table
+                
+                if table:
+                    for row in range(table.rowCount()):
+                        try:
+                            # 从表格中提取设备信息（使用原始的_widget_*字段名）
+                            device = {
+                                'id': row + 1,  # 生成ID
+                                '_widget_1635777115211': table.item(row, 0).text() if table.item(row, 0) else "",  # 设备名称
+                                '_widget_1635777115248': table.item(row, 1).text() if table.item(row, 1) else "",  # 品牌
+                                '_widget_1635777115287': table.item(row, 2).text() if table.item(row, 2) else "",  # 规格型号
+                                '_widget_1641439264111': table.item(row, 3).text() if table.item(row, 3) else "",  # 技术参数
+                                '_widget_1635777485580': table.item(row, 4).text() if table.item(row, 4) else "1",  # 数量
+                                '_widget_1654703913698': table.item(row, 5).text() if table.item(row, 5) else "",  # 单位
+                                '_widget_1641439463480': table.item(row, 6).text() if table.item(row, 6) else ""   # 技术参数(外部)
+                            }
+                            
+                            # 记录原始数据，方便调试
+                            logger.debug(f"设备 #{row+1}:")
+                            logger.debug(f"  名称: {device['_widget_1635777115211']}")
+                            logger.debug(f"  品牌: {device['_widget_1635777115248']}")
+                            logger.debug(f"  型号: {device['_widget_1635777115287']}")
+                            logger.debug(f"  数量: {device['_widget_1635777485580']}")
+                            
+                            # 根据数量创建多个设备实例
+                            try:
+                                quantity = int(device['_widget_1635777485580'])
+                                
+                                # 检查是否是LK117背板（机架）
+                                model = device['_widget_1635777115287'].upper()
+                                if "LK117" in model:
+                                    # 对于LK117背板，不创建多个实例，而是保留数量信息
+                                    logger.info(f"检测到LK117背板，数量为{quantity}，作为机架信息保留")
+                                    device['instance_index'] = 1
+                                    devices_data.append(device)
+                                else:
+                                    # 为非背板设备创建多个实例
+                                    for i in range(quantity):
+                                        device_copy = device.copy()
+                                        device_copy['instance_index'] = i + 1  # 实例索引，用于区分相同设备的不同实例
+                                        devices_data.append(device_copy)
+                                    logger.debug(f"  已为设备 #{row+1} 创建 {quantity} 个实例")
+                            except (ValueError, TypeError):
+                                # 数量解析失败，默认添加一个
+                                logger.warning(f"设备 #{row+1} 数量无法解析: {device['_widget_1635777485580']}，默认为1")
+                                device['instance_index'] = 1
+                                devices_data.append(device)
+                                
+                        except Exception as row_e:
+                            logger.warning(f"处理设备表格第 {row+1} 行数据时出错: {row_e}")
+                            continue
+                
+                logger.info(f"获取到 {len(devices_data)} 个设备实例（考虑数量后）")
+                return devices_data
+            else:
+                logger.warning("设备列表区域未初始化，无法获取设备数据")
+                return []
+        except Exception as e:
+            logger.error(f"获取设备数据失败: {e}", exc_info=True)
+            return []
+
     def show_plc_config_dialog(self):
         """显示PLC配置对话框"""
-        # 使用新的不依赖数据库的PLC配置对话框
-        dialog = PLCConfigDialog(parent=self)
-        dialog.exec()
+        try:
+            logger.info("正在打开PLC配置对话框...")
+            
+            # 获取当前设备数据（原始数据，不做处理）
+            current_devices = self.get_current_devices()
+            if current_devices:
+                logger.info(f"成功获取 {len(current_devices)} 个设备数据")
+            else:
+                logger.warning("没有获取到设备数据，请先查询并选择场站")
+                QMessageBox.information(self, "提示", "没有设备数据，请先查询并选择场站")
+                return
+                
+            # 创建并显示对话框，传递设备数据
+            dialog = PLCConfigDialog(devices_data=current_devices, parent=self)
+            
+            # 执行对话框
+            result = dialog.exec()
+            
+            if result:
+                logger.info("PLC配置对话框已关闭并保存配置")
+            else:
+                logger.info("PLC配置对话框已取消")
+                
+        except Exception as e:
+            logger.error(f"显示PLC配置对话框时发生错误: {e}", exc_info=True)
+            QMessageBox.critical(self, "错误", f"无法显示PLC配置对话框: {str(e)}")
 
-    # 移除模块管理对话框方法
-    # def show_module_manager(self):
-    #    """显示模块管理对话框"""
-    #    if not self.plc_hardware_service:
-    #        QMessageBox.warning(self, "错误", "PLC硬件服务不可用。")
-    #        return
-    #    dialog = ModuleManagerDialog(plc_hardware_service=self.plc_hardware_service, parent=self)
-    #    dialog.exec()
