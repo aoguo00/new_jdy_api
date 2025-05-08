@@ -1,4 +1,4 @@
-# core/models/plc/models.py
+# core/query_area/plc_models.py
 from dataclasses import dataclass, field
 from typing import Optional
 from datetime import datetime

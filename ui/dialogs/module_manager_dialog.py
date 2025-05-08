@@ -3,22 +3,29 @@ import logging
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QLineEdit, QPushButton, QTableWidget,
                            QTableWidgetItem, QHeaderView, QMessageBox,
-                           QComboBox, QGroupBox)
+                           QComboBox, QGroupBox, QInputDialog, QTreeWidgetItem)
 from PySide6.QtCore import Qt
-from core.plc.plc_manager import PLCManager  # 导入PLCManager
-from typing import List
+from core.query_area import PLCHardwareService, PLCSeriesModel, PLCModuleModel
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
 class ModuleManagerDialog(QDialog):
     """模块管理对话框"""
-    def __init__(self, parent=None):
+    def __init__(self, plc_hardware_service: PLCHardwareService, parent=None):
         super().__init__(parent)
         self.setWindowTitle("模块管理")
-        self.resize(800, 800)  # 增加对话框高度以容纳系列管理部分
+        self.resize(900, 600)
         
-        self.plc_manager = PLCManager()  # 创建PLC管理器
-        
+        self.plc_service = plc_hardware_service
+        if not self.plc_service:
+            logger.error("ModuleManagerDialog 初始化失败: PLCHardwareService 未提供。")
+            QMessageBox.critical(self, "严重错误", "PLC硬件服务未能加载，对话框无法使用。")
+            return
+
+        self.current_series_id: Optional[int] = None
+        self._is_editing_new_module = False
+
         self.setup_ui()
         self.setup_connections()
         self.init_series()
@@ -165,7 +172,7 @@ class ModuleManagerDialog(QDialog):
 
     def load_series_table(self):
         """加载系列表格"""
-        series_list: List[PLCSeriesModel] = self.plc_manager.get_all_series()
+        series_list: List[PLCSeriesModel] = self.plc_service.get_all_series()
         
         self.series_table.setRowCount(0)
         for series in series_list:
@@ -183,7 +190,13 @@ class ModuleManagerDialog(QDialog):
             
     def load_series_combo(self):
         """加载系列下拉框"""
-        series_list: List[PLCSeriesModel] = self.plc_manager.get_all_series()
+        if not self.plc_service: return
+        try:
+            series_list: List[PLCSeriesModel] = self.plc_service.get_all_series()
+        except Exception as e:
+            logger.error(f"加载系列下拉框失败: {e}", exc_info=True)
+            # Optionally show message to user
+            series_list = []
         
         current_selection_id = None
         if self.series_combo.count() > 0:
@@ -208,8 +221,9 @@ class ModuleManagerDialog(QDialog):
             # However, init_series already calls load_series_combo and then on_series_changed might be called by signal.
 
     def add_series(self):
-        """添加新系列"""
-        name = self.series_name_input.text().strip().upper()
+        """添加新系列 (读取界面输入框)"""
+        if not self.plc_service: return
+        name = self.series_name_input.text().strip() # Removed .upper() unless intended
         description = self.series_desc_input.text().strip()
         
         if not name:
@@ -217,26 +231,29 @@ class ModuleManagerDialog(QDialog):
             return
             
         try:
-            new_series = self.plc_manager.add_series(name, description)
-            if new_series:
-                self.series_name_input.clear()
+            # 调用服务层添加，传入描述
+            created_series = self.plc_service.add_series(name, description) 
+            if created_series:
+                self.series_name_input.clear() # Clear inputs on success
                 self.series_desc_input.clear()
-                self.load_series_table() # Reload table to show new series
-                self.load_series_combo() # Reload combo box
                 QMessageBox.information(self, "成功", f"系列 '{name}' 添加成功。")
+                # Reload both table and combo box
+                self.load_series_table() 
+                self.load_series_combo()
             else:
-                # This case might not be reached if add_series raises ValueError or returns None on other errors
-                QMessageBox.warning(self, "错误", f"添加系列 '{name}' 失败。")
-        except ValueError as ve: # Handles case where series name already exists
-            QMessageBox.warning(self, "错误", str(ve))
+                # This case might be reached if service returns None on non-exception failure
+                QMessageBox.warning(self, "失败", f"系列 '{name}' 添加失败，请检查日志。")
+        except ValueError as ve: # Handles name already exists from service
+            QMessageBox.warning(self, "失败", str(ve))
         except Exception as e:
-            logger.error(f"添加系列时发生意外错误: {e}", exc_info=True)
-            QMessageBox.critical(self, "严重错误", f"添加系列时发生意外错误: {e}")
+            logger.error(f"添加系列 '{name}' 失败: {e}", exc_info=True)
+            QMessageBox.critical(self, "错误", f"添加系列时发生未知错误: {str(e)}")
             
     def delete_series(self, series_id: int):
         """删除系列，现在接收 series_id"""
+        if not self.plc_service: return
         
-        series_to_delete = next((s for s in self.plc_manager.get_all_series() if s.id == series_id), None)
+        series_to_delete = next((s for s in self.plc_service.get_all_series() if s.id == series_id), None)
         series_name_for_msg = series_to_delete.name if series_to_delete else f"ID {series_id}"
 
         reply = QMessageBox.question(
@@ -248,7 +265,7 @@ class ModuleManagerDialog(QDialog):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            if self.plc_manager.delete_series(series_id):
+            if self.plc_service.delete_series(series_id):
                 self.load_series_table()
                 self.load_series_combo()
                 QMessageBox.information(self, "成功", f"系列 '{series_name_for_msg}' 已删除。")
@@ -280,12 +297,19 @@ class ModuleManagerDialog(QDialog):
     def load_modules(self):
         """加载模块列表 (特定于当前选择的系列)"""
         self.module_table.setRowCount(0) # Clear existing module rows
+        if not self.plc_service: return
         
         if not hasattr(self, 'current_series_id') or self.current_series_id is None:
-            logger.warning("load_modules - current_series_id 未设置，无法加载模块。")
+            # logger.warning("load_modules - current_series_id 未设置，无法加载模块。") # Normal if no series selected
             return
 
-        modules: List[PLCModuleModel] = self.plc_manager.get_modules_by_series(self.current_series_id)
+        try:
+            # Corrected method name: get_modules_by_series_id
+            modules: List[PLCModuleModel] = self.plc_service.get_modules_by_series_id(self.current_series_id)
+        except Exception as e:
+            logger.error(f"加载系列 {self.current_series_id} 的模块失败: {e}", exc_info=True)
+            QMessageBox.warning(self, "错误", f"加载模块列表失败: {str(e)}")
+            modules = [] # Ensure list is empty on error
         
         for module in modules:
             row = self.module_table.rowCount()
@@ -301,27 +325,22 @@ class ModuleManagerDialog(QDialog):
             delete_module_button.clicked.connect(lambda checked=False, m_model=module.model: self.delete_module(m_model))
             self.module_table.setCellWidget(row, 4, delete_module_button)
             
-    def add_module_to_table(self, module):
-        # This method seems to be from an older version or a duplicate, 
-        # load_modules now handles populating the table directly.
-        # Consider removing if not used elsewhere.
-        pass 
-
     def add_module(self):
         """添加新模块到当前选定的系列"""
+        if not self.plc_service: return
         if not hasattr(self, 'current_series_id') or self.current_series_id is None:
             QMessageBox.warning(self, "错误", "请先选择一个PLC系列。")
             return
 
-        model = self.model_input.text().strip().upper()
-        module_type = self.type_combo.currentText() # This combo is for module type selection
+        model = self.model_input.text().strip() # Removed .upper()
+        module_type = self.type_combo.currentText()
         channels_text = self.channels_input.text().strip()
         description = self.desc_input.text().strip()
         
         if not model:
             QMessageBox.warning(self, "错误", "模块型号不能为空。")
             return
-        
+            
         try:
             channels = int(channels_text) if channels_text else 0
         except ValueError:
@@ -329,7 +348,8 @@ class ModuleManagerDialog(QDialog):
             return
             
         try:
-            new_module = self.plc_manager.add_module_to_series(
+            # Call the service to add the module
+            new_module = self.plc_service.add_module(
                 series_id=self.current_series_id,
                 model=model,
                 module_type=module_type,
@@ -337,21 +357,26 @@ class ModuleManagerDialog(QDialog):
                 description=description
             )
             if new_module:
+                # Clear input fields
                 self.model_input.clear()
-                # self.type_combo.setCurrentIndex(0) # Optionally reset type combo
+                # self.type_combo.setCurrentIndex(0) # Optionally reset type
                 self.channels_input.clear()
                 self.desc_input.clear()
-                self.load_modules() # Reload module table for the current series
+                # Reload the module table for the current series
+                self.load_modules() 
                 QMessageBox.information(self, "成功", f"模块 '{model}' 添加成功。")
             else:
-                # This might be due to other errors not raising exceptions in service/manager
-                QMessageBox.warning(self, "错误", f"添加模块 '{model}' 失败。可能是因为型号已存在或发生其他错误。")
+                # This might be reached if service returns None for non-exception failure
+                QMessageBox.warning(self, "错误", f"添加模块 '{model}' 失败。可能是型号已存在或其他错误。")
+        except ValueError as ve:
+             QMessageBox.warning(self, "错误", str(ve)) # Catch specific errors like duplicate model if service raises it
         except Exception as e:
-            logger.error(f"添加模块 '{model}' 到系列ID {self.current_series_id} 失败: {e}", exc_info=True)
-            QMessageBox.critical(self, "严重错误", f"添加模块时发生错误: {e}")
-            
+            logger.error(f"添加模块 '{model}' 到系列 {self.current_series_id} 失败: {e}", exc_info=True)
+            QMessageBox.critical(self, "严重错误", f"添加模块时发生意外错误: {e}")
+
     def delete_module(self, module_model: str):
         """删除指定型号的模块 (从当前选定的系列中)"""
+        if not self.plc_service: return
         if not hasattr(self, 'current_series_id') or self.current_series_id is None:
             QMessageBox.warning(self, "错误", "系列未选定，无法删除模块。")
             return
@@ -365,16 +390,12 @@ class ModuleManagerDialog(QDialog):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            if self.plc_manager.delete_module_from_series(self.current_series_id, module_model):
+            # Use delete_module from service which requires series_id and model string
+            if self.plc_service.delete_module(self.current_series_id, module_model):
                 self.load_modules() # Reload module table
                 QMessageBox.information(self, "成功", f"模块 '{module_model}' 已删除。")
             else:
                 QMessageBox.warning(self, "错误", f"删除模块 '{module_model}' 失败。")
-
-    # def get_module_info(self, model_name):
-    #     # This method appears to be unused or from an older version.
-    #     # Module details are fetched directly by PLCManager if needed.
-    #     pass
 
     def accept(self):
         # ... existing code ...

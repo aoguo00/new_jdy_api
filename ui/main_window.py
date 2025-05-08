@@ -5,12 +5,21 @@ from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QM
 from PySide6.QtCore import Qt
 
 # API and old DeviceManager (if still needed for other parts, though ideally not for third_party)
-from core.api import JianDaoYunAPI
+from core.query_area import JianDaoYunAPI, PLCHardwareService
 # from core.devices import DeviceManager # Replaced by services for third_party logic
 
-# New Services and Managers needed at MainWindow level
-from core.devices.template_manager import TemplateManager
-from core.services.device_configuration_service import DeviceConfigurationService
+# Updated import for DatabaseService
+# from core.db_manipulate.db_manager import DBManager # Old DBManager
+from core.database.database_service import DatabaseService # New DatabaseService
+
+# Import new services, DAOs, and DBManager for third_party_config_area
+from core.third_party_config_area.database.dao import TemplateDAO, ConfiguredDeviceDAO
+from core.third_party_config_area.template_service import TemplateService
+from core.third_party_config_area.config_service import ConfigService
+
+# Import new data processors
+from core.project_list_area import format_project_data_for_ui, ProjectService
+from core.device_list_area import format_device_data_for_ui, DeviceService
 
 # UI Components
 from ui.components.query_area import QueryArea
@@ -39,13 +48,41 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
 
         # 初始化核心服务和管理器
-        self.jdy_api = JianDaoYunAPI()
-        self.template_manager = TemplateManager() # Needed by ThirdPartyDeviceArea for DevicePointDialog
-        self.config_service = DeviceConfigurationService() # Manages configured device points
-        
-        # self.device_manager = DeviceManager() # Old manager, largely replaced by config_service for these features
-        # If other parts of MainWindow still use device_manager for unrelated tasks, it can be kept.
-        # For the refactored third_party_device_area, it's not directly used.
+        try:
+            self.jdy_api = JianDaoYunAPI()
+            # self.template_manager = TemplateManager() # Remove old one
+            # self.config_service = DeviceConfigurationService() # Remove old one
+            self.plc_hardware_service = PLCHardwareService()
+            self.project_service = ProjectService(self.jdy_api)
+            self.device_service = DeviceService(self.jdy_api)
+            
+            # Instantiate new DatabaseService (singleton)
+            self.db_service = DatabaseService() 
+            
+            # Instantiate DAOs for third_party_config_area with the DatabaseService
+            self.template_dao = TemplateDAO(self.db_service)
+            self.config_dao = ConfiguredDeviceDAO(self.db_service)
+            
+            # Instantiate Services for third_party_config_area with their respective DAOs
+            self.tp_template_service = TemplateService(self.template_dao)
+            self.tp_config_service = ConfigService(self.config_dao)
+            
+        except Exception as e:
+            logger.error(f"核心服务初始化失败: {e}", exc_info=True)
+            # Make sure other services are also set to None or handled
+            self.jdy_api = None 
+            # self.template_manager = None
+            # self.config_service = None
+            self.plc_hardware_service = None
+            self.project_service = None
+            self.device_service = None
+            # Also set new DAOs/Services to None
+            self.db_service = None
+            self.template_dao = None
+            self.config_dao = None
+            self.tp_template_service = None
+            self.tp_config_service = None
+            QMessageBox.critical(self, "初始化错误", f"核心服务初始化失败: {str(e)}\n请检查数据库或配置文件。应用部分功能可能无法使用。")
 
         self.setup_ui()
         self.setup_connections()
@@ -72,9 +109,9 @@ class MainWindow(QMainWindow):
         
         # Instantiate ThirdPartyDeviceArea with the new services
         self.third_party_area = ThirdPartyDeviceArea(
-            device_config_service=self.config_service, 
-            template_manager=self.template_manager, # Pass template_manager
-            parent=self # Pass parent if ThirdPartyDeviceArea expects it (it does)
+            config_service=self.tp_config_service, # Pass new ConfigService
+            template_service=self.tp_template_service, # Pass new TemplateService
+            parent=self 
         )
         
         # 添加组件到布局
@@ -101,12 +138,14 @@ class MainWindow(QMainWindow):
     def _handle_query(self, project_no: str, site_no: str):
         """处理查询请求"""
         try:
-            # 执行查询
-            data = self.jdy_api.query_data(project_no, site_no)
+            # 执行查询 (调用 ProjectService)
+            if not self.project_service:
+                raise Exception("项目服务未初始化")
+            projects = self.project_service.get_formatted_projects(project_no, site_no)
             # 更新列表
-            self.project_list_area.update_project_list(data)
+            self.project_list_area.update_project_list(projects)
         except Exception as e:
-            logger.error(f"查询失败: {e}", exc_info=True)
+            logger.error(f"查询项目列表失败: {e}", exc_info=True)
             QMessageBox.critical(self, "查询错误", f"查询项目列表失败: {str(e)}")
 
     def _handle_clear(self):
@@ -122,7 +161,7 @@ class MainWindow(QMainWindow):
     def _handle_generate_points(self):
         """处理生成点表请求"""
         # Check if points are configured using the new service
-        if not self.config_service.get_all_configured_points():
+        if not self.tp_config_service or not self.tp_config_service.get_all_configured_points():
             reply = QMessageBox.question(
                 self, "提示", 
                 "尚未配置第三方设备点位，是否现在配置?",
@@ -130,28 +169,44 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.Yes # Default to Yes
             )
             if reply == QMessageBox.StandardButton.Yes:
-                # configure_third_party_device is a method of self.third_party_area
-                self.third_party_area.configure_third_party_device()
+                # Ensure third_party_area is initialized before calling its method
+                if hasattr(self, 'third_party_area') and self.third_party_area:
+                     self.third_party_area.configure_third_party_device()
+                else:
+                     QMessageBox.warning(self, "错误", "第三方配置区域未初始化。")
         else:
-            # Points are already configured, perhaps show a message or proceed to actual generation
-            QMessageBox.information(self, "提示", "第三方设备点位已配置。如果需要重新配置，请使用右侧区域的功能。")
-            # Here you might trigger the actual "generation" if that means something beyond configuration
-            # For now, this button seems to be a shortcut to configure if not already done.
+            # Points are already configured, proceed with generation?
+            # This is where the actual generation logic using tp_config_service would go.
+            try:
+                if not self.tp_config_service:
+                     raise Exception("配置服务未初始化")
+                
+                # Example: Get data and maybe save to a default file or show preview
+                points = self.tp_config_service.get_all_configured_points()
+                if not points:
+                    QMessageBox.information(self, "提示", "没有已配置的点位可供生成点表。")
+                    return
+                    
+                # TODO: Define what "Generate Points Table" actually does.
+                # For now, just show a success message with point count.
+                QMessageBox.information(self, "生成点表 (占位符)", f"已获取 {len(points)} 个配置点位。\n(实际生成逻辑待实现)")
+                
+                # Example for future: Export to a default file
+                # default_path = "generated_points.xlsx"
+                # self.tp_config_service.export_to_excel(default_path)
+                # QMessageBox.information(self, "成功", f"点表已生成到 {default_path}")
+                
+            except Exception as e:
+                logger.error(f"生成点表时出错: {e}", exc_info=True)
+                QMessageBox.critical(self, "错误", f"生成点表失败: {str(e)}")
 
     def _handle_project_selected(self, site_name: str):
         """处理项目选择"""
         try:
-            # 执行查询
-            response_data = self.jdy_api.query_site_devices(site_name)
-            
-            # 处理数据
-            all_devices = []
-            for data_item in response_data:
-                device_list = data_item.get('_widget_1635777115095', [])
-                if device_list and isinstance(device_list, list):
-                    all_devices.extend(device_list)
-                elif device_list: # If it's not a list but has a value, log warning
-                    logger.warning(f"Expected a list for device_list in site '{site_name}', got {type(device_list)}")
+            # 执行查询 (调用 DeviceService)
+            if not self.device_service:
+                raise Exception("设备服务未初始化")
+            all_devices = self.device_service.get_formatted_devices(site_name)
             
             # 更新设备列表
             self.device_list_area.update_device_list(all_devices)
@@ -162,10 +217,16 @@ class MainWindow(QMainWindow):
 
     def show_plc_config_dialog(self):
         """显示PLC配置对话框"""
-        dialog = PLCConfigDialog(self)
+        if not self.plc_hardware_service:
+            QMessageBox.warning(self, "错误", "PLC硬件服务不可用。")
+            return
+        dialog = PLCConfigDialog(plc_hardware_service=self.plc_hardware_service, parent=self)
         dialog.exec()
 
     def show_module_manager(self):
         """显示模块管理对话框"""
-        dialog = ModuleManagerDialog(self)
+        if not self.plc_hardware_service:
+            QMessageBox.warning(self, "错误", "PLC硬件服务不可用。")
+            return
+        dialog = ModuleManagerDialog(plc_hardware_service=self.plc_hardware_service, parent=self)
         dialog.exec()

@@ -7,27 +7,31 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
                                QSplitter, QWidget, QMessageBox)
 from PySide6.QtCore import Qt
 from typing import Optional, List
-from core.devices.template_manager import TemplateManager
-from core.services.device_configuration_service import DeviceConfigurationService
-from core.models.templates.models import DeviceTemplateModel, TemplatePointModel
+from core.third_party_config_area import TemplateService, ConfigService
+from core.third_party_config_area.models import DeviceTemplateModel, TemplatePointModel
 from ui.dialogs.template_manage_dialog import TemplateManageDialog
 
 logger = logging.getLogger(__name__)
 
 class DevicePointDialog(QDialog):
-    """设备点位配置对话框，使用 TemplateManager 和 DeviceConfigurationService"""
+    """设备点位配置对话框"""
 
     def __init__(self,
-                 template_manager: TemplateManager,  # Use standard names
-                 config_service: DeviceConfigurationService,  # Use standard names
+                 template_service: TemplateService,
+                 config_service: ConfigService,
                  parent=None,
                  initial_template_name=""):
         super().__init__(parent)
         self.setWindowTitle("第三方设备点表配置")
         self.resize(900, 700)
 
-        self.template_manager = template_manager # Assign passed instance
-        self.config_service = config_service   # Assign passed instance
+        self.template_service = template_service
+        self.config_service = config_service
+        
+        if not self.template_service or not self.config_service:
+             logger.error("DevicePointDialog 初始化失败: 服务未提供。")
+             QMessageBox.critical(self, "严重错误", "所需服务未能加载，对话框无法使用。")
+             # Handle error
         
         self.current_template_id: Optional[int] = None
         self.template: Optional[DeviceTemplateModel] = None 
@@ -98,7 +102,7 @@ class DevicePointDialog(QDialog):
         # 模板管理按钮
         template_btn_layout = QHBoxLayout()
         template_manage_btn = QPushButton("管理设备模板")
-        template_manage_btn.clicked.connect(lambda: self.manage_templates(self.template_manager))
+        template_manage_btn.clicked.connect(lambda: self.manage_templates(self.template_service))
         template_btn_layout.addStretch()
         template_btn_layout.addWidget(template_manage_btn)
         config_layout.addLayout(template_btn_layout)
@@ -157,7 +161,7 @@ class DevicePointDialog(QDialog):
         """加载模板列表"""
         self.template_combo.clear()
         try:
-            templates: List[DeviceTemplateModel] = self.template_manager.get_all_templates()
+            templates: List[DeviceTemplateModel] = self.template_service.get_all_templates()
             if not templates:
                 logger.info("模板库为空或加载失败")
             for tmpl_model in templates:
@@ -166,9 +170,9 @@ class DevicePointDialog(QDialog):
             logger.error(f"加载模板列表失败: {e}")
             QMessageBox.critical(self, "错误", f"加载模板列表失败: {str(e)}")
 
-    def manage_templates(self, tm: TemplateManager):
+    def manage_templates(self, tm: TemplateService):
         """打开模板管理对话框"""
-        dialog = TemplateManageDialog(parent=self)
+        dialog = TemplateManageDialog(template_service=self.template_service, parent=self)
         if dialog.exec() == QDialog.Accepted:
             current_id_before_reload = self.template_combo.currentData()
             current_text_before_reload = self.template_combo.currentText()
@@ -204,12 +208,13 @@ class DevicePointDialog(QDialog):
         if self.current_template_id is None:
             logger.warning("选中的模板没有关联的ID (itemData is None)")
             self.template = None
+            if hasattr(self, 'prefix_input'): self.prefix_input.clear()
             self.update_point_table()
             self.update_preview()
             return
 
         try:
-            self.template = self.template_manager.get_template_by_id(self.current_template_id)
+            self.template = self.template_service.get_template_by_id(self.current_template_id)
         except Exception as e:
             logger.error(f"获取模板详情失败 (ID: {self.current_template_id}): {e}")
             QMessageBox.critical(self, "错误", f"加载模板详情失败: {str(e)}")
@@ -262,7 +267,7 @@ class DevicePointDialog(QDialog):
         """保存配置"""
         device_prefix = self.prefix_input.text().strip()
         if not device_prefix:
-            QMessageBox.warning(self, "警告", "请输入设备前缀。")
+            QMessageBox.warning(self, "警告", "请输入设备/变量前缀。")
             self.prefix_input.setFocus()
             return
 
@@ -279,20 +284,16 @@ class DevicePointDialog(QDialog):
                  return
         try:
             logger.info(f"准备保存配置: 设备前缀='{device_prefix}', 模板='{self.template.name}'")
-            newly_added_points = self.config_service.add_configured_points(self.template, device_prefix)
+            success = self.config_service.configure_points_from_template(self.template, device_prefix)
             
-            if newly_added_points:
+            if success:
+                point_count_message = f"（模板包含 {len(self.template.points)} 个点位）" if self.template.points else "（模板为空）"
                 QMessageBox.information(self, "成功",
-                                        f"已成功为设备前缀 '{device_prefix}' 应用模板 '{self.template.name}'，添加了 {len(newly_added_points)} 个点位。")
-                self.accept()
-            elif not self.template.points: 
-                QMessageBox.information(self, "提示",
-                                        f"已为设备前缀 '{device_prefix}' 应用空模板 '{self.template.name}'。未添加实际点位。")
+                                        f"已成功为设备前缀 '{device_prefix}' 应用模板 '{self.template.name}'。\n{point_count_message}")
                 self.accept()
             else:
-                QMessageBox.warning(self, "注意", "配置已应用，但服务层未明确报告新点位已添加（可能服务层逻辑如此）。")
-                self.accept() 
+                QMessageBox.warning(self, "保存失败", f"为设备前缀 '{device_prefix}' 应用模板 '{self.template.name}' 失败。\n请检查日志。")
 
         except Exception as e:
-            logger.error(f"保存设备点表配置失败: {e}")
-            QMessageBox.critical(self, "保存失败", f"保存配置时发生错误: {str(e)}")
+            logger.error(f"保存设备点表配置失败: {e}", exc_info=True)
+            QMessageBox.critical(self, "错误", f"保存配置时发生未知错误: {str(e)}")

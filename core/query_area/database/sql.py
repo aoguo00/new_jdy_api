@@ -1,6 +1,6 @@
-"""SQL语句管理模块"""
+# core/query_area/database/sql.py
+"""PLC模块相关的SQL语句"""
 
-# PLC模块相关SQL
 PLC_SQL = {
     'CREATE_SERIES_TABLE': '''
     CREATE TABLE IF NOT EXISTS hollysys_plc_series (
@@ -84,61 +84,5 @@ PLC_SQL = {
     FROM hollysys_plc_modules
     WHERE series_id = ?
     ORDER BY model
-    '''
-}
-
-# 设备模板相关SQL
-TEMPLATE_SQL = {
-    'CREATE_TEMPLATES_TABLE': '''
-    CREATE TABLE IF NOT EXISTS third_device_templates (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        prefix TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    ''',
-    
-    'CREATE_POINTS_TABLE': '''
-    CREATE TABLE IF NOT EXISTS third_device_template_points (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        template_id INTEGER,
-        var_suffix TEXT,
-        desc_suffix TEXT,
-        data_type TEXT,
-        init_value TEXT DEFAULT '0',
-        power_protection INTEGER DEFAULT 0,
-        forcible INTEGER DEFAULT 1,
-        soe_enabled INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(template_id) REFERENCES third_device_templates(id) ON DELETE CASCADE
-    )
-    ''',
-    
-    'INSERT_TEMPLATE': '''
-    INSERT INTO third_device_templates (name, prefix)
-    VALUES (?, ?)
-    ''',
-    
-    'UPDATE_TEMPLATE': '''
-    UPDATE third_device_templates 
-    SET name = ?, prefix = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-    ''',
-    
-    'DELETE_TEMPLATE': '''
-    DELETE FROM third_device_templates WHERE id = ?
-    ''',
-    
-    'GET_ALL_TEMPLATES': '''
-    SELECT id, name, prefix, created_at, updated_at
-    FROM third_device_templates
-    ORDER BY name
-    ''',
-    
-    'GET_TEMPLATE_BY_NAME': '''
-    SELECT id, name, prefix, created_at, updated_at
-    FROM third_device_templates
-    WHERE name = ?
     '''
 } 

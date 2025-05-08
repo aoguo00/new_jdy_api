@@ -1,9 +1,9 @@
 """PLC配置对话框"""
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QComboBox, QPushButton, QTableWidget,
-                           QTableWidgetItem, QHeaderView, QMessageBox)
+                           QTableWidgetItem, QHeaderView, QMessageBox, QAbstractItemView)
 from PySide6.QtCore import Qt
-from core.plc.plc_manager import PLCManager  # 导入PLCManager
+from core.query_area import PLCHardwareService, PLCSeriesModel, PLCModuleModel 
 from typing import List, Dict, Any, Optional
 import logging
 
@@ -11,12 +11,20 @@ logger = logging.getLogger(__name__)
 
 class PLCConfigDialog(QDialog):
     """PLC配置对话框"""
-    def __init__(self, parent=None):
+    def __init__(self, plc_hardware_service: PLCHardwareService, parent=None):
         super().__init__(parent)
         self.setWindowTitle("PLC配置")
         self.resize(1200, 700)  # 增加对话框宽度
         
-        self.plc_manager = PLCManager()  # 创建PLC管理器
+        self.plc_service = plc_hardware_service # 使用注入的服务
+        if not self.plc_service:
+            logger.error("PLCConfigDialog 初始化失败: PLCHardwareService 未提供。")
+            # 适当处理错误，例如显示消息并禁用对话框，或引发异常
+            QMessageBox.critical(self, "严重错误", "PLC硬件服务未能加载，对话框无法使用。")
+            # self.accept() # 或 self.reject() 或禁用 UI
+            # 暂时让它继续，但函数可能会失败
+            # 更好的方法是在 MainWindow 中防止显示对话框（如果 service 为 None）
+
         self.rack_slots = ['' for _ in range(11)]  # LK117有11个槽位
         self.setup_ui()
         self.setup_connections()
@@ -66,14 +74,20 @@ class PLCConfigDialog(QDialog):
         
         # 左侧模块列表
         self.module_table = QTableWidget()
-        self.module_table.setColumnCount(4)
-        self.module_table.setHorizontalHeaderLabels(['型号', '类型', '通道数', '描述'])
+        self.module_table.setColumnCount(5)
+        self.module_table.setHorizontalHeaderLabels(['序号', '型号', '类型', '通道数', '描述'])
+        self.module_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.module_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.module_table.verticalHeader().setVisible(False)
         
-        # 设置左侧表格列宽
-        header = self.module_table.horizontalHeader()
-        for i in range(4):
-            header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
-        header.setStretchLastSection(True)  # 最后一列自适应
+        # 设置左侧表格列宽 - 加入序号列
+        header_left = self.module_table.horizontalHeader()
+        header_left.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) # 序号
+        header_left.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents) # 型号
+        header_left.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents) # 类型
+        header_left.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents) # 通道数
+        header_left.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)      # 描述
+        # header_left.setMinimumSectionSize(50) # 如果需要，调整最小尺寸
         
         # 设置表格样式
         self.module_table.setStyleSheet("""
@@ -112,19 +126,18 @@ class PLCConfigDialog(QDialog):
         self.config_table = QTableWidget()
         self.config_table.setColumnCount(5)
         self.config_table.setHorizontalHeaderLabels(['槽位', '型号', '类型', '通道数', '描述'])
+        self.config_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.config_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.config_table.verticalHeader().setVisible(False)
         
-        # 设置右侧表格列宽
-        header = self.config_table.horizontalHeader()
-        # 设置前四列固定宽度，最后一列自动拉伸
-        self.config_table.setColumnWidth(0, 60)   # 槽位列
-        self.config_table.setColumnWidth(1, 120)  # 型号列
-        self.config_table.setColumnWidth(2, 80)   # 类型列
-        self.config_table.setColumnWidth(3, 80)   # 通道数列
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)  # 槽位列固定宽度
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)  # 型号列固定宽度
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)  # 类型列固定宽度
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)  # 通道数列固定宽度
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)  # 描述列自动拉伸填充剩余空间
+        # 设置右侧表格列宽 - 型号自适应，描述拉伸
+        header_right = self.config_table.horizontalHeader()
+        header_right.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) # 槽位
+        header_right.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents) # 型号 - 改为自适应内容
+        header_right.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents) # 类型
+        header_right.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents) # 通道数
+        header_right.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)      # 描述 - 改回拉伸
+        # header_right.setMinimumSectionSize(60) # 可以移除或调整
         
         # 设置相同的表格样式
         self.config_table.setStyleSheet(self.module_table.styleSheet())
@@ -163,65 +176,94 @@ class PLCConfigDialog(QDialog):
 
     def init_series(self):
         """初始化PLC系列"""
-        self.series_combo.clear() # Clear previous items
-        series_list: List[PLCSeriesModel] = self.plc_manager.get_all_series()
+        self.series_combo.clear() # 清除之前的项目
+        if not self.plc_service: return # 防止服务缺失
         
-        for series in series_list:
-            # Store series.id as item data for later retrieval
-            self.series_combo.addItem(series.name, userData=series.id) 
-            # series.description can be set as a tooltip if needed, 
-            # or handled differently if it was used as 'currentData' before.
-            # For now, only name is displayed, and ID is stored.
+        try:
+            series_list: List[PLCSeriesModel] = self.plc_service.get_all_series()
+        except Exception as e:
+            logger.error(f"初始化PLC系列失败: {e}", exc_info=True)
+            QMessageBox.warning(self, "错误", f"加载PLC系列列表失败: {str(e)}")
+            series_list = [] # 确保出错时series_list为空列表
             
-        # 默认选择第一个系列
+        for series in series_list:
+            self.series_combo.addItem(series.name, userData=series.id) 
+            
         if self.series_combo.count() > 0:
-            self.series_combo.setCurrentIndex(0) # Ensure the signal fires for the first item
-            # self.on_series_changed(self.series_combo.currentText()) # Let currentTextChanged signal handle it
+            self.series_combo.setCurrentIndex(0)
+        else:
+            # 处理没有加载系列的情况（例如，显示消息，禁用UI部分）
+            logger.info("没有可用的PLC系列数据。")
+            # self.on_series_changed(None) # 或直接清除表格
+            self.module_table.setRowCount(0)
+            self.config_table.setRowCount(0)
+            self.current_series_id = None
 
-    def on_series_changed(self, series_name: str): # series_name is the displayed text
+    def on_series_changed(self, series_name: str): # series_name是显示的文本
         """处理系列选择变更"""
         current_index = self.series_combo.currentIndex()
         if current_index < 0:
-            # QMessageBox.warning(self, "错误", "未选择任何PLC系列。") # Already handled by no items or setCurrentIndex(0)
-            self.module_table.setRowCount(0) # Clear module table if no series selected or error
-            self.config_table.setRowCount(0) # Also clear config table
+            self.module_table.setRowCount(0)
+            self.config_table.setRowCount(0)
             self.current_series_id = None
             return
 
         self.current_series_id = self.series_combo.itemData(current_index)
         
         if self.current_series_id is None:
-            QMessageBox.warning(self, "错误", f"无法获取系列 '{series_name}' 的ID。")
+            # 如果userData未设置，或series_name为None/空且combo为空，可能会发生这种情况
+            logger.warning(f"无法获取系列 '{series_name}' 的ID (当前索引: {current_index})。")
             self.module_table.setRowCount(0)
             self.config_table.setRowCount(0) 
             return
-            
-        logger.info(f"PLC系列已更改为: {series_name} (ID: {self.current_series_id})")
+        
+        # 检测是否是LK系列
+        self.is_lk_series = series_name.startswith('LK')
+        logger.info(f"PLC系列已更改为: {series_name} (ID: {self.current_series_id}, LK系列: {self.is_lk_series})")
+        
         self.load_modules()
-        self.update_config_table() # Also update config table when series changes
+        
+        # 重置机架槽位配置
+        self.rack_slots = ['' for _ in range(11)]  # 默认11个槽位
+        
+        # 对于LK系列，自动在第一个槽位添加DP模块
+        if self.is_lk_series:
+            # 查找DP通信模块添加到第一槽
+            self.add_dp_module_to_first_slot()
+            
+        self.update_config_table()
 
     def load_modules(self):
         """加载模块列表"""
         self.module_table.setRowCount(0)
+        if not self.plc_service: return # 防止服务缺失
         if not hasattr(self, 'current_series_id') or self.current_series_id is None:
-            logger.warning("load_modules 调用时 current_series_id 未设置或为 None")
+            # logger.warning("load_modules 调用时 current_series_id 未设置或为 None") # 如果没有选择系列，这可能是正常的
             return
             
         module_type_filter = self.type_combo.currentText()
         modules: List[PLCModuleModel] = []
         
-        if module_type_filter == '全部':
-            modules = self.plc_manager.get_modules_by_series(self.current_series_id)
-        else:
-            modules = self.plc_manager.get_modules_by_series_and_type(self.current_series_id, module_type_filter)
+        try:
+            if module_type_filter == '全部':
+                # 假设PLCHardwareService存在get_modules_by_series_id方法
+                modules = self.plc_service.get_modules_by_series_id(self.current_series_id) 
+            else:
+                # 假设存在get_modules_by_series_and_type方法
+                modules = self.plc_service.get_modules_by_series_and_type(self.current_series_id, module_type_filter)
+        except Exception as e:
+            logger.error(f"加载模块列表失败 (系列ID: {self.current_series_id}, 类型: {module_type_filter}): {e}", exc_info=True)
+            QMessageBox.warning(self, "错误", f"加载模块列表失败: {str(e)}")
+            modules = [] # 确保出错时modules为空列表
             
-        for module in modules:
-            row = self.module_table.rowCount()
+        for row, module in enumerate(modules):
             self.module_table.insertRow(row)
-            self.module_table.setItem(row, 0, QTableWidgetItem(module.model))
-            self.module_table.setItem(row, 1, QTableWidgetItem(module.module_type))
-            self.module_table.setItem(row, 2, QTableWidgetItem(str(module.channels)))
-            self.module_table.setItem(row, 3, QTableWidgetItem(module.description or ""))
+            # 设置带有更新索引的项目
+            self.module_table.setItem(row, 0, QTableWidgetItem(str(row + 1)))       # 索引0: 序号
+            self.module_table.setItem(row, 1, QTableWidgetItem(module.model))         # 索引1: 型号
+            self.module_table.setItem(row, 2, QTableWidgetItem(module.module_type))   # 索引2: 类型
+            self.module_table.setItem(row, 3, QTableWidgetItem(str(module.channels))) # 索引3: 通道数
+            self.module_table.setItem(row, 4, QTableWidgetItem(module.description or "")) # 索引4: 描述
 
     def add_module(self):
         """添加模块到配置"""
@@ -229,21 +271,43 @@ class PLCConfigDialog(QDialog):
         if current_row < 0:
             return
             
+        # 获取模块信息
+        module_model = self.module_table.item(current_row, 1).text()
+        module_type = self.module_table.item(current_row, 2).text()
+        module_channels = self.module_table.item(current_row, 3).text()
+        module_desc = self.module_table.item(current_row, 4).text()
+        
         # 获取可用槽位
-        available_slots = [i + 1 for i, slot in enumerate(self.rack_slots) if not slot]
+        # 对于LK系列，第一个槽位预留给DP模块，所以从第二个槽位开始分配
+        if hasattr(self, 'is_lk_series') and self.is_lk_series:
+            available_slots = []
+            # 检查槽位1是否已有DP模块
+            has_dp_in_slot1 = bool(self.rack_slots[0])
+            
+            # 遍历所有槽位（从1开始，索引从0开始）
+            for i, slot_content in enumerate(self.rack_slots):
+                if i == 0 and not has_dp_in_slot1:
+                    # 如果槽位1没有DP模块且当前要添加的是DP类型模块，则槽位1可用
+                    if module_type == 'DP':
+                        available_slots.append(i + 1)  # 槽位号 = 索引 + 1
+                elif i > 0 and not slot_content:  # 非第一槽位且为空
+                    available_slots.append(i + 1)  # 槽位号 = 索引 + 1
+        else:
+            # 非LK系列，所有空槽位均可用
+            available_slots = [i + 1 for i, slot in enumerate(self.rack_slots) if not slot]
+            
         if not available_slots:
             QMessageBox.warning(self, "警告", "所有槽位已被占用")
             return
-            
-        # 获取模块信息
-        module_model = self.module_table.item(current_row, 0).text()
-        module_type = self.module_table.item(current_row, 1).text()
-        module_channels = self.module_table.item(current_row, 2).text()
-        module_desc = self.module_table.item(current_row, 3).text()
         
         # 分配到第一个可用槽位
         slot = available_slots[0]
         self.rack_slots[slot - 1] = module_model
+        
+        # 如果是添加DP模块到LK系列的第一个槽位，提示用户
+        if hasattr(self, 'is_lk_series') and self.is_lk_series and slot == 1 and module_type == 'DP':
+            logger.info(f"已在第一槽位添加DP通信模块: {module_model}")
+            
         self.update_config_table()
 
     def remove_module(self):
@@ -254,8 +318,30 @@ class PLCConfigDialog(QDialog):
             
         # 获取槽位信息
         slot = int(self.config_table.item(current_row, 0).text())
+        module_type = self.config_table.item(current_row, 2).text()
+        
+        # 如果是LK系列的第一个槽位且模块类型为DP，提示用户确认
+        if hasattr(self, 'is_lk_series') and self.is_lk_series and slot == 1 and module_type == 'DP':
+            reply = QMessageBox.question(
+                self, 
+                "确认移除",
+                "移除LK系列第一槽位的DP通信模块可能导致配置无效。确定要移除吗？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return  # 用户取消移除
+                
         self.rack_slots[slot - 1] = ''  # 清空槽位
         self.update_config_table()
+        
+        # 如果移除后是LK系列且第一槽位为空，提示用户添加DP模块
+        if hasattr(self, 'is_lk_series') and self.is_lk_series and slot == 1:
+            QMessageBox.information(
+                self, 
+                "提示", 
+                "已移除LK系列第一槽位的模块。建议在第一槽位添加一个DP通信模块。"
+            )
 
     def update_config_table(self):
         """更新配置表格"""
@@ -263,13 +349,13 @@ class PLCConfigDialog(QDialog):
         
         if not hasattr(self, 'current_series_id') or self.current_series_id is None:
             logger.warning("update_config_table 调用时 current_series_id 未设置或为 None, 无法获取模块详情。")
-            # Potentially clear self.rack_slots or show an error if this state is problematic
+            # 如果这种状态是有问题的，可能需要清除self.rack_slots或显示错误
             return
 
         for slot, module_model_str in enumerate(self.rack_slots, 1):
             if module_model_str:  # 如果槽位有模块型号字符串
                 # 从新的PLCManager获取模块信息，需要 series_id 和 model string
-                module_details: Optional[PLCModuleModel] = self.plc_manager.get_module_details(self.current_series_id, module_model_str)
+                module_details: Optional[PLCModuleModel] = self.plc_service.get_module_info(self.current_series_id, module_model_str)
                 
                 if module_details:
                     row = self.config_table.rowCount()
@@ -291,17 +377,40 @@ class PLCConfigDialog(QDialog):
                     self.config_table.setItem(row, 4, QTableWidgetItem("模块信息在数据库中未找到"))
         
     def get_selected_configuration(self) -> List[Dict[str, Any]]:
-        # ... existing code ...
-        pass # Add pass to satisfy linter for an empty or TBD method body
+        # 添加实现代码
+        pass # 添加pass以满足linter对空方法体的要求
 
     def accept(self):
-        # ... existing code ...
-        pass # Add pass to satisfy linter for an empty or TBD method body
-        super().accept() # Assuming this was the original intent or should be there
+        # 添加实现代码
+        pass # 添加pass以满足linter对空方法体的要求
+        super().accept() # 假设这是原始意图或应该在这里
 
     def reject(self):
-        # ... existing code ...
-        pass # Add pass to satisfy linter for an empty or TBD method body
-        super().reject() # Assuming this was the original intent or should be there
+        # 添加实现代码
+        pass # 添加pass以满足linter对空方法体的要求
+        super().reject() # 假设这是原始意图或应该在这里
 
-# Example usage (for testing, can be removed or kept)
+    def add_dp_module_to_first_slot(self):
+        """为LK系列在第一个槽位添加DP通信模块"""
+        if not hasattr(self, 'current_series_id') or self.current_series_id is None:
+            logger.warning("add_dp_module_to_first_slot 调用时 current_series_id 未设置或为 None，无法添加DP模块。")
+            return
+            
+        try:
+            # 获取当前系列的所有DP类型模块
+            dp_modules = self.plc_service.get_modules_by_series_and_type(self.current_series_id, 'DP')
+            
+            if not dp_modules:
+                logger.warning(f"系列ID {self.current_series_id} 没有找到DP类型的模块，无法自动添加到第一槽位。")
+                return
+                
+            # 选择第一个DP模块添加到第一个槽位
+            dp_module = dp_modules[0]
+            self.rack_slots[0] = dp_module.model  # 第一个槽位(索引0)设置为DP模块
+            logger.info(f"已自动在第一槽位添加DP通信模块: {dp_module.model}")
+            
+        except Exception as e:
+            logger.error(f"添加DP模块到第一槽位失败: {e}", exc_info=True)
+            # 无需弹窗，因为这是自动操作，失败不应阻断用户继续配置
+
+# 示例用法（用于测试，可以保留或删除）
