@@ -6,43 +6,59 @@ from datetime import datetime
 import re
 
 # 导入模块定义
-from .plc_modules import get_module_info_by_model, get_modules_by_type, get_all_modules
+from .plc_modules import get_module_info_by_model, get_modules_by_type, get_all_modules, PLC_SERIES # 导入PLC_SERIES
 
 logger = logging.getLogger(__name__)
 
 class IODataLoader:
     """IO数据加载器，负责获取和处理PLC IO配置数据"""
     
-    # 和利时PLC产品前缀列表，用于过滤
-    HOLLYSYS_PREFIXES = ['LK']
+    # 和利时PLC产品前缀列表，用于过滤 (从plc_modules动态生成)
+    HOLLYSYS_PREFIXES = [prefix for series in PLC_SERIES.values() for prefix in series["prefixes"]]
     
     # IO类型映射
     IO_TYPE_MAPPINGS = {
+        "CPU": ["CPU", "中央处理单元"],
         'AI': ['AI', '模拟量输入', 'ANALOG INPUT'],
         'AO': ['AO', '模拟量输出', 'ANALOG OUTPUT'],
         'DI': ['DI', '数字量输入', '开关量输入', 'DIGITAL INPUT'],
         'DO': ['DO', '数字量输出', '开关量输出', 'DIGITAL OUTPUT'],
-        'DP': ['DP', 'PROFIBUS', 'PROFIBUS-DP']
+        'DI/DO': ['DI/DO', '数字量输入输出', '数字量混合'],
+        'AI/AO': ['AI/AO', '模拟量输入输出', '模拟量混合'],
+        'DP': ['DP', 'PROFIBUS', 'PROFIBUS-DP'],
+        'COM': ['COM', '通讯']
     }
     
     # 通道数默认映射
     CHANNEL_DEFAULTS = {
+        "CPU": 0,
         'AI': 8,
         'AO': 4,
         'DI': 16,
         'DO': 16,
+        'DI/DO': 16, 
+        'AI/AO': 6, # 混合模块的默认总通道数
         'DP': 0,
-        '未录入': 16
+        'COM': 0, 
+        '未录入': 16 # 对于完全未知的类型，给一个通用猜测值
     }
     
     # 允许在穿梭框中显示的模块类型
-    ALLOWED_MODULE_TYPES = ['AI', 'AO', 'DI', 'DO', 'DP']
+    ALLOWED_MODULE_TYPES = ["CPU", 'AI', 'AO', 'DI', 'DO', 'DI/DO', 'AI/AO', 'DP', 'COM'] # 添加CPU类型
     
     # 特殊允许的模块型号 (即使类型不在ALLOWED_MODULE_TYPES中也会显示)
-    SPECIAL_ALLOWED_MODULES = ['LK238']
-    
-    # 每个机架的槽位数
-    DEFAULT_RACK_SLOTS = 11  # 默认机架槽位数（LK117型号为11槽）
+    # 动态生成，包含所有预定义模块中的COM类型以及其他特殊型号
+    SPECIAL_ALLOWED_MODULES = list(set(
+        [m["model"] for m in get_all_modules() if m["type"] == "COM"] + 
+        [m["model"] for m in get_all_modules() if m["type"] == "DI/DO"] + 
+        [m["model"] for m in get_all_modules() if m["type"] == "AI/AO"] + # 允许AI/AO模块
+        ["LK238"] # 保留对旧特殊模块的兼容
+    ))
+    # 确保唯一性
+    SPECIAL_ALLOWED_MODULES = list(set(SPECIAL_ALLOWED_MODULES))
+
+    # 每个机架的槽位数 (LE系列可能没有传统机架，这里主要为LK系列服务)
+    DEFAULT_RACK_SLOTS = 11
     
     def __init__(self):
         """初始化IO数据加载器"""
@@ -56,6 +72,7 @@ class IODataLoader:
         # 用于存储机架信息
         self.racks_data = []  # 机架数据
         self.rack_count = 0   # 机架数量
+        self.system_type = "LK" # 默认为LK系统, 可为 "LE_CPU"
         
         logger.info(f"IODataLoader 初始化完成，加载了 {len(self.predefined_modules)} 个预定义模块")
     
@@ -88,71 +105,44 @@ class IODataLoader:
         self._calculate_rack_info()
         
     def _calculate_rack_info(self):
-        """计算机架数量并初始化机架数据"""
-        # 查找LK117扩展背板数量 - 同时检查model字段和_widget_1635777115287字段
-        rack_modules = [m for m in self.modules_data if 
-                        'LK117' in m.get('model', '').upper() or 
-                        'LK117' in m.get('_widget_1635777115287', '').upper()]
-        logger.info(f"开始计算机架数量，找到 {len(rack_modules)} 条LK117背板记录")
+        """计算机架数量并初始化机架数据，同时判断系统类型（LK或LE_CPU）"""
+        self.system_type = "LK" # 默认是LK系统
+        cpu_modules = [m for m in self.modules_data if m.get('type') == 'CPU']
         
-        # 统计扩展背板数量 - LK117本身就是机架
-        rack_count = 0
-        
-        # 先检查是否有LK117背板
-        if rack_modules:
-            # 先检查是否有数量信息
-            for i, rack_module in enumerate(rack_modules):
-                try:
-                    # 尝试从quantity字段或_widget_1635777485580字段获取数量
-                    quantity_str = rack_module.get('quantity', rack_module.get('_widget_1635777485580', ''))
-                    model = rack_module.get('model', rack_module.get('_widget_1635777115287', ''))
-                    device_id = rack_module.get('id', f'未知ID-{i}')
-                    
-                    logger.info(f"LK117背板 #{i+1} (ID={device_id}): 型号={model}, 数量字段值={quantity_str}")
-                    
-                    if quantity_str and quantity_str.isdigit():
-                        current_count = int(quantity_str)
-                        rack_count += current_count
-                        logger.info(f"  -> 有效数量: {current_count}, 当前累计机架数: {rack_count}")
-                    else:
-                        # 如果没有quantity字段或非数字，默认数量为1
-                        rack_count += 1
-                        logger.warning(f"  -> 数量字段无效，默认为1, 当前累计机架数: {rack_count}")
-                except (ValueError, TypeError) as e:
-                    rack_count += 1
-                    logger.error(f"  -> 解析数量时出错: {e}, 默认为1, 当前累计机架数: {rack_count}")
+        if any(m.get('model', '').upper() == 'LE5118' for m in cpu_modules):
+            self.system_type = "LE_CPU" 
+            logger.info("检测到LE5118 CPU，系统类型设置为 LE_CPU")
+            # 对于LE_CPU系统，机架数量由LE5118（或其他CPU模块）决定，通常为1个主机构架。
+            # 扩展功能板不计为独立机架，而是属于这个CPU控制的系统。
+            self.rack_count = 1 # LE5118系统视为一个集成机架
         else:
-            # 如果没有找到LK117背板，至少有1个机架
-            rack_count = 1
-            logger.warning("未找到LK117背板记录，默认机架数量为1")
-        
-        # 确保至少有一个机架
-        self.rack_count = max(1, rack_count)
-        logger.info(f"最终计算得到机架数量: {self.rack_count} 个")
-        
-        # 创建机架数据
+            # LK系统或其他非特定CPU系统，机架数量通过LK117背板计算
+            rack_modules = [m for m in self.modules_data if 'LK117' in m.get('model', '').upper()]                
+            rack_count_lk = 0
+            if rack_modules:
+                for rack_module in rack_modules:
+                    try:
+                        quantity_str = rack_module.get('quantity', rack_module.get('_widget_1635777485580', '1'))
+                        rack_count_lk += int(quantity_str) if quantity_str and quantity_str.isdigit() else 1
+                    except (ValueError, TypeError): rack_count_lk += 1
+            self.rack_count = max(1, rack_count_lk) # 至少1个机架
+            logger.info(f"LK或通用系统，通过LK117计算得到机架数量: {self.rack_count}")
+
         self.racks_data = []
         for i in range(self.rack_count):
             rack_data = {
                 'rack_id': i + 1,
                 'rack_name': f"机架{i + 1}",
                 'total_slots': self.DEFAULT_RACK_SLOTS,
-                'available_slots': self.DEFAULT_RACK_SLOTS - 1,  # 第一槽位固定为DP模块
-                'start_slot': 2,  # 用户可使用的起始槽位（从2开始）
-                'modules': []
+                 # 对于LE_CPU系统，槽位1由用户放置CPU；对于LK，槽位1固定DP
+                'available_slots': self.DEFAULT_RACK_SLOTS if self.system_type == "LE_CPU" else self.DEFAULT_RACK_SLOTS -1,
+                'start_slot': 1 if self.system_type == "LE_CPU" else 2, 
+                'modules': [],
+                'system_type': self.system_type # 把系统类型也加入机架数据
             }
             self.racks_data.append(rack_data)
-            
-        logger.info(f"系统配置: 共 {self.rack_count} 个机架，每个机架 {self.DEFAULT_RACK_SLOTS} 个槽位")
-        logger.debug(f"背板模块记录列表: {[m.get('model', '') for m in rack_modules]}")
-        
-        # 记录关于机架的更多信息供调试
-        if rack_modules:
-            for i, module in enumerate(rack_modules):
-                model = module.get('model', '')
-                quantity = module.get('quantity', '1')
-                logger.debug(f"背板 #{i+1}: 型号={model}, 数量={quantity}")
-    
+        logger.info(f"系统配置: 类型={self.system_type}, 共 {self.rack_count} 个机架，每个机架 {self.DEFAULT_RACK_SLOTS} 个槽位 (逻辑定义)")
+
     def get_rack_info(self) -> Dict[str, Any]:
         """
         获取机架配置信息
@@ -163,8 +153,9 @@ class IODataLoader:
         return {
             'rack_count': self.rack_count,
             'slots_per_rack': self.DEFAULT_RACK_SLOTS,
-            'user_start_slot': 2,  # 用户可用的起始槽位（从2开始）
-            'racks': self.racks_data
+            'user_start_slot': 1 if self.system_type == "LE_CPU" else 2,
+            'racks': self.racks_data,
+            'system_type': self.system_type # 暴露系统类型
         }
     
     def get_slot_info(self, rack_id: int, slot_id: int) -> Dict[str, Any]:
@@ -240,28 +231,33 @@ class IODataLoader:
         Returns:
             Dict[str, Any]: 验证结果
         """
-        # 获取模块信息
         module_info = get_module_info_by_model(module_model)
-        
-        # 检查是否为DP模块
-        if module_info.get('type') == 'DP':
-            if slot_id != 1:
-                return {
-                    'valid': False,
-                    'error': f"DP模块 {module_model} 只能放置在槽位1"
-                }
-        else:
-            # 非DP模块不能放在槽位1
+        module_type = module_info.get('type')
+
+        # 获取当前机架的系统类型 (应该从self.racks_data获取对应rack_id的system_type)
+        # 为简化，我们暂时假设所有机架共享self.system_type，但在多机架混合系统中可能需要更细致处理
+        current_rack_system_type = self.system_type 
+        # rack_data = next((r for r in self.racks_data if r['rack_id'] == rack_id), None)
+        # if rack_data: current_rack_system_type = rack_data.get('system_type', self.system_type)
+
+        if current_rack_system_type == "LE_CPU":
             if slot_id == 1:
-                return {
-                    'valid': False,
-                    'error': f"槽位1只能放置DP模块，不能放置 {module_model}"
-                }
+                if module_type != 'CPU' or module_model.upper() != 'LE5118': #槽位1必须是LE5118 CPU
+                    return {'valid': False, 'error': f"LE系统槽位1只能放置LE5118 CPU模块"}
+            elif module_type == 'CPU': # CPU模块不能放在其他槽位
+                 return {'valid': False, 'error': f"LE5118 CPU模块只能放置在槽位1"}
+        elif current_rack_system_type == "LK": # LK系统逻辑
+            if module_type == 'DP':
+                if slot_id != 1:
+                    return {'valid': False, 'error': f"DP模块 {module_model} 只能放置在LK系统槽位1"}
+            elif slot_id == 1: # LK系统槽位1只能放DP
+                return {'valid': False, 'error': f"LK系统槽位1只能放置DP模块，不能放置 {module_model}"}
         
-        return {
-            'valid': True,
-            'message': f"模块 {module_model} 可以放置在机架 {rack_id} 槽位 {slot_id}"
-        }
+        # 通用检查：背板模块不能直接添加
+        if module_type == 'RACK':
+            return {'valid': False, 'error': "背板模块不能直接添加到配置中"}
+            
+        return {'valid': True, 'message': f"模块 {module_model} 可以放置在机架 {rack_id} 槽位 {slot_id}"}
 
     def _process_devices_data(self, devices_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -340,104 +336,85 @@ class IODataLoader:
             if not model:
                 continue
                 
-            # 查找预定义的模块信息
-            module_info = get_module_info_by_model(model)
+            # 查找预定义的模块信息 (从 plc_modules.py)
+            module_info = get_module_info_by_model(model) # This is plc_modules.get_module_info_by_model
             if module_info:
-                # 使用预定义信息更新设备数据
-                device.update({
-                    'type': module_info['type'],
-                    'io_type': module_info['type'],
-                    'channels': module_info['channels'],
-                    'predefined_description': module_info['description']
-                })
+                # 构建要更新的字典
+                update_dict = {
+                    'type': module_info.get('type'), # 使用 .get() 以增加稳健性
+                    'io_type': module_info.get('type'), # io_type 通常与 type 相同
+                    'channels': module_info.get('channels'),
+                    'predefined_description': module_info.get('description')
+                }
                 
-                # 如果原来没有描述，使用预定义描述
-                if not device.get('description'):
+                # 如果预定义信息中有 sub_channels，复制过来
+                if 'sub_channels' in module_info:
+                    update_dict['sub_channels'] = module_info['sub_channels']
+                
+                # 如果预定义信息中有 power_supply，复制过来
+                if 'power_supply' in module_info:
+                    update_dict['power_supply'] = module_info['power_supply']
+                
+                # 其他可能需要从预定义模块复制的关键信息可以在此添加
+                # 例如 is_master, slot_required等，如果它们对于运行时行为重要的话
+                if 'is_master' in module_info:
+                    update_dict['is_master'] = module_info['is_master']
+                if 'slot_required' in module_info:
+                    update_dict['slot_required'] = module_info['slot_required']
+
+                # 使用预定义信息更新设备数据
+                device.update(update_dict)
+                
+                # 如果设备原来没有描述，或描述为空，使用预定义描述
+                if not device.get('description') and module_info.get('description'):
                     device['description'] = module_info['description']
                     
-                logger.debug(f"设备 {model} 使用预定义模块信息: {module_info['type']}, {module_info['channels']} 通道")
+                logger.debug(f"设备 {model} 已使用预定义模块信息进行丰富: 类型={module_info.get('type')}, 通道={module_info.get('channels')}, 子通道={module_info.get('sub_channels')}")
 
     def _determine_io_type(self, device: Dict[str, Any]) -> str:
         """
         根据设备信息确定IO类型
-        
-        Args:
-            device: 设备字典 (可能包含标准字段名或_widget_*字段名)
-            
-        Returns:
-            str: IO类型 (AI, AO, DI, DO, DP, 或 OTHER)
         """
         # 如果已有io_type字段且有效，则直接使用
         if device.get('io_type') and device['io_type'] in self.IO_TYPE_MAPPINGS:
             return device['io_type']
         
-        # 首先尝试通过型号匹配预定义模块
         model = device.get('model', device.get('_widget_1635777115287', '')).upper()
         if model:
-            module_info = get_module_info_by_model(model)
-            if module_info and module_info['type'] in self.IO_TYPE_MAPPINGS:
+            module_info = get_module_info_by_model(model) 
+            if module_info and module_info['type'] != "未录入":
                 return module_info['type']
         
-        # 如果未匹配到预定义模块，使用现有逻辑判断
-        # 从型号和品牌中推断
         brand = device.get('brand', device.get('_widget_1635777115248', '')).upper()
         name = device.get('name', device.get('_widget_1635777115211', '')).upper()
-        device_type = device.get('type', name).upper()  # 如果没有type字段，使用name
+        device_type_str = device.get('type', name).upper()
         description = device.get('description', device.get('_widget_1641439264111', '')).upper()
         ext_params = device.get('ext_params', device.get('_widget_1641439463480', '')).upper()
+        all_text = f"{model} {brand} {name} {device_type_str} {description} {ext_params}"
         
-        # 合并所有文本字段，用于全文搜索关键字
-        all_text = f"{model} {brand} {name} {device_type} {description} {ext_params}"
-        
-        # 检查是否为和利时产品
         is_hollysys = False
-        if '和利时' in brand or 'HOLLYSYS' in brand or '和利时' in all_text or 'HOLLYSYS' in all_text:
+        if '和利时' in brand or 'HOLLYSYS' in brand or any(keyword in all_text for keyword in ['和利时', 'HOLLYSYS']):
             is_hollysys = True
         elif any(model.startswith(prefix) for prefix in self.HOLLYSYS_PREFIXES):
             is_hollysys = True
             
-        # 和利时产品的型号通常遵循特定格式，可以更准确地推断
         if is_hollysys:
-            # 和利时LK系列产品型号规则
-            if 'LK41' in model:
-                return 'AI'
-            elif 'LK51' in model:
-                return 'AO'
-            elif 'LK61' in model:
-                return 'DI'
-            elif 'LK71' in model:
-                return 'DO'
-            elif 'LK81' in model or 'LK82' in model:
-                return 'DP'
-            elif 'LK9' in model:
-                return 'CP'
-            
-            # 检查所有文本中的通用关键字
-            if '模拟量输入' in all_text or 'ANALOG INPUT' in all_text:
-                return 'AI'
-            elif '模拟量输出' in all_text or 'ANALOG OUTPUT' in all_text:
-                return 'AO'
-            elif '数字量输入' in all_text or '开关量输入' in all_text or 'DIGITAL INPUT' in all_text:
-                return 'DI'
-            elif '数字量输出' in all_text or '开关量输出' in all_text or 'DIGITAL OUTPUT' in all_text:
-                return 'DO'
-            elif 'PROFIBUS' in all_text:
-                return 'DP'
+            # 模块定义文件中的前缀判断优先 (MODULE_TYPE_PREFIXES from plc_modules)
+            for type_key, prefixes_list in MODULE_TYPE_PREFIXES.items(): 
+                if any(model.startswith(p) for p in prefixes_list):
+                    return type_key
+            # 再次检查文本关键字
+            for io_type_key, keywords in self.IO_TYPE_MAPPINGS.items():
+                for keyword in keywords:
+                    if keyword.upper() in all_text:
+                        return io_type_key
         
-        # 通用逻辑：尝试从所有字段推断
-        for io_type, keywords in self.IO_TYPE_MAPPINGS.items():
+        for io_type_key, keywords in self.IO_TYPE_MAPPINGS.items(): # 通用逻辑
             for keyword in keywords:
                 if keyword.upper() in all_text:
-                    return io_type
+                    return io_type_key
         
-        # 无法确定类型时的特殊处理
-        if '1616' in model:  # 组合模块
-            return 'DI/DO'
-            
-        # 特殊模块的类型处理
-        if model == 'LK238' or model == 'LK238':
-            return 'SP'  # 特殊类型，会被允许显示在穿梭框中
-        
+        if '1616' in model: return 'DI/DO'
         return '未录入'
     
     def _determine_channels(self, device: Dict[str, Any]) -> int:
@@ -488,100 +465,43 @@ class IODataLoader:
     
     def _filter_hollysys_devices(self, devices: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        过滤和利时PLC产品
-        
-        Args:
-            devices: 设备列表 (可能包含标准字段名或_widget_*字段名)
-            
-        Returns:
-            List[Dict[str, Any]]: 过滤后的和利时产品列表
+        过滤和利时PLC产品 (包括LK和LE系列)
         """
         hollysys_devices = []
-        known_hollysys_keywords = ['和利时', 'HOLLYSYS', 'LK']
+        # known_hollysys_keywords现在可以从HOLLYSYS_PREFIXES和品牌名生成
+        known_hollysys_keywords = ['和利时', 'HOLLYSYS'] + self.HOLLYSYS_PREFIXES
         
-        # 特殊处理LK117背板（机架）
-        lk117_devices = []
-        
+        rack_devices = [] # 用于存放背板/机架类设备
+
         for device in devices:
-            # 获取字段值，同时考虑标准字段名和原始_widget_*字段名
-            model = device.get('model', device.get('_widget_1635777115287', '')).upper()
-            brand = device.get('brand', device.get('_widget_1635777115248', '')).upper()
-            name = device.get('name', device.get('_widget_1635777115211', '')).upper()
-            type_str = device.get('type', name).upper()  # 如果没有type字段，使用name
-            desc_str = device.get('description', device.get('_widget_1641439264111', '')).upper()
-            ext_params = device.get('ext_params', device.get('_widget_1641439463480', '')).upper()
-            quantity = device.get('quantity', device.get('_widget_1635777485580', '1'))
+            model_upper = device.get('model', device.get('_widget_1635777115287', '')).upper()
+            brand_upper = device.get('brand', device.get('_widget_1635777115248', '')).upper()
+            name_upper = device.get('name', device.get('_widget_1635777115211', '')).upper()
             
-            # 合并所有文本字段，用于全文搜索关键字
-            all_text = f"{model} {brand} {name} {type_str} {desc_str} {ext_params}"
-            
-            # 检查是否是LK117背板（机架）
-            if 'LK117' in model or any(kw in all_text and '117' in all_text for kw in known_hollysys_keywords):
-                # 确保标准化模型名称为LK117
-                device['model'] = 'LK117'
-                
-                # 确保quantity字段存在且有效
-                if not quantity or not str(quantity).isdigit():
-                    device['quantity'] = '1'
-                    logger.warning(f"LK117背板未指定有效数量，默认设为1")
-                
-                # 记录详细日志，方便排查问题
-                logger.info(f"找到LK117背板（机架），原始数量值: {quantity}")
-                logger.info(f"设备详情: ID={device.get('id', 'N/A')}, 名称={name}, 品牌={brand}, 型号={model}")
-                
-                lk117_devices.append(device)
-                continue
-                
-            # 检查是否是和利时产品
-            if any(keyword in all_text for keyword in known_hollysys_keywords):
-                hollysys_devices.append(device)
-                continue
-                
-            # 检查型号前缀
-            if any(model.startswith(prefix) for prefix in self.HOLLYSYS_PREFIXES):
-                hollysys_devices.append(device)
-                continue
-                
-            # 检查型号中是否包含LK系列标识
-            if 'LK' in model:
-                hollysys_devices.append(device)
-                continue
+            all_text_upper = f"{model_upper} {brand_upper} {name_upper} {device.get('type', name_upper).upper()} {device.get('description', '').upper()} {device.get('ext_params', '').upper()}"
+
+            is_hollysys_device = False
+            if any(keyword.upper() in all_text_upper for keyword in known_hollysys_keywords):
+                is_hollysys_device = True
+            elif any(model_upper.startswith(prefix.upper()) for prefix in self.HOLLYSYS_PREFIXES):
+                 is_hollysys_device = True
+
+            if is_hollysys_device:
+                # 检查是否为背板 (如LK117), LE系列可能没有类似的可计数背板
+                if "LK117" in model_upper: # 当前只显式处理LK117作为机架计数依据
+                    device['model'] = 'LK117' # 标准化
+                    quantity = device.get('quantity', device.get('_widget_1635777485580', '1'))
+                    if not quantity or not str(quantity).isdigit(): device['quantity'] = '1'
+                    rack_devices.append(device)
+                    logger.info(f"找到LK117背板: {model_upper}, 数量: {device['quantity']}")
+                else:
+                    hollysys_devices.append(device)
         
-        # 处理背板数据
-        if lk117_devices:
-            hollysys_devices.extend(lk117_devices)
-            
-            # 记录背板的信息
-            quantity_list = [device.get('quantity', '1') for device in lk117_devices]
-            total_count = sum(int(q) if str(q).isdigit() else 1 for q in quantity_list)
-            logger.info(f"找到 {len(lk117_devices)} 条LK117背板记录，数量值: {quantity_list}，总数量: {total_count}")
-        
-        # 记录过滤结果
-        if not hollysys_devices:
-            logger.warning(f"未找到和利时设备，原始设备数量: {len(devices)}")
-            # 打印前5个设备的品牌和型号，帮助调试
-            for i, dev in enumerate(devices[:5]):
-                brand = dev.get('brand', dev.get('_widget_1635777115248', '无'))
-                model = dev.get('model', dev.get('_widget_1635777115287', '无'))
-                logger.debug(f"设备#{i+1}: 品牌={brand}, 型号={model}")
-                
-            # 打印搜索条件，帮助调试
-            logger.debug(f"搜索条件: 和利时前缀={self.HOLLYSYS_PREFIXES}, 关键字={known_hollysys_keywords}")
-        else:
-            logger.info(f"找到 {len(hollysys_devices)} 个和利时设备（共 {len(devices)} 个设备）")
-            
-            # 统计找到的LK117背板数量
-            lk117_count = sum(1 for dev in hollysys_devices if dev.get('model', '').upper() == 'LK117')
-            if lk117_count > 0:
-                logger.info(f"其中包含 {lk117_count} 条LK117背板记录")
-            
-            # 打印前3个找到的和利时设备，帮助确认过滤结果
-            for i, dev in enumerate(hollysys_devices[:3]):
-                brand = dev.get('brand', dev.get('_widget_1635777115248', '无'))
-                model = dev.get('model', dev.get('_widget_1635777115287', '无'))
-                quantity = dev.get('quantity', dev.get('_widget_1635777485580', '1'))
-                logger.debug(f"和利时设备#{i+1}: 品牌={brand}, 型号={model}, 数量={quantity}")
-            
+        if rack_devices:
+            hollysys_devices.extend(rack_devices)
+            logger.info(f"共找到 {len(rack_devices)} 条LK117背板记录.")
+
+        logger.info(f"过滤后得到 {len(hollysys_devices)} 个和利时设备 (含背板). 原始设备数: {len(devices)}")
         return hollysys_devices
     
     def get_filtered_modules(self, module_type: str = '全部') -> List[Dict[str, Any]]:
@@ -594,18 +514,12 @@ class IODataLoader:
         Returns:
             List[Dict[str, Any]]: 过滤后的模块列表
         """
-        if not self.modules_data and not self.predefined_modules:
+        if not self.modules_data:
             logger.warning("没有可用的模块数据")
             return []
-            
-        # 预定义模块优先
-        all_modules = []
-        if not self.modules_data and self.predefined_modules:
-            # 如果没有从设备解析的模块，但有预定义模块
-            all_modules = self.predefined_modules
-        else:
-            # 从实际设备解析的模块
-            all_modules = self.modules_data
+        
+        # 从实际设备解析的模块
+        all_modules = self.modules_data
         
         # 过滤出允许显示的模块类型和特殊允许的模块型号
         filtered_modules = []
@@ -642,15 +556,10 @@ class IODataLoader:
             Tuple[List[Dict[str, Any]], bool]: (模块列表, 是否有数据)
         """
         try:
-            # 如果设备数据为空但预定义模块不为空，使用预定义模块
-            if not self.hollysys_filtered_devices and self.predefined_modules:
-                if module_type == '全部':
-                    modules = self.predefined_modules
-                else:
-                    modules = [m for m in self.predefined_modules if m.get('type') == module_type]
-                    
-                logger.info(f"使用预定义模块，找到 {len(modules)} 个 {module_type} 类型模块")
-                return modules, len(modules) > 0
+            # 如果没有设备数据，直接返回空列表
+            if not self.hollysys_filtered_devices:
+                logger.info("没有可用的设备数据，返回空列表")
+                return [], False
             
             # 使用过滤后的设备数据
             modules = self.get_filtered_modules(module_type)
@@ -747,220 +656,164 @@ class IODataLoader:
         
         logger.info(f"接收到PLC模块配置请求: {len(config_dict)} 项")
         
-        # 检查是否每个机架都有DP模块
-        rack_has_dp = {}
-        for (rack_id, slot_id), model in config_dict.items():
-            # 记录机架信息
-            if rack_id not in rack_has_dp:
-                rack_has_dp[rack_id] = False
-                
-            # 检查是否为DP模块且在槽位1
-            module_info = self.get_module_by_model(model)
-            if module_info and module_info.get('type') == 'DP' and slot_id == 1:
-                rack_has_dp[rack_id] = True
+        rack_ids_with_config = set(k[0] for k in config_dict.keys())
+        if not rack_ids_with_config and self.system_type == "LE_CPU":
+             logger.warning("LE_CPU系统配置为空，但槽位1必须配置LE5118 CPU。")
+             print("错误: LE5118 CPU必须配置在槽位1。")
+             return False
+        elif not rack_ids_with_config and self.system_type == "LK":
+             logger.info("LK系统配置为空，跳过槽位1模块检查。")
+        else: 
+            for r_id in rack_ids_with_config:
+                slot1_module_model = config_dict.get((r_id, 1))
+                if not slot1_module_model:
+                    error_msg_detail = "LE5118 CPU" if self.system_type == "LE_CPU" else "DP模块"
+                    logger.warning(f"机架 {r_id} 槽位1未配置{error_msg_detail}。")
+                    print(f"错误: 机架 {r_id} 槽位1必须配置{error_msg_detail}。")
+                    return False
+                slot1_module_info = self.get_module_by_model(slot1_module_model)
+                if not slot1_module_info:
+                    logger.warning(f"机架 {r_id} 槽位1配置的模块 {slot1_module_model} 未知。")
+                    print(f"错误: 机架 {r_id} 槽位1配置的模块 {slot1_module_model} 信息无法获取。")
+                    return False
+                slot1_type = slot1_module_info.get('type')
+                if self.system_type == "LE_CPU":
+                    if slot1_type != 'CPU' or slot1_module_model.upper() != 'LE5118':
+                        logger.warning(f"机架 {r_id} (LE系统) 槽位1配置错误，应为LE5118 CPU，实际为 {slot1_module_model} ({slot1_type})。")
+                        print(f"错误: 机架 {r_id} (LE系统) 槽位1必须配置LE5118 CPU。")
+                        return False
+                elif self.system_type == "LK":
+                    if slot1_type != 'DP':
+                        logger.warning(f"机架 {r_id} (LK系统) 槽位1配置错误，应为DP模块，实际为 {slot1_module_model} ({slot1_type})。")
+                        print(f"错误: 机架 {r_id} (LK系统) 槽位1必须配置DP模块。")
+                        return False
         
-        # 检查每个机架是否都有DP模块
-        missing_dp_racks = []
-        for rack_id, has_dp in rack_has_dp.items():
-            if not has_dp:
-                missing_dp_racks.append(rack_id)
-                
-        if missing_dp_racks:
-            error_msg = f"以下机架缺少DP模块（必须放在槽位1）: {', '.join(map(str, missing_dp_racks))}"
-            logger.warning(error_msg)
-            print(f"\n错误: {error_msg}")
-            return False
-        
-        # 记录配置项详情
-        for (rack_id, slot_id), model in config_dict.items():
-            logger.info(f"机架 {rack_id} 槽位 {slot_id}: {model}")
-            
-            # 获取模块详细信息
-            module_info = self.get_module_by_model(model)
-            if module_info:
-                logger.info(f"  - 类型: {module_info.get('type', '未知')}")
-                logger.info(f"  - 通道数: {module_info.get('channels', '未知')}")
-                logger.info(f"  - 描述: {module_info.get('description', '未知')}")
-            else:
-                logger.warning(f"  - 未找到模块 {model} 的详细信息")
-        
-        # 记录配置时间
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"\n-------- PLC模块配置 ({timestamp}) --------")
-        print(f"共配置 {len(config_dict)} 个PLC模块，分布在 {len(rack_has_dp)} 个机架")
-        
-        # 统计每种类型的通道数量
-        total_channels = {
-            "AI": 0,
-            "AO": 0,
-            "DI": 0,
-            "DO": 0,
-            "DP": 0,
-            "COM": 0,
-            "未录入": 0
-        }
-        
-        # 按机架分别展示配置
-        for rack_id in sorted(rack_has_dp.keys()):
-            rack_modules = [(r, s, m) for (r, s), m in config_dict.items() if r == rack_id]
-            print(f"\n机架 {rack_id} 配置 ({len(rack_modules)} 个模块):")
-            
-            # 按槽位排序
-            rack_modules.sort(key=lambda x: x[1])
-            
-            for r_id, s_id, model in rack_modules:
-                module_info = self.get_module_by_model(model)
-                if module_info:
-                    module_type = module_info.get("type", "未知")
-                    channels = module_info.get("channels", 0)
-                    description = module_info.get("description", "")
-                    print(f"  槽位 {s_id}: {model} ({module_type}, {channels}通道) - {description}")
+        print(f"共配置 {len(config_dict)} 个PLC模块，分布在 {len(rack_ids_with_config)} 个机架")
+
+        summary = {"AI":0, "AO":0, "DI":0, "DO":0, "DP":0, "COM":0, "CPU_count":0, "未录入_IO":0}
+
+        for r_id in sorted(list(rack_ids_with_config)):
+            print(f"\n机架 {r_id} 配置 (系统类型: {self.system_type}):")
+            rack_mods = sorted([(s,m) for (r,s),m in config_dict.items() if r == r_id], key=lambda x: x[0])
+            for s_id, model_name in rack_mods:
+                m_info = self.get_module_by_model(model_name)
+                if m_info:
+                    m_type, m_ch, m_desc = m_info.get("type","未知"), m_info.get("channels",0), m_info.get("description","")
+                    print(f"  槽位 {s_id}: {model_name} ({m_type}, {m_ch}通道) - {m_desc}")
                     
-                    # 统计通道数
-                    if "/" in module_type:
-                        types = module_type.split("/")
-                        channels_per_type = channels // len(types)
-                        for t in types:
-                            if t in total_channels:
-                                # 只统计IO通道，忽略通信模块
-                                if t not in ['DP', 'CP', 'COM']:
-                                    total_channels[t] += channels_per_type
-                            else:
-                                total_channels["未录入"] += channels_per_type
-                    else:
-                        if module_type in total_channels:
-                            # 只统计IO通道，忽略通信模块
-                            if module_type not in ['DP', 'CP', 'COM']:
-                                total_channels[module_type] += channels
-                        else:
-                            # 非标准类型且非通信模块，归为未录入
-                            if module_type not in ['DP', 'CP', 'COM']:
-                                total_channels["未录入"] += channels
-                else:
-                    print(f"  槽位 {s_id}: {model} (未知类型)")
-        
-        # 打印通道统计信息
+                    is_io_counted_for_this_module = False
+                    # 检查模块是否为CPU且有sub_channels (例如LE5118的自带IO)
+                    if m_type == "CPU" and "sub_channels" in m_info:
+                        summary["CPU_count"] += 1
+                        for sub_t, sub_c in m_info["sub_channels"].items():
+                            if sub_t in summary: 
+                                summary[sub_t] += sub_c
+                                is_io_counted_for_this_module = True
+                            # else: # sub_t (like 'DI', 'DO' from CPU) should always be in summary
+                            #     summary["未录入_IO"] += sub_c 
+                    # 处理其他混合IO模块 (AI/AO, DI/DO)
+                    elif m_type in ["DI/DO", "AI/AO"] and "sub_channels" in m_info:
+                        for sub_t, sub_c in m_info["sub_channels"].items():
+                            if sub_t in summary: 
+                                summary[sub_t] += sub_c
+                                is_io_counted_for_this_module = True
+                    # 处理标准单类型IO模块
+                    elif m_type in summary and m_type not in ['DP', 'CP', 'COM', 'CPU', 'RACK']:
+                        summary[m_type] += m_ch
+                        is_io_counted_for_this_module = True
+                    
+                    # 处理其他非明确IO、非通信/DP/CPU/RACK的模块的通道数
+                    if not is_io_counted_for_this_module and m_type not in ['DP', 'CP', 'COM', 'CPU', 'RACK', '未录入']:
+                        summary["未录入_IO"] += m_ch
+                    elif m_type == "CPU" and "sub_channels" not in m_info: # 无自带IO的CPU（如果有这种）
+                        summary["CPU_count"] += 1
+                else: 
+                    print(f"  槽位 {s_id}: {model_name} (未知类型)")
+                    summary["未录入_IO"] += self.CHANNEL_DEFAULTS.get('未录入', 16)
+
         print("\n通道数统计:")
-        total_all = 0
-        # 只显示IO通道类型，并按顺序显示
-        for io_type in ['AI', 'AO', 'DI', 'DO', '未录入']:
-            count = total_channels.get(io_type, 0)
-            if count > 0:
-                print(f"{io_type} 通道数: {count}")
-                total_all += count
-        print(f"总通道数: {total_all}")  # 此处应该不包含DP、COM模块的通道
-        
-        # 保存当前配置
+        total_io = 0
+        main_io_types = ['AI', 'AO', 'DI', 'DO']
+        for ch_t in main_io_types: 
+            count = summary.get(ch_t,0) 
+            if count > 0: print(f"{ch_t} 通道数: {count}"); total_io+=count
+        if summary["未录入_IO"] > 0: print(f"未录入类型IO通道数: {summary['未录入_IO']}"); total_io += summary["未录入_IO"]
+        print(f"总IO通道数: {total_io}")
+        if summary["CPU_count"] > 0: print(f"CPU模块数量: {summary['CPU_count']}")
+
         self.current_configuration = config_dict
-        
-        # 生成通道位号列表
-        all_channel_addresses = self.generate_channel_addresses(config_dict, include_non_io=True)
-        
-        # 分离IO通道和非IO通道
-        io_channels = [addr for addr in all_channel_addresses if addr.get('is_io_channel', False)]
-        non_io_channels = [addr for addr in all_channel_addresses if not addr.get('is_io_channel', False)]
-        
-        # 打印通道统计信息与实际IO通道数比较
-        if hasattr(self, 'io_channel_count'):
-            if total_all != self.io_channel_count:
-                logger.warning(f"通道统计数量 ({total_all}) 与实际IO通道数 ({self.io_channel_count}) 不一致!")
-            else:
-                logger.info(f"通道统计数量与实际IO通道数一致: {total_all}")
-        
-        # 打印生成的通道位号列表 - 先显示IO通道，再显示通信模块
+        all_addrs = self.generate_channel_addresses(config_dict, True)
+        io_ch_addrs = [a for a in all_addrs if a.get('is_io_channel', False)]
+        non_io_addrs = [a for a in all_addrs if not a.get('is_io_channel', False)]
+        if hasattr(self, 'io_channel_count') and total_io != self.io_channel_count:
+            logger.warning(f"统计通道数({total_io})与生成地址IO数({self.io_channel_count})不一致!")
         print("\n-------- 通道位号列表 --------")
         print("序号\t模块名称\t模块类型\t通道位号\t类型")
-        
-        # 先显示所有IO通道
-        io_idx = 1
-        for addr_info in io_channels:
-            print(f"{io_idx}\t{addr_info['model']}\t{addr_info['type']}\t{addr_info['address']}\tIO通道")
-            io_idx += 1
-        
-        # 然后显示通信模块
-        if non_io_channels:
+        for i,addr in enumerate(io_ch_addrs,1): print(f"{i}\t{addr['model']}\t{addr['type']}\t{addr['address']}\tIO通道")
+        if non_io_addrs: 
             print("\n-------- 通信模块列表 (不计入IO通道) --------")
-            for idx, addr_info in enumerate(non_io_channels, 1):
-                print(f"{idx}\t{addr_info['model']}\t{addr_info['type']}\t{addr_info['address']}\t通信模块")
-        
-        print(f"\n总IO通道数: {len(io_channels)}, 非IO通道模块: {len(non_io_channels)}")
-        print("注意: 配置数据已记录，实际保存功能尚未实现，在实际项目中应保存到数据库或配置文件中。")
+            for idx, addr_info in enumerate(non_io_addrs, 1): print(f"{idx}\t{addr_info['model']}\t{addr_info['type']}\t{addr_info['address']}\t{addr_info.get('type','模块')}")
+        print(f"\n总IO通道数: {len(io_ch_addrs)}, 非IO通道模块: {len(non_io_addrs)}")
+        print("注意: 配置数据已记录，实际保存功能尚未实现...")
         print("--------------------------------------\n")
-        
-        # 实际项目中，这里应当实现真正的保存逻辑
-        # TODO: 实现配置保存到数据库或配置文件
-        
         return True
 
     def generate_channel_addresses(self, config: Dict[tuple, str], include_non_io: bool = True) -> List[Dict[str, Any]]:
-        """
-        根据模块配置生成通道位号列表
-        
-        通道位号格式为: 机架号_槽号_模块类型_通道号
-        例如: 1_2_AI_0 表示机架1，槽位2，模块类型AI，通道0
-        
-        Args:
-            config: 配置数据字典，格式为 {(rack_id, slot_id): model}
-            include_non_io: 是否包含非IO通道模块(如DP、COM模块)的记录，默认为True
-            
-        Returns:
-            List[Dict[str, Any]]: 通道位号列表，每个元素包含模块信息和通道位号
-        """
         channel_addresses = []
-        io_channel_count = 0  # 只计算实际IO通道数
-        
-        # 按机架和槽位排序处理所有模块
+        io_channel_count = 0
+        if not config: self.channel_addresses = []; self.io_channel_count = 0; return []
+
         sorted_config = sorted(config.items(), key=lambda x: (x[0][0], x[0][1]))
         
         for (rack_id, slot_id), model in sorted_config:
-            # 获取模块信息
             module_info = self.get_module_by_model(model)
-            if not module_info:
-                logger.warning(f"未找到模块 {model} 的信息，无法生成通道位号")
-                continue
+            if not module_info: continue
                 
             module_type = module_info.get('type', '未知')
-            channels_count = module_info.get('channels', 0)
+            channels_count = module_info.get('channels', 0) # 这是总通道数
             
-            # 处理没有通道的模块类型（通信模块）
-            if module_type in ['DP', 'CP', 'COM'] or channels_count == 0:
-                # 如果要包含非IO模块，则添加一个记录
-                if include_non_io:
-                    channel_addresses.append({
-                        'rack_id': rack_id,
-                        'slot_id': slot_id,
-                        'model': model,
-                        'type': module_type,
-                        'channel': 0,
-                        'address': f"{rack_id}_{slot_id}_{module_type}_0",
-                        'is_io_channel': False  # 标记为非IO通道
-                    })
-                continue
-                
-            # 为每个通道生成位号
-            for channel_idx in range(channels_count):
-                channel_address = f"{rack_id}_{slot_id}_{module_type}_{channel_idx}"
-                
-                channel_addresses.append({
-                    'rack_id': rack_id,
-                    'slot_id': slot_id,
-                    'model': model,
-                    'type': module_type,
-                    'channel': channel_idx,
-                    'address': channel_address,
-                    'is_io_channel': True  # 标记为IO通道
-                })
-                io_channel_count += 1
-                
-        # 记录实际IO通道数量
+            is_non_io_module_type = module_type in ['DP', 'CP', 'COM', 'RACK']
+            # 对于CPU，如果它有sub_channels，则它包含IO；如果没有，则它本身不产生IO地址（除非特殊规则）
+            has_io_sub_channels = "sub_channels" in module_info and any(st in ['AI','AO','DI','DO'] for st in module_info["sub_channels"].keys())
+            
+            # 如果是纯粹的非IO模块类型 (DP, COM, RACK) 且没有IO子通道
+            # 或者模块类型是CPU但没有IO子通道，且总通道数为0
+            if (is_non_io_module_type and not has_io_sub_channels) or \
+               (module_type == 'CPU' and not has_io_sub_channels and channels_count == 0):
+                if include_non_io: 
+                    channel_addresses.append({'rack_id': rack_id, 'slot_id': slot_id, 'model': model, 'type': module_type, 'channel': 0, 'address': f"{rack_id}_{slot_id}_{module_type}_0", 'is_io_channel': False})
+                continue 
+            
+            # 处理带sub_channels的模块 (包括CPU的自带IO, DI/DO, AI/AO)
+            if "sub_channels" in module_info:
+                for sub_type, sub_ch_count in module_info["sub_channels"].items():
+                    if sub_type in ['AI', 'AO', 'DI', 'DO']: # 只为IO子类型生成地址
+                        for i in range(sub_ch_count):
+                            # 地址格式中，对于CPU自带IO，使用 sub_type (DI/DO)
+                            # 对于扩展板上的混合模块，也使用 sub_type
+                            addr = f"{rack_id}_{slot_id}_{sub_type}_{i}"
+                            channel_addresses.append({'rack_id': rack_id, 'slot_id': slot_id, 'model': model, 'type': sub_type, 'channel': i, 'address': addr, 'is_io_channel': True})
+                            io_channel_count +=1
+                    # else: #如果sub_channels里有非IO类型，比如COM, DP等，这里可以特殊处理或忽略
+                    #    pass 
+            # 处理没有sub_channels但有总通道数的标准IO模块 (AI, AO, DI, DO)
+            elif module_type in ['AI', 'AO', 'DI', 'DO'] and channels_count > 0:
+                for channel_idx in range(channels_count):
+                    addr_module_type = module_type 
+                    channel_address = f"{rack_id}_{slot_id}_{addr_module_type}_{channel_idx}"
+                    channel_addresses.append({'rack_id': rack_id, 'slot_id': slot_id, 'model': model, 'type': addr_module_type, 'channel': channel_idx, 'address': channel_address, 'is_io_channel': True})
+                    io_channel_count += 1
+            # 对于没有sub_channels的CPU模块且channels_count > 0的情况（如果存在这种CPU）
+            # 或者其他未明确处理但被认为是IO的模块，如果需要，可以在这里添加逻辑
+            # else: logger.debug(f"模块 {model} 类型 {module_type} 有 {channels_count} 通道但未生成IO地址")
+
         logger.info(f"生成了 {len(channel_addresses)} 个通道位号记录，其中实际IO通道 {io_channel_count} 个")
-        
-        # 保存通道位号列表
         self.channel_addresses = channel_addresses
         self.io_channel_count = io_channel_count
-        
         return channel_addresses
-        
+
     def get_channel_addresses(self) -> List[Dict[str, Any]]:
         """
         获取当前配置的通道位号列表
