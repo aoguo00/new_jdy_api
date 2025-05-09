@@ -1053,7 +1053,7 @@ class IODataLoader:
             self.last_generated_addresses = generated_addrs
             self.last_generated_io_count = io_cnt
             logger.info(f"Configuration saved successfully. {message}")
-            else:
+        else:
             # 如果保存失败，错误信息应已由 PLCConfigurationHandler 或上述转换逻辑打印
             logger.warning(f"Save configuration failed. Reason: {message}")
         return success

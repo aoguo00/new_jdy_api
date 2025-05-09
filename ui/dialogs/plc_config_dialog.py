@@ -563,8 +563,8 @@ class PLCConfigDialog(QDialog):
         self.current_modules_pool = [
             m for m in self.current_modules_pool if m.get('unique_id') != selected_module_from_pool.get('unique_id')
         ]
-            self.update_current_config_table()
-            self.load_modules()
+        self.update_current_config_table()
+        self.load_modules()
 
     def remove_module(self):
         if not self.view.rack_tabs: return
@@ -588,7 +588,7 @@ class PLCConfigDialog(QDialog):
             if actual_system_type_for_rack == "LK":
                 QMessageBox.warning(self, "提示", "LK系统槽位1的DP模块是预设的，不能移除。")
             return
-            elif actual_system_type_for_rack == "LE_CPU":
+        elif actual_system_type_for_rack == "LE_CPU":
                 logger.info(f"允许从LE_CPU系统槽位1移除模块 (后续accept时会校验CPU是否存在)")
         
         module_to_remove_key = (current_rack_id, slot_id)
@@ -712,7 +712,7 @@ class PLCConfigDialog(QDialog):
         self.configured_modules = {}
         self.current_config = {} 
         self.next_module_id = 1
-            self.io_data_loader.set_devices_data(devices_data)
+        self.io_data_loader.set_devices_data(devices_data)
         rack_info_updated = self.io_data_loader.get_rack_info()
         self.system_type = rack_info_updated.get('system_type', "LK")
         logger.info(f"处理设备数据后，系统类型更新为: {self.system_type}")
