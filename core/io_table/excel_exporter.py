@@ -25,69 +25,78 @@ class BaseSheetExporter:
     """
     工作表导出器的基类，提供通用的列宽自适应方法。
     """
-
-    def _get_string_visual_length(self, text_str: str, is_bold: bool = False) -> float:
-        """计算字符串的视觉长度，考虑CJK字符和字体加粗。"""
-        visual_len = 0.0
-        if not text_str: # 处理空字符串或None的情况
-            return visual_len
-
-        for char in str(text_str): #确保是字符串
-            # CJK Unified Ideographs, Hangul Compatibility Jamo, Hangul Syllables, CJK Comp. Ideographs, CJK Comp. Forms, CJK Symbols and Punctuation, Fullwidth forms
-            if (('\u4e00' <= char <= '\u9fff') or      # 基本CJK表意文字 (常用汉字)
-                ('\u3130' <= char <= '\u318f') or      # 韩文兼容字母
-                ('\uac00' <= char <= '\ud7af') or      # 韩文音节
-                ('\uf900' <= char <= '\ufaff') or      # CJK兼容表意文字
-                ('\u2f00' <= char <= '\u2fdf') or      # 康熙部首
-                ('\u3000' <= char <= '\u303f') or      # CJK 符号和标点 (包括全角空格)
-                ('\uff01' <= char <= '\uff5e')):     # 全角ASCII、半角片假名和全角片假名块中的全角符号
-                visual_len += 2.0
-            else:
-                visual_len += 1.0
+    # 预定义的列宽配置
+    COLUMN_WIDTH_CONFIG = {
+        # PLC IO表的列宽配置
+        "序号": 5,
+        "模块名称": 10,
+        "模块类型": 10,
+        "供电类型（有源/无源）": 25,
+        "线制": 8,
+        "通道位号": 15,
+        "场站名": 20,
+        "变量名称（HMI）": 25,
+        "变量描述": 35,
+        "数据类型": 12,
+        "读写属性": 10,
+        "保存历史": 10,
+        "掉电保护": 10,
+        "量程低限": 12,
+        "量程高限": 12,
+        "SLL设定值": 12,
+        "SLL设定点位": 15,
+        "SLL设定点位_PLC地址": 25,
+        "SLL设定点位_通讯地址": 25,
+        "SL设定值": 12,
+        "SL设定点位": 15,
+        "SL设定点位_PLC地址": 25,
+        "SL设定点位_通讯地址": 25,
+        "SH设定值": 12,
+        "SH设定点位": 15,
+        "SH设定点位_PLC地址": 25,
+        "SH设定点位_通讯地址": 25,
+        "SHH设定值": 12,
+        "SHH设定点位": 15,
+        "SHH设定点位_PLC地址": 25,
+        "SHH设定点位_通讯地址": 25,
+        "LL报警": 10,
+        "LL报警_PLC地址": 20,
+        "LL报警_通讯地址": 20,
+        "L报警": 10,
+        "L报警_PLC地址": 20,
+        "L报警_通讯地址": 20,
+        "H报警": 10,
+        "H报警_PLC地址": 20,
+        "H报警_通讯地址": 20,
+        "HH报警": 10,
+        "HH报警_PLC地址": 20,
+        "HH报警_通讯地址": 20,
+        "维护值设定": 12,
+        "维护值设定点位": 20,
+        "维护值设定点位_PLC地址": 25,
+        "维护值设定点位_通讯地址": 25,
+        "维护使能开关点位": 20,
+        "维护使能开关点位_PLC地址": 25,
+        "维护使能开关点位_通讯地址": 26,
+        "PLC绝对地址": 20,
+        "上位机通讯地址": 20,
         
-        if is_bold:
-            visual_len *= 1.15  # 为粗体文本增加约15%的宽度，可以调整
-        return visual_len
+        # 第三方设备表的列宽配置
+        "MODBUS地址": 15,
+    }
 
     def _adjust_column_widths(self, ws: Worksheet, headers: List[str]):
         """
-        根据表头和内容自适应调整列宽，特别考虑CJK字符和全角符号，以及表头加粗。
+        根据预定义的配置设置列宽。
         """
-        if not openpyxl: # 确保 openpyxl 已加载
+        if not openpyxl:
             return
 
-        for col_idx, header_text_val in enumerate(headers): # col_idx is 0-based
+        for col_idx, header in enumerate(headers):
             column_letter = get_column_letter(col_idx + 1)
-            max_visual_len = 0.0
-
-            # --- 计算表头的视觉长度 (表头是加粗的) ---
-            header_visual_len = self._get_string_visual_length(str(header_text_val), is_bold=True)
-            if header_visual_len > max_visual_len:
-                max_visual_len = header_visual_len
-
-            # --- 遍历列中的数据单元格 (从第二行开始)，计算内容的最大视觉长度 ---
-            # 假设数据单元格默认非加粗
-            for row_idx in range(2, ws.max_row + 1): # 遍历所有有效行，从第2行开始
-                cell = ws.cell(row=row_idx, column=col_idx + 1) # col_idx 是0-based, cell列是1-based
-                if cell.value is not None:
-                    # cell_is_bold = cell.font and cell.font.b # 实际检查单元格是否加粗 (如果需要)
-                    cell_visual_len = self._get_string_visual_length(str(cell.value), is_bold=False) # 假设数据非粗体
-                    if cell_visual_len > max_visual_len:
-                        max_visual_len = cell_visual_len
-            
-            # --- 设置列宽 ---
-            padding = 6 # 字符宽度的填充
-            adjusted_width = max_visual_len + padding
-            
-            if max_visual_len == 0: # 如果列完全为空（或只有空字符串的表头且无数据）
-                adjusted_width = 10 # 为空列设置一个默认的最小宽度
-            
-            # 应用最小宽度限制
-            min_width = 8       # 保证列不会太窄
-            adjusted_width = max(min_width, adjusted_width)
-            # 最大宽度限制已被移除
-
-            ws.column_dimensions[column_letter].width = adjusted_width
+            # 使用预定义的列宽，如果没有预定义则使用默认值
+            width = self.COLUMN_WIDTH_CONFIG.get(header, 15)  # 默认宽度为15
+            ws.column_dimensions[column_letter].width = width
 
 
 class PLCSheetExporter(BaseSheetExporter):
