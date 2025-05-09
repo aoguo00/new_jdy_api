@@ -4,9 +4,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from contextlib import contextmanager
-
-# Import SQL definitions from functional areas
-from core.third_party_config_area.database.sql import TEMPLATE_SQL, CONFIGURED_DEVICE_SQL
+from .sql import TEMPLATE_SQL, CONFIGURED_DEVICE_SQL
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +15,10 @@ class DatabaseService:
     """
     _instance = None
     
-    def __new__(cls, *args, **kwargs): # Modified to accept *args, **kwargs for flexibility
+    def __new__(cls, *args, **kwargs): # 修改为接受 *args, **kwargs 以增加灵活性
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance.initialized = False
+            cls._instance.initialized = False # 实例是否已初始化标志，确保 __init__ 只执行一次
         return cls._instance
 
     def __init__(self, db_name: str = "data.db", db_subfolder: str = "db"):
@@ -29,12 +27,12 @@ class DatabaseService:
         :param db_name: 数据库文件名。
         :param db_subfolder: 存放数据库文件的子目录名（相对于项目根目录）。
         """
-        if not self.initialized:
+        if not self.initialized: # 防止重复初始化
             try:
-                # 项目根目录是 __file__ (database_service.py) -> core -> project_root
-                project_root = Path(__file__).resolve().parent.parent.parent 
+                # 项目根目录定位：当前文件 -> parent (database) -> parent (third_party_config_area) -> parent (core) -> parent (project_root)
+                project_root = Path(__file__).resolve().parent.parent.parent.parent
                 self.db_dir = project_root / db_subfolder
-                self.db_dir.mkdir(parents=True, exist_ok=True) # parents=True to create parent dirs if needed
+                self.db_dir.mkdir(parents=True, exist_ok=True) # parents=True 表示如果父目录不存在则一并创建，exist_ok=True 表示如果目录已存在则不抛出异常
                 self.db_path = self.db_dir / db_name
                 
                 logger.info(f"数据库文件路径设置为: {self.db_path}")
@@ -59,7 +57,7 @@ class DatabaseService:
         """
         logger.info("开始初始化所有数据库表结构...")
         try:
-            with self.transaction() as cursor: # Use transaction for all initializations
+            with self.transaction() as cursor: # 使用事务确保所有初始化操作的原子性
 
                 # 初始化第三方设备模板相关表
                 logger.info("初始化第三方设备模板相关表...")
@@ -88,17 +86,17 @@ class DatabaseService:
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            cursor.execute(sql, params or ())
+            cursor.execute(sql, params or ()) # 如果 params 为 None，则使用空元组，防止SQL错误
             conn.commit()
             return cursor
         except Exception as e:
             logger.error(f"执行SQL失败: {sql}, 参数: {params}, 错误: {e}", exc_info=True)
             if conn:
-                conn.rollback() # Rollback on error if connection was established
+                conn.rollback() # 如果连接已建立，在发生错误时回滚事务
             raise
         finally:
             if conn:
-                conn.close()
+                conn.close() # 确保连接在最后关闭
 
     def execute_many(self, sql: str, params_list: List[tuple]) -> sqlite3.Cursor:
         """
@@ -115,11 +113,11 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"批量执行SQL失败: {sql}, 错误: {e}", exc_info=True)
             if conn:
-                conn.rollback()
+                conn.rollback() # 如果连接已建立，在发生错误时回滚事务
             raise
         finally:
             if conn:
-                conn.close()
+                conn.close() # 确保连接在最后关闭
 
     def fetch_one(self, sql: str, params: tuple = None) -> Optional[Dict[str, Any]]:
         """查询单条记录，并以字典形式返回。"""
@@ -136,7 +134,7 @@ class DatabaseService:
             raise
         finally:
             if conn:
-                conn.close()
+                conn.close() # 确保连接在最后关闭
 
     def fetch_all(self, sql: str, params: tuple = None) -> List[Dict[str, Any]]:
         """查询多条记录，并以字典列表形式返回。"""
@@ -153,7 +151,7 @@ class DatabaseService:
             raise
         finally:
             if conn:
-                conn.close()
+                conn.close() # 确保连接在最后关闭
 
     @contextmanager
     def transaction(self):
@@ -176,7 +174,7 @@ class DatabaseService:
             raise
         finally:
             if conn:
-                conn.close()
+                conn.close() # 确保连接在事务结束时关闭
                 # logger.debug("数据库连接已关闭（事务结束）。")
 
 

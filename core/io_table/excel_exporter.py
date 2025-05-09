@@ -10,13 +10,14 @@ logger = logging.getLogger(__name__)
 try:
     import openpyxl
     from openpyxl.worksheet.worksheet import Worksheet
-    from openpyxl.styles import Font
+    from openpyxl.styles import Font, Alignment
     from openpyxl.utils import get_column_letter
 except ImportError:
     # 如果导入失败，定义一个占位符，以便类型提示不会引发错误
     # 实际的错误处理将在 IOExcelExporter 的 export_to_excel 方法中进行
     Worksheet = Any 
     Font = Any
+    Alignment = Any
     get_column_letter = Any
     openpyxl = None
 
@@ -125,9 +126,15 @@ class PLCSheetExporter(BaseSheetExporter):
         """
         if not openpyxl: return
 
+        left_alignment = None
+        if Alignment and Alignment is not Any: # Check if Alignment is properly imported
+            left_alignment = Alignment(horizontal='left', vertical='center')
+
         ws.append(self.headers_plc)
         for cell in ws[1]:
             cell.font = Font(bold=True)
+            if left_alignment:
+                cell.alignment = left_alignment
 
         for idx, point_data in enumerate(plc_io_data, 1):
             channel_io_type = point_data.get('type', '')
@@ -157,6 +164,9 @@ class PLCSheetExporter(BaseSheetExporter):
                 "", "", ""
             ]
             ws.append(row_data)
+            if left_alignment:
+                for cell in ws[ws.max_row]: # Apply to the newly added row
+                    cell.alignment = left_alignment
         
         self._adjust_column_widths(ws, self.headers_plc)
 
@@ -177,9 +187,15 @@ class ThirdPartySheetExporter(BaseSheetExporter):
         """
         if not openpyxl: return
 
+        left_alignment = None
+        if Alignment and Alignment is not Any: # Check if Alignment is properly imported
+            left_alignment = Alignment(horizontal='left', vertical='center')
+
         ws.append(self.headers_tp)
         for cell in ws[1]:
             cell.font = Font(bold=True)
+            if left_alignment:
+                cell.alignment = left_alignment
 
         for tp_point in points_in_template:
             row_data_tp = [
@@ -193,6 +209,9 @@ class ThirdPartySheetExporter(BaseSheetExporter):
                 ""  
             ]
             ws.append(row_data_tp)
+            if left_alignment:
+                for cell in ws[ws.max_row]: # Apply to the newly added row
+                    cell.alignment = left_alignment
         
         self._adjust_column_widths(ws, self.headers_tp)
 
@@ -220,18 +239,19 @@ class IOExcelExporter:
         logger.info(f"Received third_party_data type: {type(third_party_data)}, content: {third_party_data}")
 
         # 模块的导入移到这里，确保在尝试使用前检查
-        global openpyxl, Worksheet, Font, get_column_letter # 声明为全局，以便修改上面定义的占位符
+        global openpyxl, Worksheet, Font, get_column_letter, Alignment # 声明为全局，以便修改上面定义的占位符
         if openpyxl is None: # 检查是否在文件顶部成功导入
             try:
                 import openpyxl as opxl_main # 使用别名避免与全局变量冲突
                 from openpyxl.worksheet.worksheet import Worksheet as OpxlWorksheet
-                from openpyxl.styles import Font as OpxlFont
+                from openpyxl.styles import Font as OpxlFont, Alignment as OpxlAlignment
                 from openpyxl.utils import get_column_letter as opxl_get_column_letter
                 
                 # 更新全局变量
                 openpyxl = opxl_main
                 Worksheet = OpxlWorksheet
                 Font = OpxlFont
+                Alignment = OpxlAlignment
                 get_column_letter = opxl_get_column_letter
                 logger.info("openpyxl library loaded successfully.")
             except ImportError:

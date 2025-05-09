@@ -2,7 +2,6 @@
 
 import logging
 from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QMessageBox, QDialog, QFileDialog
-from PySide6.QtCore import Qt
 from typing import List, Dict, Any, Optional
 
 # API and old DeviceManager (if still needed for other parts, though ideally not for third_party)
@@ -11,7 +10,7 @@ from core.query_area import JianDaoYunAPI
 
 # Updated import for DatabaseService
 # from core.db_manipulate.db_manager import DBManager # Old DBManager
-from core.database.database_service import DatabaseService # New DatabaseService
+from core.third_party_config_area.database.database_service import DatabaseService # New DatabaseService
 
 # Import new services, DAOs, and DBManager for third_party_config_area
 from core.third_party_config_area.database.dao import TemplateDAO, ConfiguredDeviceDAO
@@ -22,8 +21,8 @@ from core.third_party_config_area.config_service import ConfigService
 from core.io_table import IODataLoader, IOExcelExporter
 
 # Import new data processors
-from core.project_list_area import format_project_data_for_ui, ProjectService
-from core.device_list_area import format_device_data_for_ui, DeviceService
+from core.project_list_area import ProjectService
+from core.device_list_area import DeviceService
 
 # UI Components
 from ui.components.query_area import QueryArea
