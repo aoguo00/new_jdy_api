@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt
 from typing import List, Dict, Any, Optional
 
 # API and old DeviceManager (if still needed for other parts, though ideally not for third_party)
-from core.query_area import JianDaoYunAPI, PLCHardwareService
+from core.query_area import JianDaoYunAPI
 # from core.devices import DeviceManager # Replaced by services for third_party logic
 
 # Updated import for DatabaseService
@@ -60,7 +60,7 @@ class MainWindow(QMainWindow):
             self.jdy_api = JianDaoYunAPI()
             # self.template_manager = TemplateManager() # Remove old one
             # self.config_service = DeviceConfigurationService() # Remove old one
-            self.plc_hardware_service = PLCHardwareService()
+
             self.project_service = ProjectService(self.jdy_api)
             self.device_service = DeviceService(self.jdy_api)
             

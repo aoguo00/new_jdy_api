@@ -6,7 +6,6 @@ from typing import Dict, List, Any, Optional
 from contextlib import contextmanager
 
 # Import SQL definitions from functional areas
-from core.query_area.database.sql import PLC_SQL
 from core.third_party_config_area.database.sql import TEMPLATE_SQL, CONFIGURED_DEVICE_SQL
 
 logger = logging.getLogger(__name__)
@@ -61,12 +60,6 @@ class DatabaseService:
         logger.info("开始初始化所有数据库表结构...")
         try:
             with self.transaction() as cursor: # Use transaction for all initializations
-                # 初始化PLC模块数据库表
-                logger.info("初始化PLC相关表...")
-                cursor.execute(PLC_SQL['CREATE_SERIES_TABLE'])
-                cursor.execute(PLC_SQL['CREATE_BACKPLANES_TABLE'])
-                cursor.execute(PLC_SQL['CREATE_MODULES_TABLE'])
-                logger.info("PLC相关表初始化完成。")
 
                 # 初始化第三方设备模板相关表
                 logger.info("初始化第三方设备模板相关表...")
