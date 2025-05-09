@@ -1,7 +1,7 @@
 """第三方设备区域组件"""
 from PySide6.QtWidgets import (QGroupBox, QVBoxLayout, QHBoxLayout,
                              QTableWidget, QTableWidgetItem, QHeaderView,
-                             QPushButton, QMessageBox, QFileDialog, QDialog)
+                             QPushButton, QMessageBox, QFileDialog, QDialog, QAbstractItemView)
 from datetime import datetime
 import logging
 
@@ -31,31 +31,30 @@ class ThirdPartyDeviceArea(QGroupBox):
         
     def setup_ui(self):
         """设置第三方设备区域UI"""
-        layout = QVBoxLayout(self) # 将self添加到QVBoxLayout
+        layout = QVBoxLayout(self)
         
-        # 第三方设备表格
         self.third_party_table = QTableWidget()
         self.third_party_table.setColumnCount(4)
         self.third_party_table.setHorizontalHeaderLabels(
-            ["设备模板", "设备前缀", "点位数量", "状态"] # "变量名"改为"设备前缀"
+            ["设备模板", "设备前缀", "点位数量", "状态"]
         )
+        self.third_party_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows) # 允许行选择
+        self.third_party_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection) # 设置为单选模式
 
-        # 设置列宽
         header = self.third_party_table.horizontalHeader()
         for i in range(4):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
-
         layout.addWidget(self.third_party_table)
 
-        # 按钮区域
         button_layout = QVBoxLayout()
-        
         self.third_party_btn = QPushButton("第三方设备点表配置")
         self.export_btn = QPushButton("导出点表")
-        self.clear_config_btn = QPushButton("清空配置")
+        self.delete_selected_config_btn = QPushButton("删除选中配置") # 新增按钮
+        self.clear_config_btn = QPushButton("清空所有配置") # 修改文本以示区分
 
         button_layout.addWidget(self.third_party_btn)
         button_layout.addWidget(self.export_btn)
+        button_layout.addWidget(self.delete_selected_config_btn) # 添加到布局
         button_layout.addWidget(self.clear_config_btn)
 
         layout.addLayout(button_layout)
@@ -65,6 +64,7 @@ class ThirdPartyDeviceArea(QGroupBox):
         """设置信号连接"""
         self.third_party_btn.clicked.connect(self.configure_third_party_device)
         self.export_btn.clicked.connect(self.export_points_table)
+        self.delete_selected_config_btn.clicked.connect(self.delete_selected_device_config) # 连接新按钮的信号
         self.clear_config_btn.clicked.connect(self.clear_device_config)
 
     def configure_third_party_device(self):
@@ -102,9 +102,45 @@ class ThirdPartyDeviceArea(QGroupBox):
             # 可选择通知用户，尽管这通常是后台更新
             # QMessageBox.warning(self, "更新错误", "无法刷新第三方设备列表。") 
 
+    def delete_selected_device_config(self):
+        """删除表格中当前选中的第三方设备配置。"""
+        selected_rows = self.third_party_table.selectedIndexes()
+        if not selected_rows:
+            QMessageBox.information(self, "提示", "请先在列表中选择要删除的设备配置。")
+            return
+
+        current_row = selected_rows[0].row()
+        template_name_item = self.third_party_table.item(current_row, 0)
+        device_prefix_item = self.third_party_table.item(current_row, 1)
+
+        if not template_name_item or not device_prefix_item:
+            QMessageBox.warning(self, "错误", "无法获取选中配置的详细信息。")
+            return
+
+        template_name = template_name_item.text()
+        device_prefix = device_prefix_item.text()
+
+        reply = QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除模板为 '{template_name}'，设备前缀为 '{device_prefix}' 的配置吗？\n此操作将删除其所有相关点位，且不可恢复。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                success = self.config_service.delete_device_configuration(template_name, device_prefix)
+                if success:
+                    self.update_third_party_table()
+                    QMessageBox.information(self, "删除成功", f"设备配置 '{template_name} ({device_prefix})' 已成功删除。")
+                else:
+                    QMessageBox.warning(self, "删除失败", f"未能删除设备配置 '{template_name} ({device_prefix})'。它可能已被删除或操作失败。")
+            except Exception as e:
+                logger.error(f"删除选中设备配置 (模板: {template_name}, 前缀: {device_prefix}) 时发生错误: {e}", exc_info=True)
+                QMessageBox.critical(self, "删除错误", f"删除设备配置 '{template_name} ({device_prefix})' 时发生错误: {str(e)}")
+
     def clear_device_config(self):
-        """清空设备配置"""
-        # 首先检查是否有内容可以清除
+        """清空所有设备配置"""
         if not self.config_service or not self.config_service.get_all_configured_points():
             QMessageBox.information(self, "提示", "没有已配置的设备点表可以清空。")
             return
@@ -113,18 +149,19 @@ class ThirdPartyDeviceArea(QGroupBox):
             self, "确认清空",
             "确定要清空所有已配置的第三方设备点表吗？此操作不可恢复。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No # 默认为否
+            QMessageBox.StandardButton.No
         )
 
         if reply == QMessageBox.StandardButton.Yes:
             try:
                 success = self.config_service.clear_all_configurations()
                 if success:
-                    self.update_third_party_table() # 刷新表格
+                    self.update_third_party_table()
                     QMessageBox.information(self, "已清空", "已清空所有第三方设备配置。")
+                # else分支可以省略，因为如果clear_all_configurations返回False，通常表示没有东西可清除或操作本身不抛错但无效
             except Exception as e:
-                logger.error(f"清空设备配置时发生错误: {e}", exc_info=True)
-                QMessageBox.critical(self, "错误", f"清空配置失败: {str(e)}")
+                logger.error(f"清空所有设备配置时发生错误: {e}", exc_info=True)
+                QMessageBox.critical(self, "清空错误", f"清空所有配置失败: {str(e)}")
 
     def export_points_table(self):
         """导出点表"""

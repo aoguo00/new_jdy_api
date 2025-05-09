@@ -30,7 +30,6 @@ class ConfiguredDevicePointModel(BaseModel):
     @computed_field
     @property
     def description(self) -> str:
-        """完整的描述 (例如 DEV01 温度)"""
-        # 简单的空格连接，如果规则复杂需要调整
-        connector = " " if self.device_prefix and self.desc_suffix else ""
-        return f"{self.device_prefix}{connector}{self.desc_suffix}" 
+        """完整的描述 (例如 DEV01温度)，设备前缀和描述后缀直接拼接。"""
+        # 设备前缀和描述后缀直接拼接，无额外连接符
+        return f"{self.device_prefix}{self.desc_suffix}" 

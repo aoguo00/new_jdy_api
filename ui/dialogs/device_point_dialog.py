@@ -65,9 +65,9 @@ class DevicePointDialog(QDialog):
         self.template_combo.currentIndexChanged.connect(self.template_selected)
         info_layout.addRow("设备模板:", self.template_combo)
 
-        # 变量名输入
+        # 恢复设备前缀输入框
         self.prefix_input = QLineEdit()
-        self.prefix_input.setPlaceholderText("请输入设备/变量名前缀")
+        self.prefix_input.setPlaceholderText("请输入设备/变量名前缀 (例如 T01)")
         self.prefix_input.textChanged.connect(self.update_preview)
         info_layout.addRow("设备前缀:", self.prefix_input)
 
@@ -198,8 +198,8 @@ class DevicePointDialog(QDialog):
         """模板选择改变时的处理"""
         if index < 0 or self.template_combo.count() == 0:
             self.template = None
-            if hasattr(self, 'prefix_input'): # Check if UI setup
-                 self.prefix_input.clear()
+            if hasattr(self, 'prefix_input'): # 检查UI是否已设置
+                 self.prefix_input.clear() # 选择无效模板时清空前缀输入
             self.update_point_table()
             self.update_preview()
             return
@@ -208,7 +208,8 @@ class DevicePointDialog(QDialog):
         if self.current_template_id is None:
             logger.warning("选中的模板没有关联的ID (itemData is None)")
             self.template = None
-            if hasattr(self, 'prefix_input'): self.prefix_input.clear()
+            if hasattr(self, 'prefix_input'):
+                self.prefix_input.clear() # 选择无效模板时清空前缀输入
             self.update_point_table()
             self.update_preview()
             return
@@ -220,14 +221,19 @@ class DevicePointDialog(QDialog):
             QMessageBox.critical(self, "错误", f"加载模板详情失败: {str(e)}")
             self.template = None
 
-        if self.template:
-            self.prefix_input.setText(self.template.prefix or "")
-        elif hasattr(self, 'prefix_input'):
-            self.prefix_input.clear()
+        # 当模板改变时，我们不清空用户已输入的前缀，除非没有有效模板
+        # 用户可能希望对不同模板使用相同的前缀
+        # 但是，如果之前没有有效模板，或者新选的模板也无效，则清空前缀
+        if not self.template:
             logger.warning(f"未能加载ID为 {self.current_template_id} 的模板详情。")
-        
+            if hasattr(self, 'prefix_input'):
+                self.prefix_input.clear() # 模板无效，清空前缀
+
+        # 注意：这里不再从 self.template.prefix 设置 prefix_input 的值
+        # self.prefix_input.setText(self.template.prefix or "") 这一行是错误的，因为模板的 prefix 已移除
+
         self.update_point_table()
-        self.update_preview()
+        self.update_preview() # 模板更改会触发预览更新，预览会使用当前 prefix_input 的内容
 
     def update_point_table(self):
         """更新点位表格"""
@@ -244,56 +250,99 @@ class DevicePointDialog(QDialog):
         """更新预览表格"""
         self.preview_table.setRowCount(0)
 
+        # 恢复 device_prefix 的获取
         device_prefix = ""
-        if hasattr(self, 'prefix_input'):
+        if hasattr(self, 'prefix_input'): # 确保 prefix_input 已创建
             device_prefix = self.prefix_input.text().strip()
 
-        if not self.template or not self.template.points:
-            return
-
-        for point_model in self.template.points:
-            row = self.preview_table.rowCount()
-            self.preview_table.insertRow(row)
-            
-            full_var_name = f"{device_prefix}_{point_model.var_suffix}" if device_prefix else point_model.var_suffix
-            # Generate description based on prefix and suffix
-            full_desc = f"{device_prefix} {point_model.desc_suffix}" if device_prefix and point_model.desc_suffix else (device_prefix or point_model.desc_suffix or "")
-
-            self.preview_table.setItem(row, 0, QTableWidgetItem(full_var_name))
-            self.preview_table.setItem(row, 1, QTableWidgetItem(full_desc))
-            self.preview_table.setItem(row, 2, QTableWidgetItem(point_model.data_type))
+        if self.template and self.template.points:
+            for point_model in self.template.points:
+                row = self.preview_table.rowCount()
+                self.preview_table.insertRow(row)
+                
+                # 使用设备前缀和模板后缀生成完整变量名和描述
+                full_var_name = f"{device_prefix}_{point_model.var_suffix}" if device_prefix else point_model.var_suffix
+                # 描述的拼接逻辑可以更细致：如果两部分都有，则拼接；只有一部分，则显示那一部分
+                desc_parts = []
+                if device_prefix:
+                    desc_parts.append(device_prefix)
+                if point_model.desc_suffix:
+                    desc_parts.append(point_model.desc_suffix)
+                full_desc = " ".join(desc_parts) if desc_parts else ""
+                
+                self.preview_table.setItem(row, 0, QTableWidgetItem(full_var_name))
+                self.preview_table.setItem(row, 1, QTableWidgetItem(full_desc))
+                self.preview_table.setItem(row, 2, QTableWidgetItem(point_model.data_type))
 
     def save_config(self):
         """保存配置"""
-        device_prefix = self.prefix_input.text().strip()
-        if not device_prefix:
-            QMessageBox.warning(self, "警告", "请输入设备/变量前缀。")
-            self.prefix_input.setFocus()
+        if not self.template:
+            QMessageBox.warning(self, "警告", "请先选择一个设备模板。")
             return
 
-        if not self.template:
-            QMessageBox.warning(self, "警告", "未选择有效的设备模板。")
-            return
+        # 恢复 device_prefix 的获取和校验
+        device_prefix = ""
+        if hasattr(self, 'prefix_input'):
+            device_prefix = self.prefix_input.text().strip()
         
-        if not self.template.points:
-             reply = QMessageBox.question(self, "确认操作",
-                                       f"模板 '{self.template.name}' 不包含任何点位。\n是否仍要以此空模板和前缀 '{device_prefix}' 应用配置？",
+        if not device_prefix:
+            QMessageBox.warning(self, "警告", "设备前缀不能为空。")
+            if hasattr(self, 'prefix_input'):
+                self.prefix_input.setFocus()
+            return
+
+        template_name = self.template.name # 获取模板名称
+
+        points_to_save = []
+        if self.template.points:
+            for point_model in self.template.points:
+                # 保存原始后缀，而不是拼接后的完整名称
+                points_to_save.append({
+                    "var_suffix": point_model.var_suffix,
+                    "desc_suffix": point_model.desc_suffix,
+                    "data_type": point_model.data_type
+                })
+        
+        if not points_to_save and self.template.points: # 模板有点位但生成列表为空
+             logger.warning(f"模板 {template_name} 有点位，但保存列表为空。前缀: {device_prefix}")
+        
+        if not points_to_save: # 如果模板本身为空，或处理后确实没有点位
+            reply = QMessageBox.question(self, "确认操作",
+                                       f"模板 '{template_name}' 不包含任何点位，或者处理后未生成点位。\\n是否仍要为设备前缀 '{device_prefix}' 应用此空配置？",
                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                        QMessageBox.StandardButton.No)
-             if reply == QMessageBox.StandardButton.No:
-                 return
+            if reply == QMessageBox.StandardButton.No:
+                return
+
         try:
-            logger.info(f"准备保存配置: 设备前缀='{device_prefix}', 模板='{self.template.name}'")
-            success = self.config_service.configure_points_from_template(self.template, device_prefix)
+            logger.info(f"准备保存配置: 设备前缀='{device_prefix}', 模板='{template_name}', 原始点位数={(len(self.template.points) if self.template.points else 0)}")
+            
+            # 检查配置是否已存在，以确定是创建还是更新操作
+            was_existing = self.config_service.does_configuration_exist(template_name, device_prefix)
+            
+            # 调用服务层保存配置
+            success, message = self.config_service.save_device_configuration(
+                template_name=template_name,
+                device_prefix=device_prefix, 
+                points_data=points_to_save 
+            )
             
             if success:
-                point_count_message = f"（模板包含 {len(self.template.points)} 个点位）" if self.template.points else "（模板为空）"
-                QMessageBox.information(self, "成功",
-                                        f"已成功为设备前缀 '{device_prefix}' 应用模板 '{self.template.name}'。\n{point_count_message}")
+                action_text = "更新" if was_existing else "创建"
+                point_count_message = f"（模板包含 {len(self.template.points or [])} 个原始点位）"
+                if not points_to_save: # 特别处理空配置的情况
+                    point_count_message = "（配置了0个点位）"
+                
+                QMessageBox.information(self, f"配置已{action_text}",
+                                        f"模板 '{template_name}' (设备前缀 '{device_prefix}') 的配置已成功{action_text}。\n{point_count_message}")
                 self.accept()
             else:
-                QMessageBox.warning(self, "保存失败", f"为设备前缀 '{device_prefix}' 应用模板 '{self.template.name}' 失败。\n请检查日志。")
+                # 服务层返回的message通常是给用户的错误信息
+                QMessageBox.critical(self, "保存失败", message)
 
-        except Exception as e:
-            logger.error(f"保存设备点表配置失败: {e}", exc_info=True)
+        except ValueError as ve: # 通常是服务层传递的唯一约束冲突等
+             logger.error(f"保存配置 (前缀:'{device_prefix}', 模板:'{template_name}') 失败 (ValueError): {ve}", exc_info=True)
+             QMessageBox.critical(self, "保存失败", str(ve))
+        except Exception as e: # 其他意外错误
+            logger.error(f"保存设备点表配置 (前缀:'{device_prefix}', 模板:'{template_name}') 时发生错误: {e}", exc_info=True)
             QMessageBox.critical(self, "错误", f"保存配置时发生未知错误: {str(e)}")

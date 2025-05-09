@@ -49,11 +49,12 @@ class TemplateDAO:
 
     # --- 模板操作 (更新对 db_service 的调用) --- 
     def create_template_with_points(self, template_data: DeviceTemplateModel) -> Optional[DeviceTemplateModel]:
-        """创建模板及其点位（事务性操作）。"""
+        """创建模板及其点位（事务性操作，已移除模板前缀处理）。"""
         try:
-            with self.db_service.transaction() as cursor: # Use db_service
+            with self.db_service.transaction() as cursor:
                 sql_tmpl = TEMPLATE_SQL['INSERT_TEMPLATE']
-                params_tmpl = (template_data.name, template_data.prefix)
+                # prefix 不再从 template_data 获取，SQL语句也已修改
+                params_tmpl = (template_data.name,)
                 cursor.execute(sql_tmpl, params_tmpl)
                 template_id = cursor.lastrowid
                 if not template_id:
@@ -62,8 +63,7 @@ class TemplateDAO:
                 if template_data.points:
                     sql_point = TEMPLATE_SQL['INSERT_POINT']
                     point_params_list = [
-                        (template_id, p.var_suffix, p.desc_suffix, p.data_type, 
-                         p.init_value, p.power_protection, p.forcible, p.soe_enabled)
+                        (template_id, p.var_suffix, p.desc_suffix, p.data_type)
                         for p in template_data.points
                     ]
                     cursor.executemany(sql_point, point_params_list)
@@ -71,16 +71,16 @@ class TemplateDAO:
             logger.info(f"模板 '{template_data.name}' 及 {len(template_data.points)} 个点位创建成功，ID: {template_id}")
             return self.get_template_by_id(template_id)
         
-        except sqlite3.IntegrityError as ie: # Keep sqlite3 import for this
+        except sqlite3.IntegrityError as ie:
             if "UNIQUE constraint failed: third_device_templates.name" in str(ie):
                 logger.warning(f"创建模板失败：名称 '{template_data.name}' 已存在。")
                 raise ValueError(f"模板名称 '{template_data.name}' 已存在。") from ie
             else:
                 logger.error(f"创建模板 '{template_data.name}' 时发生数据库完整性错误: {ie}", exc_info=True)
-                raise # Re-raise to be handled by service layer or UI
+                raise
         except Exception as e:
             logger.error(f"创建模板 '{template_data.name}' 时发生未知错误: {e}", exc_info=True)
-            raise # Re-raise
+            raise
 
     def get_template_by_id(self, template_id: int) -> Optional[DeviceTemplateModel]:
         """根据ID获取模板（包含点位）。"""
@@ -123,15 +123,16 @@ class TemplateDAO:
             return []
 
     def update_template_with_points(self, template_id: int, template_data: DeviceTemplateModel) -> Optional[DeviceTemplateModel]:
-        """更新模板及其点位（事务性操作）。"""
+        """更新模板及其点位（事务性操作，已移除模板前缀处理）。"""
         try:
-            with self.db_service.transaction() as cursor: # Use db_service
+            with self.db_service.transaction() as cursor:
                 sql_tmpl = TEMPLATE_SQL['UPDATE_TEMPLATE']
-                params_tmpl = (template_data.name, template_data.prefix, template_id)
+                # prefix 不再从 template_data 获取，SQL语句也已修改
+                params_tmpl = (template_data.name, template_id)
                 cursor.execute(sql_tmpl, params_tmpl)
                 if cursor.rowcount == 0:
                     logger.warning(f"更新模板失败：未找到ID为 {template_id} 的模板。")
-                    return None # Or raise specific not found error
+                    return None
 
                 sql_del_points = TEMPLATE_SQL['DELETE_POINTS_BY_TEMPLATE_ID']
                 cursor.execute(sql_del_points, (template_id,))
@@ -139,8 +140,7 @@ class TemplateDAO:
                 if template_data.points:
                     sql_point = TEMPLATE_SQL['INSERT_POINT']
                     point_params_list = [
-                        (template_id, p.var_suffix, p.desc_suffix, p.data_type, 
-                         p.init_value, p.power_protection, p.forcible, p.soe_enabled)
+                        (template_id, p.var_suffix, p.desc_suffix, p.data_type)
                         for p in template_data.points
                     ]
                     cursor.executemany(sql_point, point_params_list)
@@ -191,9 +191,9 @@ class ConfiguredDeviceDAO:
         logger.info("ConfiguredDeviceDAO 初始化完成，使用 DatabaseService。")
 
     def save_configured_points(self, points: List[ConfiguredDevicePointModel]) -> bool:
-        """批量保存已配置的设备点位。"""
+        """批量保存已配置的设备点位。如果发生唯一性约束冲突，则抛出ValueError。"""
         if not points:
-            return True # Nothing to save
+            return True 
         
         sql = CONFIGURED_DEVICE_SQL['INSERT_CONFIGURED_POINTS_BATCH']
         params_list = [
@@ -201,12 +201,20 @@ class ConfiguredDeviceDAO:
             for p in points
         ]
         try:
-            self.db_service.execute_many(sql, params_list) # Use db_service
+            self.db_service.execute_many(sql, params_list)
             logger.info(f"成功保存 {len(points)} 个配置点位。")
             return True
+        except sqlite3.IntegrityError as ie:
+            # 检查是否是由于 configured_device_points 表的 device_prefix 和 var_suffix 唯一约束导致的
+            # SQLite的错误信息通常是 "UNIQUE constraint failed: table_name.column_name1, table_name.column_name2"
+            # 或者更简单的 "UNIQUE constraint failed: configured_device_points.device_prefix, configured_device_points.var_suffix"
+            # 为简化，我们假设任何 IntegrityError 都可能与此相关，服务层可以进一步细化或UI给出通用提示
+            logger.error(f"保存配置点位时发生数据库完整性冲突 (可能是变量名重复): {ie}", exc_info=True)
+            # 抛出 ValueError，服务层可以捕获它并给出用户友好的提示
+            raise ValueError(f"保存点位失败：变量名冲突。设备前缀 '{points[0].device_prefix if points else ''}' 下可能存在重复的变量后缀。") from ie
         except Exception as e:
             logger.error(f"批量保存配置点位失败: {e}", exc_info=True)
-            return False
+            return False # 对于其他未知错误，返回False
 
     def get_all_configured_points(self) -> List[ConfiguredDevicePointModel]:
         """获取所有已配置的设备点位。"""
@@ -222,19 +230,50 @@ class ConfiguredDeviceDAO:
         """删除所有已配置的设备点位。"""
         sql = CONFIGURED_DEVICE_SQL['DELETE_ALL_CONFIGURED_POINTS']
         try:
-            cursor = self.db_service.execute(sql) # Use db_service
+            cursor = self.db_service.execute(sql)
             logger.info(f"成功删除 {cursor.rowcount if cursor else '未知数量'} 条配置点位。")
             return True
         except Exception as e:
             logger.error(f"删除所有配置点位失败: {e}", exc_info=True)
             return False
 
+    def delete_configured_points_by_template_and_prefix(self, template_name: str, device_prefix: str) -> bool:
+        """根据模板名称和设备前缀删除一组已配置的设备点位。"""
+        sql = CONFIGURED_DEVICE_SQL['DELETE_CONFIGURED_POINTS_BY_TEMPLATE_AND_PREFIX']
+        params = (template_name, device_prefix)
+        try:
+            cursor = self.db_service.execute(sql, params)
+            if cursor and cursor.rowcount > 0:
+                logger.info(f"成功删除模板 '{template_name}' 前缀为 '{device_prefix}' 的 {cursor.rowcount} 条配置点位。")
+                return True
+            elif cursor: # cursor is not None, but rowcount is 0 or less
+                logger.info(f"没有找到模板 '{template_name}' 前缀为 '{device_prefix}' 的配置点位进行删除 (影响行数: {cursor.rowcount})。")
+                return True # 操作成功，即使没有行被删除
+            else: # cursor is None (should not happen with current db_service.execute)
+                logger.warning("执行删除操作时数据库未返回有效的cursor对象。")
+                return False
+        except Exception as e:
+            logger.error(f"删除模板 '{template_name}' 前缀 '{device_prefix}' 的配置点位失败: {e}", exc_info=True)
+            return False
+
     def get_configuration_summary_raw(self) -> List[Dict[str, Any]]:
-        """获取配置摘要的原始数据 (按模板和前缀分组)。"""
+        """获取原始的配置摘要数据，按模板名称和设备前缀分组。"""
         sql = CONFIGURED_DEVICE_SQL['GET_CONFIGURATION_SUMMARY']
         try:
-            summary_rows = self.db_service.fetch_all(sql) # Use db_service
-            return summary_rows
+            rows = self.db_service.fetch_all(sql)
+            # logger.debug(f"配置摘要原始数据: {rows}") # Debugging line
+            return rows
         except Exception as e:
-            logger.error(f"获取配置摘要失败: {e}", exc_info=True)
-            return [] 
+            logger.error(f"获取配置摘要原始数据失败: {e}", exc_info=True)
+            return []
+
+    def does_configuration_exist(self, template_name: str, device_prefix: str) -> bool:
+        """检查具有指定模板名称和设备前缀的配置是否已存在。"""
+        sql = CONFIGURED_DEVICE_SQL['CHECK_CONFIGURATION_EXISTS']
+        params = (template_name, device_prefix)
+        try:
+            row = self.db_service.fetch_one(sql, params)
+            return row is not None # 如果查询到任何行，则存在
+        except Exception as e:
+            logger.error(f"检查配置是否存在失败 (模板: '{template_name}', 前缀: '{device_prefix}'): {e}", exc_info=True)
+            return False # 出错时保守地返回False，或根据需要抛出异常 

@@ -16,12 +16,10 @@ class TemplateManageDialogUI:
     """设备模板管理对话框的UI视图部分。此类负责UI元素的创建、布局和提供更新接口。"""
     def __init__(self):
         """构造函数：初始化UI类中将要使用的所有UI元素（声明为None，在setup_ui中实例化）。"""
-        # UI 元素将在这里声明，并在 setup_ui 中初始化
         self.template_list: 'QTableWidget' = None
         self.new_template_btn: 'QPushButton' = None
         self.delete_template_btn: 'QPushButton' = None
         self.template_name_input: 'QLineEdit' = None
-        self.template_prefix_input: 'QLineEdit' = None
         self.point_table: 'QTableWidget' = None
         self.add_point_btn: 'QPushButton' = None
         self.edit_point_btn: 'QPushButton' = None
@@ -35,25 +33,19 @@ class TemplateManageDialogUI:
         Args:
             dialog_instance (QDialog): 承载这些UI元素的主对话框实例 (TemplateManageDialog)。
         """
-        layout = QVBoxLayout(dialog_instance) # 在主对话框上设置主布局
+        layout = QVBoxLayout(dialog_instance)
 
-        # 模板列表和详情的水平布局
         h_layout = QHBoxLayout()
-
-        # 左侧模板列表
         template_list_group = QGroupBox("模板列表")
         template_list_layout = QVBoxLayout()
-
         self.template_list = QTableWidget()
         self.template_list.setColumnCount(1)
         self.template_list.setHorizontalHeaderLabels(["模板名称"])
         self.template_list.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.template_list.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        
         header = self.template_list.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         template_list_layout.addWidget(self.template_list)
-
         template_btn_layout = QHBoxLayout()
         self.new_template_btn = QPushButton("新建模板")
         self.delete_template_btn = QPushButton("删除模板")
@@ -64,15 +56,11 @@ class TemplateManageDialogUI:
         template_list_group.setLayout(template_list_layout)
         h_layout.addWidget(template_list_group)
 
-        # 右侧模板详情
         template_detail_group = QGroupBox("模板详情")
         template_detail_layout = QVBoxLayout()
-
         info_form = QFormLayout()
         self.template_name_input = QLineEdit()
         info_form.addRow("模板名称:", self.template_name_input)
-        self.template_prefix_input = QLineEdit()
-        info_form.addRow("模板前缀:", self.template_prefix_input)
         template_detail_layout.addLayout(info_form)
 
         point_list_group = QGroupBox("点位列表")
@@ -109,10 +97,9 @@ class TemplateManageDialogUI:
         h_layout.addWidget(template_detail_group)
 
         layout.addLayout(h_layout)
-
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         layout.addWidget(self.button_box)
-        logger.info("TemplateManageDialogUI: UI setup complete.")
+        logger.info("TemplateManageDialogUI: UI setup complete (prefix field removed).")
 
 class TemplateManageDialog(QDialog):
     """设备模板管理对话框 - 控制器部分。
@@ -140,9 +127,6 @@ class TemplateManageDialog(QDialog):
         if not self.template_service:
             logger.error("TemplateManageDialog 初始化失败: TemplateService 未提供。")
             QMessageBox.critical(self, "严重错误", "模板服务未能加载，对话框无法使用。")
-            # 可以选择禁用对话框或直接关闭
-            # self.setEnabled(False) 
-            # QTimer.singleShot(0, self.close) # 延迟关闭以允许消息框显示
             return
 
         self.current_template_id: Optional[int] = None
@@ -150,31 +134,25 @@ class TemplateManageDialog(QDialog):
         self.template_modified = False
 
         self.view = TemplateManageDialogUI()
-        self.view.setup_ui(self) # 将自身(QDialog实例)传递给UI类进行布局
-        
+        self.view.setup_ui(self)
         self._connect_signals()
         self.load_templates()
 
     def _connect_signals(self):
         """内部辅助方法：连接所有UI元素的信号到相应的槽函数。"""
-        if not self.view: return # 如果UI未成功初始化
-
+        if not self.view: return
         self.view.template_list.selectionModel().selectionChanged.connect(self.template_selected)
-        self.view.new_template_btn.clicked.connect(self.create_new_template_ui_flow) # 修改: 新的UI流程
+        self.view.new_template_btn.clicked.connect(self.create_new_template_ui_flow)
         self.view.delete_template_btn.clicked.connect(self.delete_template)
-        
         self.view.template_name_input.textChanged.connect(self.template_data_changed)
-        self.view.template_prefix_input.textChanged.connect(self.template_data_changed)
-        
         self.view.point_table.itemSelectionChanged.connect(self.update_point_buttons_state)
         self.view.add_point_btn.clicked.connect(self.add_point)
         self.view.edit_point_btn.clicked.connect(self.edit_point)
         self.view.delete_point_btn.clicked.connect(self.delete_point)
-        
         self.view.save_template_btn.clicked.connect(self.save_template)
         self.view.button_box.accepted.connect(self.accept)
         self.view.button_box.rejected.connect(self.reject)
-        logger.info("TemplateManageDialog: Signals connected.")
+        logger.info("TemplateManageDialog: Signals connected (prefix signal removed).")
 
     def load_templates(self):
         """从服务加载所有模板的列表，并将其填充到UI的模板表格中。
@@ -229,35 +207,18 @@ class TemplateManageDialog(QDialog):
 
     def template_selected(self, selected, deselected):
         """处理模板列表中用户选择发生变化时的逻辑。
-        
         主要步骤包括：
         1. 检查是否有未保存的修改，如果用户不想放弃则阻止切换。
         2. 获取选中模板的ID和详细信息。
-        3. 在UI的详情区域填充模板名称、前缀和点位列表。
+        3. 在UI的详情区域填充模板名称和点位列表。
         4. 更新相关按钮（如删除、添加点位）的启用状态。
         5. 重置模板已修改标志。
-        
         Args:
             selected (QItemSelection): 新选中的项。
             deselected (QItemSelection): 取消选中的项。
         """
         if not self.view: return
-        
-        # 先检查是否有未保存的更改
         if not self._prompt_unsaved_changes():
-            # 用户选择不放弃更改，需要阻止选择切换
-            # 尝试恢复之前的选择（这是一个复杂操作，简单处理：保持当前状态）
-            # 这里的一个简单策略是重新选择之前选中的项（如果 deselected 提供了信息）
-            # 或者，更简单的是，如果用户取消，则直接返回，不改变UI状态。
-            # 目前的 _prompt_unsaved_changes 如果用户选No，会返回False，这里直接return。
-            # 实际上，更稳妥的做法是禁用列表选择，直到用户保存或放弃。
-            # 为了简化，如果用户选择No，我们不改变选择，这需要UI层面支持或更复杂的逻辑。
-            # 假设：如果用户选择No, _prompt_unsaved_changes 返回 False，selectionChanged 信号会再次触发？
-            # 暂时简单处理：如果用户选择不继续，则函数返回，不更新任何东西。
-            # 需要测试这种交互是否符合预期。
-            # 一个更好的方法可能是，如果返回False，则在列表中重新选中 deselected 中的项。
-            # 但 selectionModel().selectionChanged 的 selected 和 deselected 参数比较复杂。
-            # 暂时保持简单：如果不继续，则不改变当前模板。
             current_row = -1
             if self.current_template_id:
                 for r in range(self.view.template_list.rowCount()):
@@ -266,21 +227,17 @@ class TemplateManageDialog(QDialog):
                         current_row = r
                         break
             if current_row != -1:
-                 # 尝试断开信号，改变选择，再连上，避免递归
                 self.view.template_list.selectionModel().selectionChanged.disconnect(self.template_selected)
                 self.view.template_list.selectRow(current_row)
                 self.view.template_list.selectionModel().selectionChanged.connect(self.template_selected)
             return
 
-
         selected_items = self.view.template_list.selectedItems()
         if not selected_items:
             self.clear_template_details_ui()
             return
-
         item = selected_items[0]
         if not item: return
-
         template_id = item.data(Qt.ItemDataRole.UserRole + 1)
         if not template_id:
             logger.warning("未找到选中模板的ID")
@@ -296,7 +253,6 @@ class TemplateManageDialog(QDialog):
             return
 
         self.view.template_name_input.setText(self.current_template.name or '')
-        self.view.template_prefix_input.setText(self.current_template.prefix or '') # 假设 prefix 仍然存在于模型中
 
         self.view.point_table.setRowCount(0)
         if self.current_template.points:
@@ -307,44 +263,33 @@ class TemplateManageDialog(QDialog):
                 self.view.point_table.setItem(i, 2, QTableWidgetItem(point_model.data_type or 'BOOL'))
         
         self.view.delete_template_btn.setEnabled(True)
-        self.view.add_point_btn.setEnabled(True) # 选中模板后，允许添加点位
+        self.view.add_point_btn.setEnabled(True)
         self.update_point_buttons_state()
-        
         self.view.save_template_btn.setEnabled(False)
         self.template_modified = False
-        logger.info(f"Template ID {template_id} selected and details loaded.")
+        logger.info(f"Template ID {template_id} selected and details loaded (prefix handling removed).")
 
     def clear_template_details_ui(self, for_new_template_creation=False):
-        """清空模板详情区域的UI元素（名称、前缀、点位表）并重置相关状态变量。
-        
+        """清空模板详情区域的UI元素（名称、点位表）并重置相关状态变量。
         Args:
-            for_new_template_creation (bool, optional): 如果为True，表示此次清空是为了创建新模板，
-                                                      会保留一些状态（如不重置current_template_id）并启用添加点位按钮。
-                                                      默认为False。
+            for_new_template_creation (bool, optional): 如果为True，表示此次清空是为了创建新模板...
         """
         if not self.view: return
-        
         self.view.template_name_input.clear()
-        self.view.template_prefix_input.clear() # 假设 prefix 仍然存在
         self.view.point_table.setRowCount(0)
-        
-        if not for_new_template_creation: # 只有在非创建新模板时才重置这些ID
+        if not for_new_template_creation:
             self.current_template_id = None
             self.current_template = None
-        
         self.template_modified = False 
-        
         self.view.delete_template_btn.setEnabled(False)
-        # 添加点位按钮的状态取决于是否正在创建新模板或已选中模板
         self.view.add_point_btn.setEnabled(for_new_template_creation or (self.current_template_id is not None))
         self.view.edit_point_btn.setEnabled(False)
         self.view.delete_point_btn.setEnabled(False)
         self.view.save_template_btn.setEnabled(False)
-        logger.debug("Template details UI cleared.")
+        logger.debug("Template details UI cleared (prefix field removed).")
 
     def create_new_template_ui_flow(self):
         """处理用户点击"新建模板"按钮的交互流程。
-        
         主要步骤：
         1. 检查并提示未保存的更改。
         2. 如果用户同意继续，则清空模板详情UI，为新模板输入做准备。
@@ -367,27 +312,17 @@ class TemplateManageDialog(QDialog):
         # 添加点位按钮已在 clear_template_details_ui 中根据 for_new_template_creation 启用
 
     def template_data_changed(self):
-        """当模板的元数据（如名称、前缀）在UI输入框中被修改时调用此方法。
+        """当模板的元数据（如名称）在UI输入框中被修改时调用此方法。
         它会标记模板已被修改 (self.template_modified = True)，
         并根据模板名称是否为空来启用或禁用保存按钮。
         """
         if not self.view: return
-        # 只有当有模板被加载（current_template_id 非空）或者正在创建新模板（current_template_id 为空）时
-        # 用户的输入才应该被视为有效修改。
-        
-        # if self.current_template_id is None and not self.view.template_name_input.hasFocus():
-            # 如果是新模板状态，但焦点不在名称输入框，可能是不小心触发的textChanged，忽略
-            # 这个判断可能过于复杂或不准确，暂时移除
-            # pass
-
         self.template_modified = True
-        # 只有当模板名称不为空时，才真正启用保存按钮
         can_save = bool(self.view.template_name_input.text().strip())
         self.view.save_template_btn.setEnabled(can_save)
 
     def delete_template(self):
         """处理用户点击"删除模板"按钮的逻辑。
-        
         主要步骤：
         1. 确认当前已选中一个模板。
         2. 弹出确认对话框，防止误删。
@@ -425,7 +360,6 @@ class TemplateManageDialog(QDialog):
 
     def add_point(self):
         """为当前正在编辑或新建的模板添加一个新的点位信息。
-        
         主要步骤：
         1. 检查是否可以添加点位（例如，新模板是否已输入名称）。
         2. 调用 _create_point_dialog 创建并显示点位编辑对话框。
@@ -453,7 +387,6 @@ class TemplateManageDialog(QDialog):
 
     def edit_point(self):
         """编辑当前在点位表格中选中的点位信息。
-        
         主要步骤：
         1. 确认用户已在点位表格中选中一个点位。
         2. 使用选中点位的现有数据预填充并显示点位编辑对话框 (_create_point_dialog)。
@@ -482,7 +415,6 @@ class TemplateManageDialog(QDialog):
 
     def delete_point(self):
         """从当前模板的点位列表中删除一个或多个选中的点位。
-        
         主要步骤：
         1. 确认用户已在点位表格中选中至少一个点位。
         2. 弹出确认对话框。
@@ -559,9 +491,8 @@ class TemplateManageDialog(QDialog):
 
     def save_template(self):
         """保存当前正在编辑的模板（可能是新建的或从列表中选中的已修改模板）。
-        
-       主要步骤：
-        1. 从UI获取模板名称、前缀（如果保留该功能）和所有点位数据。
+        主要步骤：
+        1. 从UI获取模板名称和所有点位数据。
         2. 进行必要的验证，如名称不能为空、新模板名称是否与现有冲突等。
         3. 根据当前状态（是新建模板还是更新现有模板）调用template_service的相应方法。
         4. 处理服务层返回的结果，显示成功或失败消息。
@@ -570,7 +501,6 @@ class TemplateManageDialog(QDialog):
         if not self.view or not self.template_service: return
 
         name = self.view.template_name_input.text().strip()
-        prefix = self.view.template_prefix_input.text().strip() # 假设 prefix 仍然存在
 
         if not name:
             QMessageBox.warning(self, "输入错误", "模板名称不能为空。")
@@ -585,15 +515,13 @@ class TemplateManageDialog(QDialog):
             })
         
         is_creating_new = self.current_template_id is None
-
-        # 验证：名称冲突检查
         try:
             existing_templates = self.template_service.get_all_templates()
             if is_creating_new:
                 if any(t.name == name for t in existing_templates):
                     QMessageBox.warning(self, "名称冲突", f"模板名称 '{name}' 已存在。")
                     return
-            elif self.current_template and self.current_template.name != name: # 重命名检查
+            elif self.current_template and self.current_template.name != name:
                 if any(t.name == name and t.id != self.current_template_id for t in existing_templates):
                     QMessageBox.warning(self, "名称冲突", f"模板名称 '{name}' 已被其他模板使用。")
                     return
@@ -602,7 +530,6 @@ class TemplateManageDialog(QDialog):
             QMessageBox.critical(self, "错误", f"无法验证模板名称唯一性: {e_fetch}")
             return
             
-        # 验证：新模板是否有点位（可选）
         if is_creating_new and not points_ui_data:
             reply = QMessageBox.question(self, "确认", "新模板不包含任何点位，确定要创建吗？",
                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -610,7 +537,6 @@ class TemplateManageDialog(QDialog):
             if reply == QMessageBox.StandardButton.No:
                 return
         
-        # 如果不是新建，且内容未修改，则不执行保存
         if not is_creating_new and not self.template_modified:
              QMessageBox.information(self, "提示", "模板内容未修改。")
              self.view.save_template_btn.setEnabled(False)
@@ -618,40 +544,37 @@ class TemplateManageDialog(QDialog):
 
         try:
             if is_creating_new:
-                logger.info(f"尝试创建新模板: 名称='{name}', 前缀='{prefix}'")
-                created_template = self.template_service.create_template(name, prefix, points_ui_data)
+                logger.info(f"尝试创建新模板: 名称='{name}'")
+                created_template = self.template_service.create_template(name, points_ui_data)
                 if created_template:
                     QMessageBox.information(self, "成功", f"模板 '{name}' 创建成功。")
                     self.template_modified = False 
                     self.view.save_template_btn.setEnabled(False)
-                    self.load_templates() # 重新加载以包含新模板并选中
-                    # 尝试选中新创建的模板
+                    self.load_templates()
                     for i in range(self.view.template_list.rowCount()):
                         item = self.view.template_list.item(i, 0)
                         if item and item.text() == created_template.name:
                             self.view.template_list.setCurrentItem(item)
-                            # template_selected 会被触发并更新 current_template_id 和 current_template
                             break
                 else:
                     QMessageBox.warning(self, "创建失败", f"创建模板 '{name}' 失败 (服务层返回 None)。")
-            else: # 更新现有模板
+            else: 
                 if self.current_template_id is None: 
                     QMessageBox.critical(self, "内部错误", "尝试更新但当前模板ID未设置。")
                     return
-                logger.info(f"尝试更新模板 ID: {self.current_template_id}, 名称='{name}', 前缀='{prefix}'")
+                logger.info(f"尝试更新模板 ID: {self.current_template_id}, 名称='{name}'")
                 updated_template = self.template_service.update_template(
-                    self.current_template_id, name, prefix, points_ui_data
+                    self.current_template_id, name, points_ui_data
                 )
                 if updated_template:
                     QMessageBox.information(self, "成功", f"模板 '{name}' 更新成功。")
                     self.template_modified = False 
                     self.view.save_template_btn.setEnabled(False)
-                    # 更新UI中列表项的名称（如果改变了）
                     current_row = self.view.template_list.currentRow()
                     if current_row >= 0:
                         list_item = self.view.template_list.item(current_row, 0)
                         if list_item: list_item.setText(updated_template.name)
-                    self.current_template = updated_template # 更新缓存的当前模板对象
+                    self.current_template = updated_template
                 else:
                     QMessageBox.warning(self, "更新失败", f"更新模板 '{name}' 失败 (服务层返回 None)。")
 

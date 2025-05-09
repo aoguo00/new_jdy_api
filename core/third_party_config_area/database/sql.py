@@ -6,7 +6,7 @@ TEMPLATE_SQL = {
     CREATE TABLE IF NOT EXISTS third_device_templates (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE, -- 模板名称需要唯一
-        prefix TEXT,
+        prefix TEXT, -- 保留此列以避免修改现有表结构，但应用层不再使用
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
@@ -19,22 +19,18 @@ TEMPLATE_SQL = {
         var_suffix TEXT NOT NULL,
         desc_suffix TEXT NOT NULL,
         data_type TEXT NOT NULL,
-        init_value TEXT DEFAULT '0',
-        power_protection INTEGER DEFAULT 0,
-        forcible INTEGER DEFAULT 1,
-        soe_enabled INTEGER DEFAULT 0,
         FOREIGN KEY(template_id) REFERENCES third_device_templates(id) ON DELETE CASCADE
     )
     ''',
     
     'INSERT_TEMPLATE': '''
-    INSERT INTO third_device_templates (name, prefix)
-    VALUES (?, ?)
+    INSERT INTO third_device_templates (name)
+    VALUES (?)
     ''',
     
     'UPDATE_TEMPLATE': '''
     UPDATE third_device_templates 
-    SET name = ?, prefix = ?, updated_at = CURRENT_TIMESTAMP
+    SET name = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
     ''',
     
@@ -48,31 +44,30 @@ TEMPLATE_SQL = {
     
     'INSERT_POINT': '''
     INSERT INTO third_device_template_points
-    (template_id, var_suffix, desc_suffix, data_type, init_value, power_protection, forcible, soe_enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    (template_id, var_suffix, desc_suffix, data_type)
+    VALUES (?, ?, ?, ?)
     ''',
 
     'GET_TEMPLATE_BY_ID': '''
-    SELECT id, name, prefix, created_at, updated_at
+    SELECT id, name, created_at, updated_at
     FROM third_device_templates
     WHERE id = ?
     ''',
     
     'GET_ALL_TEMPLATES': '''
-    SELECT id, name, prefix, created_at, updated_at
+    SELECT id, name, created_at, updated_at
     FROM third_device_templates
     ORDER BY name
     ''',
     
     'GET_TEMPLATE_BY_NAME': '''
-    SELECT id, name, prefix, created_at, updated_at
+    SELECT id, name, created_at, updated_at
     FROM third_device_templates
     WHERE name = ?
     ''',
 
     'GET_POINTS_BY_TEMPLATE_ID': '''
-    SELECT id, template_id, var_suffix, desc_suffix, data_type, 
-           init_value, power_protection, forcible, soe_enabled
+    SELECT id, template_id, var_suffix, desc_suffix, data_type
     FROM third_device_template_points
     WHERE template_id = ?
     '''
@@ -87,8 +82,8 @@ CONFIGURED_DEVICE_SQL = {
         var_suffix TEXT NOT NULL,    -- 来自模板的点位变量名后缀 (快照)
         desc_suffix TEXT NOT NULL,   -- 来自模板的点位描述后缀 (快照)
         data_type TEXT NOT NULL,     -- 来自模板的点位数据类型 (快照)
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP -- 配置生成时间
-        -- 可以考虑添加 UNIQUE (device_prefix, var_suffix) 约束，如果一个前缀下的变量后缀必须唯一
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 配置生成时间
+        UNIQUE (device_prefix, var_suffix) -- 确保设备前缀和变量后缀的组合是唯一的
     )
     ''',
 
@@ -108,10 +103,22 @@ CONFIGURED_DEVICE_SQL = {
     DELETE FROM configured_device_points
     ''',
 
+    'DELETE_CONFIGURED_POINTS_BY_TEMPLATE_AND_PREFIX': '''
+    DELETE FROM configured_device_points
+    WHERE template_name = ? AND device_prefix = ?
+    ''',
+
     'GET_CONFIGURATION_SUMMARY': '''
     SELECT template_name, device_prefix, COUNT(*) as point_count
     FROM configured_device_points
     GROUP BY template_name, device_prefix
     ORDER BY template_name, device_prefix
+    ''',
+
+    'CHECK_CONFIGURATION_EXISTS': '''
+    SELECT 1 
+    FROM configured_device_points
+    WHERE template_name = ? AND device_prefix = ?
+    LIMIT 1
     '''
 } 

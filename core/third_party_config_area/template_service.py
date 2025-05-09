@@ -42,8 +42,8 @@ class TemplateService:
             logger.error(f"服务层获取模板名称 '{name}' 失败: {e}", exc_info=True)
             return None
 
-    def create_template(self, name: str, prefix: Optional[str], points_data: List[Dict[str, Any]]) -> Optional[DeviceTemplateModel]:
-        """创建新模板及其点位。"""
+    def create_template(self, name: str, points_data: List[Dict[str, Any]]) -> Optional[DeviceTemplateModel]:
+        """创建新模板及其点位 (已移除模板前缀)。"""
         try:
             # Pydantic V2: model_validate (formerly from_dict/construct)
             points = [TemplatePointModel.model_validate(p_data) for p_data in points_data]
@@ -52,7 +52,8 @@ class TemplateService:
             raise ValueError(f"点位数据无效: {e}") from e
 
         try:
-            template_data = DeviceTemplateModel(name=name, prefix=prefix, points=points)
+            # DeviceTemplateModel 不再包含 prefix
+            template_data = DeviceTemplateModel(name=name, points=points)
             # 调用DAO进行事务性创建 (DAO会处理名称唯一性检查)
             return self.template_dao.create_template_with_points(template_data)
         except ValueError as ve:
@@ -61,8 +62,8 @@ class TemplateService:
             logger.error(f"服务层创建模板 '{name}' 失败: {e}", exc_info=True)
             return None
 
-    def update_template(self, template_id: int, name: str, prefix: Optional[str], points_data: List[Dict[str, Any]]) -> Optional[DeviceTemplateModel]:
-        """更新模板及其点位。"""
+    def update_template(self, template_id: int, name: str, points_data: List[Dict[str, Any]]) -> Optional[DeviceTemplateModel]:
+        """更新模板及其点位 (已移除模板前缀)。"""
         # 服务层检查：名称是否与其他模板冲突 (如果名称改变了)
         existing_template = self.get_template_by_id(template_id)
         if not existing_template:
@@ -79,7 +80,8 @@ class TemplateService:
             raise ValueError(f"点位数据无效: {e}") from e
 
         try:
-            template_update_data = DeviceTemplateModel(id=template_id, name=name, prefix=prefix, points=points)
+            # DeviceTemplateModel 不再包含 prefix
+            template_update_data = DeviceTemplateModel(id=template_id, name=name, points=points)
             # 调用DAO进行事务性更新 (DAO会再次检查名称唯一性以防并发问题)
             return self.template_dao.update_template_with_points(template_id, template_update_data)
         except ValueError as ve:
