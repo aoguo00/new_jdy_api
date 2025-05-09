@@ -737,13 +737,17 @@ class PLCConfigurationHandler:
                 if include_non_io: # 如果参数要求包含非IO模块的记录
                     channel_addresses.append({
                         'rack_id': rack_id, 'slot_id': slot_id, 'model': model_name, 
-                        'type': module_type, 'channel': 0, # 非IO模块通常channel索引为0或无意义
-                        'address': f"{rack_id}_{slot_id}_{module_type}_0", # 生成一个代表该模块的地址
-                        'is_io_channel': False
+                        'type': module_type, # 这是模块本身的类型，如 COM, DP, CPU
+                        'channel': 0, 
+                        'address': f"{rack_id}_{slot_id}_{module_type}_0", 
+                        'is_io_channel': False,
+                        'module_type': module_type  # 确保COM/DP模块的条目也有module_type，值为COM/DP
                     })
                 continue # 处理下一个配置项，不为此类模块生成具体的IO通道地址
 
             # 处理带有 sub_channels 的模块 (例如带IO的CPU, DI/DO混合模块, AI/AO混合模块)
+            # parent_module_type_for_sub 是父模块的类型，如 "CPU", "DI/DO"
+            parent_module_type_for_sub = module_info.get('type', '未知') 
             if "sub_channels" in module_info and isinstance(module_info["sub_channels"], dict):
                 for sub_type, sub_ch_count in module_info["sub_channels"].items():
                     # 只为实际的IO子类型 (AI, AO, DI, DO) 生成地址
@@ -752,16 +756,21 @@ class PLCConfigurationHandler:
                             addr = f"{rack_id}_{slot_id}_{sub_type}_{i}"
                             channel_addresses.append({
                                 'rack_id': rack_id, 'slot_id': slot_id, 'model': model_name, 
-                                'type': sub_type, 'channel': i, 'address': addr, 'is_io_channel': True
+                                'type': sub_type, # 这是子通道的类型 (DI, DO)
+                                'channel': i, 'address': addr, 'is_io_channel': True,
+                                'module_type': parent_module_type_for_sub # 父模块的类型 (CPU, DI/DO)
                             })
                             actual_io_channel_count += 1
             # 处理没有 sub_channels 定义的标准单一类型IO模块 (AI, AO, DI, DO)
+            # module_type 在这里是 AI, AO, DI, DO
             elif module_type in ['AI', 'AO', 'DI', 'DO'] and module_total_channels > 0:
                 for i in range(module_total_channels):
                     addr = f"{rack_id}_{slot_id}_{module_type}_{i}"
                     channel_addresses.append({
                         'rack_id': rack_id, 'slot_id': slot_id, 'model': model_name,
-                        'type': module_type, 'channel': i, 'address': addr, 'is_io_channel': True
+                        'type': module_type, # 通道类型与其模块类型相同
+                        'channel': i, 'address': addr, 'is_io_channel': True,
+                        'module_type': module_type # 对于简单IO模块，其父模块类型就是其本身的IO类型
                     })
                     actual_io_channel_count += 1
             # 对于其他类型模块（例如，定义了channels > 0 但没有sub_channels，也不是标准IO类型的模块），
@@ -1044,43 +1053,66 @@ class IODataLoader:
         
         if success:
             self.current_plc_config = config_dict.copy() # 存储已验证的配置副本
-            # 配置成功保存后，立即生成并存储对应的通道地址列表和IO总数
-            generated_addrs, io_cnt = self.config_handler.generate_channel_addresses_list(
-                self.current_plc_config, 
-                self.processed_enriched_devices, # 同样需要上下文 
-                True # 通常我们希望包含非IO模块的记录
+            # 配置成功保存后，调用自身的 generate_channel_addresses 方法，
+            # 该方法内部会调用 handler 并执行COM/DP过滤。
+            filtered_generated_addrs = self.generate_channel_addresses(
+                config_dict_to_process=self.current_plc_config, 
+                include_non_io=True # 传递给底层handler，允许其初步生成所有记录
             )
-            self.last_generated_addresses = generated_addrs
-            self.last_generated_io_count = io_cnt
-            logger.info(f"Configuration saved successfully. {message}")
+            self.last_generated_addresses = filtered_generated_addrs
+            
+            # 基于过滤后的地址列表，重新计算实际的IO通道数量
+            self.last_generated_io_count = sum(1 for addr in self.last_generated_addresses if addr.get('is_io_channel'))
+            
+            logger.info(f"Configuration saved successfully. {len(self.last_generated_addresses)} IO point table entries stored. Total IO channels: {self.last_generated_io_count}. Message: {message}")
         else:
             # 如果保存失败，错误信息应已由 PLCConfigurationHandler 或上述转换逻辑打印
             logger.warning(f"Save configuration failed. Reason: {message}")
         return success
 
     def generate_channel_addresses(self, config_dict_to_process: Dict[tuple, str], include_non_io: bool = True) -> List[Dict[str, Any]]:
+        """根据给定的配置字典生成通道地址列表，并进行过滤。
+        此方法会调用底层的 PLCConfigurationHandler 来生成原始的地址列表，
+        然后过滤掉所有源自 COM (通讯) 或 DP (Profibus-DP) 类型模块的条目，
+        以确保最终的IO点表只包含实际的IO模块通道。
         """
-        为给定的配置字典生成通道地址列表。
-        主要由 `save_configuration` 内部调用，但也可以被外部直接调用以预览地址（不更新实例状态）。
-        此方法不更新实例的 `self.last_generated_addresses` 或 `self.last_generated_io_count`。
-        
-        Args:
-            config_dict_to_process (Dict[tuple, str]): 要为其生成地址的PLC配置，
-                                                       格式为 `{(rack_id, slot_id): model_name}`。
-            include_non_io (bool, optional): 是否在结果中包含非IO模块的记录。默认为True。
-            
-        Returns:
-            List[Dict[str, Any]]: 生成的通道地址列表。
-        """
-        addrs, _ = self.config_handler.generate_channel_addresses_list(
-            config_dict_to_process, 
-            self.processed_enriched_devices, # 使用当前已处理的设备作为上下文信息
-            include_non_io
+        if not self.config_handler:
+            logger.error("PLCConfigurationHandler 未初始化，无法生成通道地址。")
+            return []
+
+        # 1. 从 PLCConfigurationHandler 获取原始的通道地址列表
+        # generate_channel_addresses_list 返回一个元组 (list_of_dicts, total_io_channels_count)
+        original_channel_addresses, _ = self.config_handler.generate_channel_addresses_list(
+            config_dict=config_dict_to_process,
+            processed_devices_context=self.processed_enriched_devices, # 传递处理过的设备上下文
+            include_non_io=include_non_io # 控制是否包含标记为非IO的通道
         )
-        return addrs
+
+        if not original_channel_addresses:
+            logger.info("PLCConfigurationHandler 未生成任何原始通道地址记录。")
+            return []
+
+        # 2. 过滤掉COM和DP模块的记录
+        #    在 PLCConfigurationHandler.generate_channel_addresses_list 的实现中，
+        #    返回的每个字典都应该包含 'module_type' 键，表示该通道所属模块的类型。
+        filtered_addresses: List[Dict[str, Any]] = []
+        skipped_com_dp_count = 0
+        for point_data in original_channel_addresses:
+            module_type = point_data.get('module_type', '').upper()
+            if module_type not in ["COM", "DP"]:
+                filtered_addresses.append(point_data)
+            else:
+                skipped_com_dp_count += 1
+                logger.debug(f"IO点表生成：已跳过模块类型为 '{module_type}' 的条目 (模块: {point_data.get('model', 'N/A')}, 地址: {point_data.get('address', 'N/A')})")
         
+        if skipped_com_dp_count > 0:
+            logger.info(f"已从IO点表数据中过滤掉 {skipped_com_dp_count} 条COM/DP模块相关记录。")
+        logger.info(f"原始生成 {len(original_channel_addresses)} 条地址记录，过滤COM/DP后剩余 {len(filtered_addresses)} 条用于最终IO点表。")
+        
+        return filtered_addresses
+
     def get_channel_addresses(self) -> List[Dict[str, Any]]:
-        """返回由最后一次成功的 `save_configuration` 调用所生成的通道地址列表。"""
+        """获取最后一次成功生成的（且已过滤COM/DP模块的）通道地址列表。"""
         return self.last_generated_addresses
 
 # --- 全局辅助函数 --- 

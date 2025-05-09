@@ -272,6 +272,7 @@ class PLCConfigDialogUI:
         if self.module_table: # 复用左侧表格的样式表
              config_table.setStyleSheet(self.module_table.styleSheet())
         config_table.setAlternatingRowColors(True)
+        
         rack_layout.addWidget(config_table)
         
         return rack_page
@@ -300,40 +301,52 @@ class PLCConfigDialogUI:
 
 class PLCConfigDialog(QDialog):
     """PLC配置对话框 - 支持多机架布局及不同系统类型（LK, LE_CPU）"""
-    def __init__(self, devices_data: List[Dict[str, Any]] = None, parent=None):
+    def __init__(self, io_data_loader: IODataLoader, devices_data: List[Dict[str, Any]] = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("PLC配置")
-        self.resize(1300, 800)
-        
-        # 初始化UI管理器
-        self.view = PLCConfigDialogUI(self)
-        
-        # 初始化本地变量 (这些是逻辑/状态相关的，保留在主类中)
-        self.current_config = {} 
-        self.io_data_loader = IODataLoader()
-        self.all_available_modules = [] 
-        self.current_modules_pool = []  
-        self.configured_modules = {}    
-        self.module_type_filter = '全部' 
-        self.next_module_id = 1         
-        self.system_type = "LK"
+        self.resize(1200, 700) # 根据需要调整大小
 
-        # 设置UI (现在委托给UI管理器)
-        self.view.setup_ui() # UI管理器会使用self (dialog)来设置布局
-        
-        self.setup_connections() # 信号槽连接逻辑保留在主类
-        
-        if devices_data:
-            logger.info("传入了设备数据，正在处理...")
-            self.set_devices_data(devices_data)
+        if not io_data_loader:
+            logger.error("PLCConfigDialog 初始化错误: IODataLoader 实例未提供。")
+            QMessageBox.critical(self, "严重错误", "IO数据服务未加载，对话框无法使用。")
+            # 在这种情况下，最好是禁用UI或立即关闭，但至少要阻止后续使用None对象
+            self.io_data_loader = None # 标记为None，后续逻辑应检查此项
+            # 为了简单起见，我们先假设它总是会被正确提供
+            # raise ValueError("IODataLoader instance is required.") 
         else:
-            logger.info("未传入设备数据，将使用默认IODataLoader状态创建机架和加载模块")
-            rack_info_initial = self.io_data_loader.get_rack_info()
-            self.system_type = rack_info_initial.get('system_type', "LK")
-            logger.info(f"无设备数据时，从IODataLoader获取的系统类型: {self.system_type}")
-            self.create_rack_tabs() 
-            self.load_modules()    
-        
+            self.io_data_loader = io_data_loader # 使用传入的实例
+
+        # 初始化UI管理器 (假设 PLCConfigDialogUI 类已正确定义)
+        self.view = PLCConfigDialogUI(self) # PLCConfigDialogUI 需要dialog实例
+        self.view.setup_ui() # 创建UI元素并布局
+
+        # ... (其他初始化，如 self.current_config, self.all_available_modules 等)
+        self.current_config = {}  # {(rack_id, slot_id): model_name}
+        self.all_available_modules = [] # 用于穿梭框的完整模块池
+        self.current_modules_pool = []  # 当前穿梭框左侧可见的模块
+        self.configured_modules = {}    # {(rack_id, slot_id): module_details_dict}
+        self.module_type_filter = '全部' # 模块类型过滤器
+        self.next_module_id = 1 # 用于生成临时的模块唯一ID（如果需要）
+        # self.system_type 和 self.rack_info 会在 set_devices_data 中根据 io_data_loader 更新
+        self.system_type = "LK" # 默认或从 io_data_loader 初始化获取
+        self.rack_info = {}    # 将由 set_devices_data 或 _initialize_dialog_state 填充
+
+        self.setup_connections() # 连接信号和槽
+
+        if devices_data is not None: # 如果构造时传入了设备数据
+            logger.info("传入了设备数据，正在处理...")
+            self.set_devices_data(devices_data) # 调用内部方法处理数据并刷新UI
+        else:
+            # 如果没有传入初始设备数据，也可能需要初始化一些基于io_data_loader默认状态的UI
+            logger.info("未传入初始设备数据，将基于IODataLoader当前状态初始化对话框。")
+            if self.io_data_loader: # 确保 io_data_loader 有效
+                self._initialize_dialog_state() # 使用当前（可能为空的）io_data_loader状态初始化
+                self.load_modules() # 加载可用模块到穿梭框
+            else:
+                # 如果 io_data_loader 也无效，UI可能需要显示错误或禁用
+                self.view.show_no_data_in_module_table("错误：IO数据服务不可用。")
+                logger.warning("PLCConfigDialog: io_data_loader无效且无初始设备数据，对话框可能无法正常工作。")
+
     def setup_ui(self):
         """主对话框的UI设置，现在主要委托给PLCConfigDialogUI实例。"""
         # self.view.setup_ui() # 已在 __init__ 中调用
@@ -368,6 +381,14 @@ class PLCConfigDialog(QDialog):
             page_widget = self.view.create_rack_tab_page(rack_id_iter, slots_per_rack_display, self.system_type)
             self.view.add_rack_tab(page_widget, f"机架 {rack_id_iter}")
             logger.debug(f"创建机架 {rack_id_iter} 选项卡，槽位数: {slots_per_rack_display}, 系统类型: {self.system_type}")
+
+            # 在这里为新创建的 config_table 连接双击信号
+            config_table_in_page = page_widget.findChild(QTableWidget, f"rack_table_{rack_id_iter}")
+            if config_table_in_page:
+                config_table_in_page.itemDoubleClicked.connect(self._handle_right_table_double_click)
+                logger.debug(f"已为机架 {rack_id_iter} 的配置表连接 itemDoubleClicked 信号")
+            else:
+                logger.warning(f"在机架 {rack_id_iter} 的tab页中未找到名为 rack_table_{rack_id_iter} 的配置表，无法连接双击信号")
         
         if rack_count > 0:
             self.initialize_slot1_conditionally()
@@ -434,6 +455,42 @@ class PLCConfigDialog(QDialog):
             self.view.cancel_button.clicked.connect(self.reject)
         # rack_tabs 和 rack_combo 的 currentChanged 连接已移至 create_rack_tabs 内部，
         # 因为它们是在那里动态创建的。
+
+        # 为左侧可用模块表添加双击事件
+        if self.view.module_table:
+            self.view.module_table.itemDoubleClicked.connect(self._handle_left_table_double_click)
+
+    def _handle_left_table_double_click(self, item: QTableWidgetItem):
+        """处理左侧可用模块列表双击事件，相当于点击添加按钮。"""
+        if not self.view.module_table or not item:
+            return
+        logger.debug(f"左侧模块表双击: {item.row()}, {item.column()}, text: {item.text()}")
+        current_row = item.row()
+        # 确保双击的不是提示信息的合并单元格
+        if self.view.module_table.rowSpan(current_row, 0) > 1: 
+            logger.debug("双击了提示信息行，忽略。")
+            return
+        self.view.module_table.setCurrentCell(current_row, 0) 
+        self.add_module() 
+
+    def _handle_right_table_double_click(self, item: QTableWidgetItem):
+        """处理右侧已配置模块列表双击事件，相当于点击移除按钮。"""
+        if not self.view.rack_tabs or not item:
+            return
+        
+        source_table = item.tableWidget() 
+        if not source_table:
+            logger.warning("右侧双击事件无法获取源表格")
+            return
+            
+        logger.debug(f"右侧配置表双击: {item.row()}, {item.column()}, text: {item.text()} in table {source_table.objectName()}")
+        current_row = item.row()
+        # 确保双击的不是空行或表头（尽管 setCurrentCell 可能处理部分情况）
+        if source_table.item(current_row, 0) is None or not source_table.item(current_row, 0).text():
+            logger.debug("右侧双击了空行或无效行，忽略。")
+            return
+        source_table.setCurrentCell(current_row, 0) 
+        self.remove_module() 
 
     def load_modules(self):
         try:

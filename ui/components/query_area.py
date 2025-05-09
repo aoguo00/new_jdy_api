@@ -55,7 +55,7 @@ class QueryArea(QGroupBox):
         # 创建按钮
         self.query_btn = QPushButton("查询")
         self.clear_btn = QPushButton("清空")
-        self.generate_btn = QPushButton("生成点表")
+        self.generate_btn = QPushButton("生成IO点表")
         
         # 创建HMI点表下拉菜单按钮
         self.upload_hmi_btn = QPushButton("上传HMI点表")

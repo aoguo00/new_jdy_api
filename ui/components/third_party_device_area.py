@@ -48,12 +48,10 @@ class ThirdPartyDeviceArea(QGroupBox):
 
         button_layout = QVBoxLayout()
         self.third_party_btn = QPushButton("第三方设备点表配置")
-        self.export_btn = QPushButton("导出点表")
         self.delete_selected_config_btn = QPushButton("删除选中配置") # 新增按钮
         self.clear_config_btn = QPushButton("清空所有配置") # 修改文本以示区分
 
         button_layout.addWidget(self.third_party_btn)
-        button_layout.addWidget(self.export_btn)
         button_layout.addWidget(self.delete_selected_config_btn) # 添加到布局
         button_layout.addWidget(self.clear_config_btn)
 
@@ -63,7 +61,6 @@ class ThirdPartyDeviceArea(QGroupBox):
     def setup_connections(self):
         """设置信号连接"""
         self.third_party_btn.clicked.connect(self.configure_third_party_device)
-        self.export_btn.clicked.connect(self.export_points_table)
         self.delete_selected_config_btn.clicked.connect(self.delete_selected_device_config) # 连接新按钮的信号
         self.clear_config_btn.clicked.connect(self.clear_device_config)
 
@@ -163,25 +160,32 @@ class ThirdPartyDeviceArea(QGroupBox):
                 logger.error(f"清空所有设备配置时发生错误: {e}", exc_info=True)
                 QMessageBox.critical(self, "清空错误", f"清空所有配置失败: {str(e)}")
 
-    def export_points_table(self):
-        """导出点表"""
-        # 使用新服务检查是否有数据可导出
-        if not self.config_service or not self.config_service.get_all_configured_points():
-            QMessageBox.warning(self, "警告", "没有可导出的第三方设备点位数据。")
-            return
+    # def export_points_table(self):
+    #     \"\"\"导出点表\"\"\"
+    #     # 使用新服务检查是否有数据可导出
+    #     if not self.config_service or not self.config_service.get_all_configured_points():
+    #         QMessageBox.warning(self, \"警告\", \"没有可导出的第三方设备点位数据。\")
+    #         return
 
-        default_filename = f"第三方设备点表_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        # 确保parent是self以便QFileDialog正确居中
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "保存点表", default_filename, "Excel Files (*.xlsx)"
-        )
-        if file_path:
-            try:
-                self.config_service.export_to_excel(file_path)
-                QMessageBox.information(self, "成功", f"点表已成功导出至 {file_path}")
-            except ValueError as ve: # 专门捕获来自服务的无数据错误
-                logger.warning(f"导出点表失败 (ValueError): {ve}")
-                QMessageBox.warning(self, "导出失败", str(ve))
-            except Exception as e:
-                logger.error(f"导出点表时发生未知错误: {e}", exc_info=True)
-                QMessageBox.critical(self, "导出失败", f"导出点表时发生未知错误: {str(e)}") 
+    #     default_filename = f\"第三方设备点表_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx\"
+    #     # 确保parent是self以便QFileDialog正确居中
+    #     file_path, _ = QFileDialog.getSaveFileName(
+    #         self, \"保存点表\", default_filename, \"Excel Files (*.xlsx)\"
+    #     )
+    #     if file_path:
+    #         try:
+    #             # self.config_service.export_to_excel(file_path) # 旧的调用
+    #             # 这里不应该再调用旧的 config_service.export_to_excel
+    #             # 统一导出已移至 MainWindow 的 _handle_generate_points
+    #             # 如果确实需要从这里触发一个仅第三方设备的导出（不推荐，因为与统一导出冲突），
+    #             # 那就需要重新思考如何调用 IOExcelExporter，并且 MainWindow 需要提供方法或信号。
+    #             # 目前，我们假设这个按钮的功能已被主窗口的统一导出按钮完全覆盖。
+    #             QMessageBox.information(self, \"提示\", \"此独立导出功能已由主窗口的统一导出替代。\")
+    #             # logger.info(f\"旧的第三方点表导出按钮被点击，但功能已迁移。{file_path}\") # 示例日志
+
+    #         except ValueError as ve: # 专门捕获来自服务的无数据错误
+    #             logger.warning(f\"导出点表失败 (ValueError): {ve}\")
+    #             QMessageBox.warning(self, \"导出失败\", str(ve))
+    #         except Exception as e:
+    #             logger.error(f\"导出点表时发生未知错误: {e}\", exc_info=True)
+    #             QMessageBox.critical(self, \"导出失败\", f\"导出点表时发生未知错误: {str(e)}\") 

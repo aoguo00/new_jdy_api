@@ -1,7 +1,7 @@
 """主窗口UI模块"""
 
 import logging
-from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QMessageBox
+from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QMessageBox, QDialog, QFileDialog
 from PySide6.QtCore import Qt
 from typing import List, Dict, Any, Optional
 
@@ -19,7 +19,7 @@ from core.third_party_config_area.template_service import TemplateService
 from core.third_party_config_area.config_service import ConfigService
 
 # 导入新的 IO 数据加载器
-from core.io_table import IODataLoader
+from core.io_table import IODataLoader, IOExcelExporter
 
 # Import new data processors
 from core.project_list_area import format_project_data_for_ui, ProjectService
@@ -51,6 +51,9 @@ class MainWindow(QMainWindow):
         # self.setWindowState(Qt.WindowState.WindowMaximized)
         # For development, a fixed reasonable size might be better than always maximized
         self.resize(1280, 800)
+
+        # 初始化当前场站名称
+        self.current_site_name: Optional[str] = None
 
         # 初始化核心服务和管理器
         try:
@@ -170,49 +173,115 @@ class MainWindow(QMainWindow):
 
     def _handle_generate_points(self):
         """处理生成点表请求"""
-        # Check if points are configured using the new service
-        if not self.tp_config_service or not self.tp_config_service.get_all_configured_points():
-            reply = QMessageBox.question(
-                self, "提示", 
-                "尚未配置第三方设备点位，是否现在配置?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes # Default to Yes
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                # Ensure third_party_area is initialized before calling its method
-                if hasattr(self, 'third_party_area') and self.third_party_area:
-                     self.third_party_area.configure_third_party_device()
+        logger.info("Attempting to generate IO table...")
+
+        # 1. 暂时完全注释掉关于第三方设备点位的检查和提示
+        # (这些检查现在由IOExcelExporter和后续的数据获取逻辑间接处理)
+
+        # 2. 获取PLC IO点数据
+        try:
+            if not self.io_data_loader:
+                logger.error("IODataLoader 未初始化，无法生成点表。")
+                QMessageBox.warning(self, "错误", "IO数据加载服务未准备就绪。")
+                return
+
+            plc_io_points = self.io_data_loader.get_channel_addresses()
+            
+            # 3. 获取第三方设备点位数据并进行转换
+            third_party_points_for_export: Optional[List[Dict[str, Any]]] = None
+            if self.tp_config_service:
+                try:
+                    configured_tp_models = self.tp_config_service.get_all_configured_points()
+                    if configured_tp_models:
+                        logger.info(f"从ConfigService获取了 {len(configured_tp_models)} 个第三方配置点位模型。")
+                        third_party_points_for_export = []
+                        for tp_model in configured_tp_models:
+                            # 将 ConfiguredDevicePointModel 转换为 IOExcelExporter 期望的字典格式
+                            # IOExcelExporter的第三方表头占位符: 
+                            # [\"点位名称\", \"地址/位号\", \"数据类型\", \"描述/备注\", \"所属设备\", \"功能位置\"]
+                            point_dict = {
+                                'template_name': tp_model.template_name,
+                                # 尝试映射到 "点位名称" 或 "设备位号"
+                                'point_name': tp_model.variable_name, # variable_name 是 device_prefix + var_suffix
+                                # 尝试映射到 "地址/位号"
+                                'address': tp_model.variable_name, # 暂时也用 variable_name 作为地址的占位
+                                # 尝试映射到 "数据类型"
+                                'data_type': tp_model.data_type,
+                                # 尝试映射到 "描述/备注"
+                                'description': tp_model.description, # description 是 device_prefix + desc_suffix
+                                # 尝试映射到 "所属设备"
+                                'device_name': tp_model.device_prefix,
+                                # "功能位置" 在 ConfiguredDevicePointModel 中没有直接对应，暂时留空
+                                'functional_location': '' 
+                            }
+                            third_party_points_for_export.append(point_dict)
+                        logger.info(f"成功转换 {len(third_party_points_for_export)} 个第三方点位用于导出。")
+                        # 在准备传递给Exporter前，打印转换后的列表内容
+                        if third_party_points_for_export:
+                            logger.info(f"转换后的第三方点位列表 (准备传递给Exporter): {third_party_points_for_export}")
+                        else:
+                            # 这理论上不应发生，因为上面已经检查了 configured_tp_models
+                            logger.info("转换后的第三方点位列表为空。") 
+                    else:
+                        logger.info("ConfigService未返回任何第三方配置点位。")
+                        third_party_points_for_export = None # 确保如果没有数据，则为None
+                except Exception as e_tp_fetch:
+                    logger.error(f"获取或转换第三方设备点位数据时出错: {e_tp_fetch}", exc_info=True)
+                    QMessageBox.warning(self, "第三方数据错误", f"获取第三方设备点位数据失败: {str(e_tp_fetch)}")
+                    # 根据需求决定是否在此处 return，或者允许仅导出PLC数据（如果存在）
+                    # return # 如果获取第三方数据失败则不继续
+
+            # 检查是否有数据可导出
+            if not plc_io_points and not third_party_points_for_export:
+                logger.info("没有已配置的PLC IO点或第三方设备点位可供导出。")
+                QMessageBox.information(self, "提示", "没有可导出的IO点数据。")
+                return
+
+            log_message_parts = []
+            if plc_io_points:
+                log_message_parts.append(f"{len(plc_io_points)} 个PLC IO点")
+            if third_party_points_for_export:
+                log_message_parts.append(f"{len(third_party_points_for_export)} 个第三方设备点位")
+            
+            logger.info(f"准备导出: {', '.join(log_message_parts)}.")
+            
+            # 使用 QFileDialog 让用户选择保存路径和文件名
+            # pylint: disable=line-too-long
+            file_path, _ = QFileDialog.getSaveFileName(self, 
+                                                       "保存IO点表", 
+                                                       "IO_Table.xlsx", 
+                                                       "Excel 文件 (*.xlsx);;所有文件 (*)")
+            # pylint: enable=line-too-long
+
+            if file_path:
+                exporter = IOExcelExporter()
+                success = exporter.export_to_excel(plc_io_data=plc_io_points, 
+                                                   third_party_data=third_party_points_for_export,
+                                                   filename=file_path,
+                                                   site_name=self.current_site_name)
+                if success:
+                    QMessageBox.information(self, "成功", f"IO点表已成功导出到:\n{file_path}")
                 else:
-                     QMessageBox.warning(self, "错误", "第三方配置区域未初始化。")
-        else:
-            # Points are already configured, proceed with generation?
-            # This is where the actual generation logic using tp_config_service would go.
-            try:
-                if not self.tp_config_service:
-                     raise Exception("配置服务未初始化")
-                
-                # Example: Get data and maybe save to a default file or show preview
-                points = self.tp_config_service.get_all_configured_points()
-                if not points:
-                    QMessageBox.information(self, "提示", "没有已配置的点位可供生成点表。")
-                    return
-                    
-                # TODO: Define what "Generate Points Table" actually does.
-                # For now, just show a success message with point count.
-                QMessageBox.information(self, "生成点表 (占位符)", f"已获取 {len(points)} 个配置点位。\n(实际生成逻辑待实现)")
-                
-                # Example for future: Export to a default file
-                # default_path = "generated_points.xlsx"
-                # self.tp_config_service.export_to_excel(default_path)
-                # QMessageBox.information(self, "成功", f"点表已生成到 {default_path}")
-                
-            except Exception as e:
-                logger.error(f"生成点表时出错: {e}", exc_info=True)
-                QMessageBox.critical(self, "错误", f"生成点表失败: {str(e)}")
+                    # IOExcelExporter 内部已经log了 openpyxl 未安装的错误
+                    # 此处给一个通用失败消息
+                    QMessageBox.warning(self, "导出失败", "IO点表导出失败。\n请检查日志获取详细信息。")
+            else:
+                logger.info("用户取消了文件保存操作。")
+
+        except ImportError as e_import: # 主要捕获 openpyxl 的 ImportError
+            logger.error(f"导出Excel所需的库缺失: {e_import}", exc_info=True)
+            QMessageBox.critical(self, "依赖缺失", f"导出Excel功能需要 openpyxl 库。\n请通过 pip install openpyxl 安装它。\n错误详情: {e_import}")
+        except Exception as e:
+            logger.error(f"处理生成IO点表请求时出错: {e}", exc_info=True)
+            QMessageBox.critical(self, "错误", f"生成IO点表失败: {str(e)}")
 
     def _handle_project_selected(self, site_name: str):
         """处理项目选择"""
         try:
+            # 存储当前选择的场站名称
+            self.current_site_name = site_name
+            logger.info(f"当前选定的场站已更新为: {self.current_site_name}")
+
             # 执行查询 (调用 DeviceService)
             if not self.device_service:
                 raise Exception("设备服务未初始化")
@@ -298,25 +367,32 @@ class MainWindow(QMainWindow):
         try:
             logger.info("正在打开PLC配置对话框...")
             
-            # 获取当前设备数据（原始数据，不做处理）
+            if not self.io_data_loader:
+                logger.error("MainWindow: IODataLoader 未初始化，无法打开PLC配置对话框。")
+                QMessageBox.critical(self, "错误", "IO数据加载服务未准备就绪，无法配置PLC。")
+                return
+
             current_devices = self.get_current_devices()
-            if current_devices:
-                logger.info(f"成功获取 {len(current_devices)} 个设备数据")
-            else:
-                logger.warning("没有获取到设备数据，请先查询并选择场站")
-                QMessageBox.information(self, "提示", "没有设备数据，请先查询并选择场站")
+            if not current_devices:
+                # logger.warning("没有获取到设备数据，请先查询并选择场站") # 这条日志在get_current_devices内部有了
+                QMessageBox.information(self, "提示", "没有设备数据可用于PLC配置，请先查询并选择场站。")
                 return
                 
-            # 创建并显示对话框，传递设备数据
-            dialog = PLCConfigDialog(devices_data=current_devices, parent=self)
+            logger.info(f"成功获取 {len(current_devices)} 个设备数据，准备传递给PLC配置对话框。")
+                
+            # 创建并显示对话框，传递 MainWindow 的 IODataLoader 实例和设备数据
+            dialog = PLCConfigDialog(io_data_loader=self.io_data_loader, 
+                                     devices_data=current_devices, 
+                                     parent=self)
             
-            # 执行对话框
             result = dialog.exec()
             
-            if result:
-                logger.info("PLC配置对话框已关闭并保存配置")
+            if result == QDialog.DialogCode.Accepted: # 检查对话框是否被接受
+                logger.info("PLC配置对话框已确认并关闭。配置已通过共享的IODataLoader保存。")
+                # 此处无需再调用 dialog.get_current_configuration() 或 io_data_loader.save_configuration()
+                # 因为这些操作应该在 PLCConfigDialog.accept() 内部完成，并作用于共享的 io_data_loader 实例
             else:
-                logger.info("PLC配置对话框已取消")
+                logger.info("PLC配置对话框已取消或关闭，未保存配置。")
                 
         except Exception as e:
             logger.error(f"显示PLC配置对话框时发生错误: {e}", exc_info=True)
