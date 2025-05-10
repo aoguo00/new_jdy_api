@@ -239,13 +239,13 @@ class PLCSheetExporter(BaseSheetExporter):
         },
         "AO": {
             "plc_allocations": [
-                ("maint_val_set", "allocate_real_address", "maint_val_set_plc_addr"),
-                ("maint_enable", "allocate_bool_address", "maint_enable_plc_addr"),
+                # ("maint_val_set", "allocate_real_address", "maint_val_set_plc_addr"),
+                # ("maint_enable", "allocate_bool_address", "maint_enable_plc_addr"),
             ],
             "excel_formulas": [], 
             "address_mapping": [
-                ('maint_val_set_plc_addr', "维护值设定点位_PLC地址", "维护值设定点位_通讯地址"),
-                ('maint_enable_plc_addr', "维护使能开关点位_PLC地址", "维护使能开关点位_通讯地址"),
+                # ('maint_val_set_plc_addr', "维护值设定点位_PLC地址", "维护值设定点位_通讯地址"),
+                # ('maint_enable_plc_addr', "维护使能开关点位_PLC地址", "维护使能开关点位_通讯地址"),
             ]
         },
         "DI": {
