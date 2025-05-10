@@ -170,9 +170,15 @@ class MainWindow(QMainWindow):
         # self.config_service.clear_all_configurations()
         # self.third_party_area.update_third_party_table()
 
-    def _handle_generate_points(self):
+    def _handle_generate_points(self, site_no: str):
         """处理生成点表请求"""
-        logger.info("Attempting to generate IO table...")
+        logger.info(f"Attempting to generate IO table for site_no: {site_no}")
+
+        # 新增：检测PLC配置是否为空
+        if not self.io_data_loader or not self.io_data_loader.current_plc_config:
+            logger.warning("PLC configuration is empty. Aborting IO table generation.")
+            QMessageBox.warning(self, "提示", "请先完成PLC模块配置，再生成IO点表。")
+            return
 
         # 1. 暂时完全注释掉关于第三方设备点位的检查和提示
         # (这些检查现在由IOExcelExporter和后续的数据获取逻辑间接处理)
@@ -257,7 +263,8 @@ class MainWindow(QMainWindow):
                 success = exporter.export_to_excel(plc_io_data=plc_io_points, 
                                                    third_party_data=third_party_points_for_export,
                                                    filename=file_path,
-                                                   site_name=self.current_site_name)
+                                                   site_name=self.current_site_name,
+                                                   site_no=site_no)
                 if success:
                     QMessageBox.information(self, "成功", f"IO点表已成功导出到:\n{file_path}")
                 else:

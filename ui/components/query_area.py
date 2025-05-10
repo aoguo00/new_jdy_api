@@ -1,6 +1,6 @@
 """查询区域组件"""
 from PySide6.QtWidgets import (QGroupBox, QVBoxLayout, QHBoxLayout,
-                             QLabel, QLineEdit, QPushButton, QMenu)
+                             QLabel, QLineEdit, QPushButton, QMenu, QMessageBox)
 from PySide6.QtCore import Signal
 
 class QueryArea(QGroupBox):
@@ -8,7 +8,7 @@ class QueryArea(QGroupBox):
     # 定义信号
     query_requested = Signal(str, str)  # 项目编号, 场站编号
     clear_requested = Signal()
-    generate_points_requested = Signal()
+    generate_points_requested = Signal(str)  # 修改信号以传递场站编号
     upload_hmi_requested = Signal(str)  # HMI类型
     upload_plc_requested = Signal(str)  # PLC类型
     plc_config_requested = Signal()  # PLC配置信号
@@ -94,7 +94,7 @@ class QueryArea(QGroupBox):
         """设置信号连接"""
         self.query_btn.clicked.connect(self._on_query_clicked)
         self.clear_btn.clicked.connect(self.clear_requested)
-        self.generate_btn.clicked.connect(self.generate_points_requested)
+        self.generate_btn.clicked.connect(self._on_generate_points_clicked)
 
         # 设置HMI菜单动作
         hmi_menu = self.upload_hmi_btn.menu()
@@ -112,6 +112,14 @@ class QueryArea(QGroupBox):
         project_no = self.project_input.text().strip()
         site_no = self.station_input.text().strip()
         self.query_requested.emit(project_no, site_no)
+
+    def _on_generate_points_clicked(self):
+        """处理生成IO点表按钮点击"""
+        site_no = self.station_input.text().strip()
+        if not site_no:
+            QMessageBox.warning(self, "警告", "场站编号不能为空！")
+            return
+        self.generate_points_requested.emit(site_no)
 
     def clear_inputs(self):
         """清空输入框"""
