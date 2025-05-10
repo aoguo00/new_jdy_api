@@ -19,14 +19,15 @@ class ConfigService:
         self.config_dao = config_dao
         logger.info("ConfigService 初始化完成。")
 
-    def save_device_configuration(self, template_name: str, device_prefix: str, points_data: List[Dict[str, Any]]) -> tuple[bool, str]:
-        """根据UI提供的原始点位数据、模板名称和设备前缀保存设备配置。
+    def save_device_configuration(self, template_name: str, variable_prefix: str, description_prefix: str, points_data: List[Dict[str, Any]]) -> tuple[bool, str]:
+        """根据UI提供的原始点位数据、模板名称、变量前缀和描述前缀保存设备配置。
 
         Args:
             template_name (str): 配置所基于的模板名称。
-            device_prefix (str): 用户为这批点位输入的设备前缀。
+            variable_prefix (str): 用户为这批点位输入的变量前缀。
+            description_prefix (str): 用户为这批点位输入的描述前缀。
             points_data (List[Dict[str, Any]]): 来自模板的点位原始数据列表，
-                                                每个字典包含 'var_suffix', 'desc_suffix', 'data_type'。
+                                                每个字典包含 'var_suffix', 'desc_suffix', 'data_type'等。
         Returns:
             tuple[bool, str]: (成功标志, 消息字符串)
         """
@@ -34,28 +35,19 @@ class ConfigService:
             msg = "模板名称不能为空。"
             logger.warning(f"保存设备配置失败: {msg}")
             return False, msg
-        # if not device_prefix: # 允许设备前缀为空，移除此校验
-        #     msg = "设备前缀不能为空。"
-        #     logger.warning(f"保存设备配置失败: {msg}")
-        #     return False, msg 
         
-        # DevicePointDialog 应该已经处理了空点位列表的确认逻辑。
-        # 此处不再需要对 points_data 为空的初步日志记录或特殊处理，
-        # 因为后续的 configured_points_to_save 列表如果为空，
-        # 会在删除旧配置后正确地返回一个表示"成功配置0个点位"的结果。
-        # 移除以下代码块：
-        # if not points_data:
-        #     logger.info(f"为模板 '{template_name}' 和前缀 '{device_prefix}' 保存空配置（0个点位）。")
-            # ... (各种注释和pass)
+        # 前缀现在允许为空，由UI层面或业务需求决定是否强制
 
         configured_points_to_save: List[ConfiguredDevicePointModel] = []
         for point_raw in points_data:
             try:
+                # 假设 ConfiguredDevicePointModel 已更新以接受新前缀
                 configured_point = ConfiguredDevicePointModel(
-                    template_name=template_name, 
-                    device_prefix=device_prefix,
+                    template_name=template_name,
+                    variable_prefix=variable_prefix,       # 新增/替换
+                    description_prefix=description_prefix, # 新增
                     var_suffix=point_raw['var_suffix'],
-                    desc_suffix=point_raw.get('desc_suffix', ""), # desc_suffix 可能为空
+                    desc_suffix=point_raw.get('desc_suffix', ""),
                     data_type=point_raw['data_type'],
                     sll_setpoint=point_raw.get('sll_setpoint', ""),
                     sl_setpoint=point_raw.get('sl_setpoint', ""),
@@ -69,48 +61,49 @@ class ConfigService:
                 return False, msg
             
         try:
-            # 在调用DAO之前，应该先删除该 template_name 和 device_prefix 的旧配置
-            # 这是一个"覆盖保存"的逻辑
-            logger.info(f"保存配置前，尝试删除旧配置: 模板='{template_name}', 前缀='{device_prefix}'")
-            delete_success = self.config_dao.delete_configured_points_by_template_and_prefix(template_name, device_prefix)
+            # 假设DAO方法更新为 delete_configured_points_by_template_and_prefixes
+            logger.info(f"保存配置前，尝试删除旧配置: 模板='{template_name}', 变量前缀='{variable_prefix}', 描述前缀='{description_prefix}'")
+            delete_success = self.config_dao.delete_configured_points_by_template_and_prefixes(
+                template_name, variable_prefix, description_prefix
+            ) # DAO 方法需要修改
             if delete_success:
-                logger.info(f"旧配置 (模板='{template_name}', 前缀='{device_prefix}') 删除成功或不存在。")
+                logger.info(f"旧配置 (模板='{template_name}', 变量前缀='{variable_prefix}', 描述前缀='{description_prefix}') 删除成功或不存在。")
             else:
-                # 如果删除失败，可能不是关键错误，除非有特定要求。这里只记录日志。
-                logger.warning(f"删除旧配置 (模板='{template_name}', 前缀='{device_prefix}') 时返回False，可能影响覆盖逻辑。")
+                logger.warning(f"删除旧配置 (模板='{template_name}', 变量前缀='{variable_prefix}', 描述前缀='{description_prefix}') 时返回False。")
 
-            if not configured_points_to_save: # 如果处理后没有点位（例如模板为空，用户仍确认）
-                msg = f"模板 '{template_name}' (前缀 '{device_prefix}') 配置成功（0个点位）。"
+            if not configured_points_to_save:
+                msg = f"模板 '{template_name}' (变量前缀='{variable_prefix}', 描述前缀='{description_prefix}') 配置成功（0个点位）。"
                 logger.info(msg)
-                return True, msg # 认为成功配置了一个"空"设备实例
+                return True, msg
 
             success = self.config_dao.save_configured_points(configured_points_to_save)
             if success:
-                msg = f"为模板 '{template_name}' 和前缀 '{device_prefix}' 成功配置并保存了 {len(configured_points_to_save)} 个点位。"
+                msg = f"为模板 '{template_name}' (变量前缀='{variable_prefix}', 描述前缀='{description_prefix}') 成功配置并保存了 {len(configured_points_to_save)} 个点位。"
                 logger.info(msg)
                 return True, msg
             else:
-                msg = f"保存点位时DAO返回False (模板='{template_name}', 前缀='{device_prefix}')。"
+                msg = f"保存点位时DAO返回False (模板='{template_name}', 变量前缀='{variable_prefix}', 描述前缀='{description_prefix}')。"
                 logger.error(msg)
                 return False, msg
         except ValueError as ve: 
-            logger.warning(f"服务层保存配置点位失败 (可能是变量名/唯一约束冲突): {ve} - 模板='{template_name}', 前缀='{device_prefix}'")
+            logger.warning(f"服务层保存配置点位失败: {ve} - 模板='{template_name}', 变量前缀='{variable_prefix}', 描述前缀='{description_prefix}'")
             return False, str(ve)
         except Exception as e:
-            logger.error(f"服务层保存配置点位时发生未知错误: {e} - 模板='{template_name}', 前缀='{device_prefix}'", exc_info=True)
+            logger.error(f"服务层保存配置点位时发生未知错误: {e} - 模板='{template_name}', 变量前缀='{variable_prefix}', 描述前缀='{description_prefix}'", exc_info=True)
             return False, f"保存点位时发生严重错误: {e}"
 
-    def does_configuration_exist(self, template_name: str, device_prefix: str) -> bool:
-        """检查具有指定模板名称和设备前缀的配置是否已在数据库中存在。"""
-        if not template_name or not device_prefix:
-            logger.warning("检查配置是否存在请求缺少模板名称或设备前缀。")
-            return False # 或者抛出ValueError，因为这是不正常的调用
+    def does_configuration_exist(self, template_name: str, variable_prefix: str, description_prefix: str) -> bool:
+        """检查具有指定模板名称、变量前缀和描述前缀的配置是否已在数据库中存在。"""
+        # 根据实际需求，前缀是否允许为空字符串，或者是否必须提供，可能影响这里的判断
+        # if not template_name: # 模板名通常是必须的
+        #     logger.warning("检查配置是否存在请求缺少模板名称。")
+        #     return False 
         try:
-            return self.config_dao.does_configuration_exist(template_name, device_prefix)
+            # 假设DAO方法更新为接受三个参数
+            return self.config_dao.does_configuration_exist(template_name, variable_prefix, description_prefix)
         except Exception as e:
-            # DAO层面已记录具体错误，服务层可只记录调用失败
-            logger.error(f"服务层检查配置是否存在时发生错误 (模板: '{template_name}', 前缀: '{device_prefix}'): {e}")
-            return False # 保守返回False
+            logger.error(f"服务层检查配置是否存在时发生错误 (模板: '{template_name}', 变量前缀: '{variable_prefix}', 描述前缀: '{description_prefix}'): {e}")
+            return False
 
     def get_all_configured_points(self) -> List[ConfiguredDevicePointModel]:
         """从数据库获取所有已配置的设备点位。"""
@@ -128,37 +121,40 @@ class ConfigService:
             logger.error(f"服务层清空所有配置失败: {e}", exc_info=True)
             return False
 
-    def delete_device_configuration(self, template_name: str, device_prefix: str) -> bool:
-        """根据模板名称和设备前缀删除指定的设备配置及其所有点位。"""
-        if not template_name or not device_prefix:
-            logger.warning("删除设备配置请求缺少模板名称或设备前缀。")
+    def delete_device_configuration(self, template_name: str, variable_prefix: str, description_prefix: str) -> bool:
+        """根据模板名称、变量前缀和描述前缀删除指定的设备配置及其所有点位。"""
+        if not template_name: # 模板名通常是必须的
+            logger.warning("删除设备配置请求缺少模板名称。")
             return False
         try:
-            logger.info(f"请求删除设备配置: 模板='{template_name}', 前缀='{device_prefix}'")
-            success = self.config_dao.delete_configured_points_by_template_and_prefix(template_name, device_prefix)
+            logger.info(f"请求删除设备配置: 模板='{template_name}', 变量前缀='{variable_prefix}', 描述前缀='{description_prefix}'")
+            # 假设DAO方法更新为 delete_configured_points_by_template_and_prefixes
+            success = self.config_dao.delete_configured_points_by_template_and_prefixes(
+                template_name, variable_prefix, description_prefix
+            ) # DAO 方法需要修改
             if success:
-                logger.info(f"设备配置 (模板='{template_name}', 前缀='{device_prefix}') 已成功删除。")
+                logger.info(f"设备配置 (模板='{template_name}', 变量前缀='{variable_prefix}', 描述前缀='{description_prefix}') 已成功删除。")
             else:
-                logger.warning(f"未能删除设备配置 (模板='{template_name}', 前缀='{device_prefix}')，可能配置不存在或删除失败。")
+                logger.warning(f"未能删除设备配置 (模板='{template_name}', 变量前缀='{variable_prefix}', 描述前缀='{description_prefix}')。")
             return success
         except Exception as e:
-            logger.error(f"服务层删除设备配置 (模板='{template_name}', 前缀='{device_prefix}') 时发生错误: {e}", exc_info=True)
+            logger.error(f"服务层删除设备配置 (模板='{template_name}', 变量前缀='{variable_prefix}', 描述前缀='{description_prefix}') 时发生错误: {e}", exc_info=True)
             return False
 
     def get_configuration_summary(self) -> List[Dict]:
         """获取配置摘要信息 (用于UI显示)。"""
         try:
-            # 从DAO获取原始分组数据
-            raw_summary = self.config_dao.get_configuration_summary_raw()
+            raw_summary = self.config_dao.get_configuration_summary_raw() # DAO方法可能需要调整返回的列
             
-            # 格式化为UI需要的结构
             summary_list = []
             for row in raw_summary:
+                # 假设 raw_summary 返回的字典中键已更新为 variable_prefix 和 description_prefix
                 summary_list.append({
                     'template': row['template_name'],
-                    'variable': row['device_prefix'], # UI中使用'variable'作为键
+                    'variable_prefix': row.get('variable_prefix', ''), # 兼容旧数据或不同DAO实现
+                    'description_prefix': row.get('description_prefix', ''), # 新增
                     'count': row['point_count'],
-                    'status': "已配置" # 状态总是"已配置"
+                    'status': "已配置"
                 })
             return summary_list
         except Exception as e:

@@ -213,9 +213,9 @@ class MainWindow(QMainWindow):
                                 # 尝试映射到 "数据类型"
                                 'data_type': tp_model.data_type,
                                 # 尝试映射到 "描述/备注"
-                                'description': tp_model.description, # description 是 device_prefix + desc_suffix
+                                'description': tp_model.description, # description 是 description_prefix + desc_suffix
                                 # 尝试映射到 "所属设备"
-                                'device_name': tp_model.device_prefix,
+                                'device_name': tp_model.variable_prefix, # 使用 variable_prefix 替换旧的 device_prefix
                                 # "功能位置" 在 ConfiguredDevicePointModel 中没有直接对应，暂时留空
                                 'functional_location': '',
                                 # 新增：从模型获取设定值，如果模型中不存在这些属性，确保默认值

@@ -199,7 +199,8 @@ class ConfiguredDeviceDAO:
         
         sql = CONFIGURED_DEVICE_SQL['INSERT_CONFIGURED_POINTS_BATCH']
         params_list = [
-            (p.template_name, p.device_prefix, p.var_suffix, p.desc_suffix, p.data_type,
+            (p.template_name, p.variable_prefix, p.description_prefix, 
+             p.var_suffix, p.desc_suffix, p.data_type,
              p.sll_setpoint, p.sl_setpoint, p.sh_setpoint, p.shh_setpoint)
             for p in points
         ]
@@ -208,13 +209,12 @@ class ConfiguredDeviceDAO:
             logger.info(f"成功保存 {len(points)} 个配置点位。")
             return True
         except sqlite3.IntegrityError as ie:
-            # 检查是否是由于 configured_device_points 表的 device_prefix 和 var_suffix 唯一约束导致的
-            # SQLite的错误信息通常是 "UNIQUE constraint failed: table_name.column_name1, table_name.column_name2"
-            # 或者更简单的 "UNIQUE constraint failed: configured_device_points.device_prefix, configured_device_points.var_suffix"
-            # 为简化，我们假设任何 IntegrityError 都可能与此相关，服务层可以进一步细化或UI给出通用提示
             logger.error(f"保存配置点位时发生数据库完整性冲突 (可能是变量名重复): {ie}", exc_info=True)
-            # 抛出 ValueError，服务层可以捕获它并给出用户友好的提示
-            raise ValueError(f"保存点位失败：变量名冲突。设备前缀 '{points[0].device_prefix if points else ''}' 下可能存在重复的变量后缀。") from ie
+            # 提取第一个点位的前缀信息用于更具体的错误提示
+            first_point = points[0] if points else None
+            vp = first_point.variable_prefix if first_point else ''
+            dp = first_point.description_prefix if first_point else ''
+            raise ValueError(f"保存点位失败：变量名冲突。在配置 (模板: {first_point.template_name if first_point else ''}, 变量前缀: '{vp}', 描述前缀: '{dp}') 下可能存在重复的变量后缀。") from ie
         except Exception as e:
             logger.error(f"批量保存配置点位失败: {e}", exc_info=True)
             return False # 对于其他未知错误，返回False
@@ -240,43 +240,40 @@ class ConfiguredDeviceDAO:
             logger.error(f"删除所有配置点位失败: {e}", exc_info=True)
             return False
 
-    def delete_configured_points_by_template_and_prefix(self, template_name: str, device_prefix: str) -> bool:
-        """根据模板名称和设备前缀删除一组已配置的设备点位。"""
-        sql = CONFIGURED_DEVICE_SQL['DELETE_CONFIGURED_POINTS_BY_TEMPLATE_AND_PREFIX']
-        params = (template_name, device_prefix)
+    def delete_configured_points_by_template_and_prefixes(self, template_name: str, variable_prefix: str, description_prefix: str) -> bool:
+        """根据模板名称、变量前缀和描述前缀删除一组已配置的设备点位。"""
+        sql = CONFIGURED_DEVICE_SQL['DELETE_CONFIGURED_POINTS_BY_TEMPLATE_AND_PREFIXES']
+        params = (template_name, variable_prefix, description_prefix)
         try:
             cursor = self.db_service.execute(sql, params)
             if cursor and cursor.rowcount > 0:
-                logger.info(f"成功删除模板 '{template_name}' 前缀为 '{device_prefix}' 的 {cursor.rowcount} 条配置点位。")
+                logger.info(f"成功删除模板 \'{template_name}\' (变量前缀=\'{variable_prefix}\', 描述前缀=\'{description_prefix}\') 的 {cursor.rowcount} 条配置点位。")
                 return True
-            elif cursor: # cursor is not None, but rowcount is 0 or less
-                logger.info(f"没有找到模板 '{template_name}' 前缀为 '{device_prefix}' 的配置点位进行删除 (影响行数: {cursor.rowcount})。")
-                return True # 操作成功，即使没有行被删除
-            else: # cursor is None (should not happen with current db_service.execute)
-                logger.warning("执行删除操作时数据库未返回有效的cursor对象。")
-                return False
+            # 如果 rowcount 是 0，表示没有匹配的点位被删除，这通常不应视为错误，而是操作成功但无效果
+            logger.info(f"模板 \'{template_name}\' (变量前缀=\'{variable_prefix}\', 描述前缀=\'{description_prefix}\') 没有找到匹配的点位进行删除。")
+            return True # 保持与旧逻辑一致，删除0行也算成功
         except Exception as e:
-            logger.error(f"删除模板 '{template_name}' 前缀 '{device_prefix}' 的配置点位失败: {e}", exc_info=True)
+            logger.error(f"删除配置点位 (模板 \'{template_name}\', 变量前缀 \'{variable_prefix}\', 描述前缀 \'{description_prefix}\') 失败: {e}", exc_info=True)
             return False
 
     def get_configuration_summary_raw(self) -> List[Dict[str, Any]]:
-        """获取原始的配置摘要数据，按模板名称和设备前缀分组。"""
-        sql = CONFIGURED_DEVICE_SQL['GET_CONFIGURATION_SUMMARY']
+        """获取原始的配置摘要信息（按模板名称、变量前缀和描述前缀分组）。"""
+        sql = CONFIGURED_DEVICE_SQL['GET_CONFIGURATION_SUMMARY_RAW']
         try:
             rows = self.db_service.fetch_all(sql)
-            # logger.debug(f"配置摘要原始数据: {rows}") # Debugging line
-            return rows
+            # 确保返回的字典键与SQL查询中的列名一致
+            return [dict(row) for row in rows] if rows else []
         except Exception as e:
             logger.error(f"获取配置摘要原始数据失败: {e}", exc_info=True)
             return []
 
-    def does_configuration_exist(self, template_name: str, device_prefix: str) -> bool:
-        """检查具有指定模板名称和设备前缀的配置是否已存在。"""
+    def does_configuration_exist(self, template_name: str, variable_prefix: str, description_prefix: str) -> bool:
+        """检查具有指定模板名称、变量前缀和描述前缀的配置是否已在数据库中至少存在一个点位。"""
         sql = CONFIGURED_DEVICE_SQL['CHECK_CONFIGURATION_EXISTS']
-        params = (template_name, device_prefix)
+        params = (template_name, variable_prefix, description_prefix)
         try:
-            row = self.db_service.fetch_one(sql, params)
-            return row is not None # 如果查询到任何行，则存在
+            result = self.db_service.fetch_one(sql, params)
+            return bool(result) # 如果查询到任何行，则存在
         except Exception as e:
-            logger.error(f"检查配置是否存在失败 (模板: '{template_name}', 前缀: '{device_prefix}'): {e}", exc_info=True)
-            return False # 出错时保守地返回False，或根据需要抛出异常 
+            logger.error(f"检查配置是否存在 (模板 \'{template_name}\', 变量前缀 \'{variable_prefix}\', 描述前缀 \'{description_prefix}\') 失败: {e}", exc_info=True)
+            return False 

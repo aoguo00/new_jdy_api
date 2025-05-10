@@ -82,7 +82,8 @@ CONFIGURED_DEVICE_SQL = {
     CREATE TABLE IF NOT EXISTS configured_device_points (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         template_name TEXT NOT NULL, -- 使用的模板名称 (快照)
-        device_prefix TEXT NOT NULL, -- 应用模板时指定设备/变量前缀
+        variable_prefix TEXT NOT NULL, -- 应用模板时指定的变量前缀
+        description_prefix TEXT NOT NULL DEFAULT '', -- 应用模板时指定的描述前缀
         var_suffix TEXT NOT NULL,    -- 来自模板的点位变量名后缀 (快照)
         desc_suffix TEXT NOT NULL,   -- 来自模板的点位描述后缀 (快照)
         data_type TEXT NOT NULL,     -- 来自模板的点位数据类型 (快照)
@@ -91,42 +92,42 @@ CONFIGURED_DEVICE_SQL = {
         sh_setpoint TEXT,
         shh_setpoint TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 配置生成时间
-        UNIQUE (device_prefix, var_suffix) -- 确保设备前缀和变量后缀的组合是唯一的
+        UNIQUE (template_name, variable_prefix, description_prefix, var_suffix) -- 确保在同一配置实例下变量后缀唯一
     )
     ''',
 
     'INSERT_CONFIGURED_POINTS_BATCH': '''
     INSERT INTO configured_device_points
-    (template_name, device_prefix, var_suffix, desc_suffix, data_type, sll_setpoint, sl_setpoint, sh_setpoint, shh_setpoint)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (template_name, variable_prefix, description_prefix, var_suffix, desc_suffix, data_type, sll_setpoint, sl_setpoint, sh_setpoint, shh_setpoint)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', # 用于 executemany
 
     'GET_ALL_CONFIGURED_POINTS': '''
-    SELECT id, template_name, device_prefix, var_suffix, desc_suffix, data_type, sll_setpoint, sl_setpoint, sh_setpoint, shh_setpoint, created_at
+    SELECT id, template_name, variable_prefix, description_prefix, var_suffix, desc_suffix, data_type, sll_setpoint, sl_setpoint, sh_setpoint, shh_setpoint, created_at
     FROM configured_device_points
-    ORDER BY device_prefix, var_suffix -- 或其他排序方式
+    ORDER BY template_name, variable_prefix, description_prefix, var_suffix
     ''',
 
     'DELETE_ALL_CONFIGURED_POINTS': '''
     DELETE FROM configured_device_points
     ''',
 
-    'DELETE_CONFIGURED_POINTS_BY_TEMPLATE_AND_PREFIX': '''
+    'DELETE_CONFIGURED_POINTS_BY_TEMPLATE_AND_PREFIXES': '''
     DELETE FROM configured_device_points
-    WHERE template_name = ? AND device_prefix = ?
+    WHERE template_name = ? AND variable_prefix = ? AND description_prefix = ?
     ''',
 
-    'GET_CONFIGURATION_SUMMARY': '''
-    SELECT template_name, device_prefix, COUNT(*) as point_count
+    'GET_CONFIGURATION_SUMMARY_RAW': '''
+    SELECT template_name, variable_prefix, description_prefix, COUNT(*) as point_count
     FROM configured_device_points
-    GROUP BY template_name, device_prefix
-    ORDER BY template_name, device_prefix
+    GROUP BY template_name, variable_prefix, description_prefix
+    ORDER BY template_name, variable_prefix, description_prefix
     ''',
 
     'CHECK_CONFIGURATION_EXISTS': '''
     SELECT 1 
     FROM configured_device_points
-    WHERE template_name = ? AND device_prefix = ?
+    WHERE template_name = ? AND variable_prefix = ? AND description_prefix = ?
     LIMIT 1
     '''
 } 

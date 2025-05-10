@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (QGroupBox, QVBoxLayout, QHBoxLayout,
                              QPushButton, QMessageBox, QFileDialog, QDialog, QAbstractItemView)
 from datetime import datetime
 import logging
+from PySide6.QtCore import Qt
 
 # 更新的服务和模型导入
 # from core.services import DeviceConfigurationService, TemplateService # 旧导入
@@ -91,7 +92,14 @@ class ThirdPartyDeviceArea(QGroupBox):
                 row = self.third_party_table.rowCount()
                 self.third_party_table.insertRow(row)
                 self.third_party_table.setItem(row, 0, QTableWidgetItem(device_summary['template']))
-                self.third_party_table.setItem(row, 1, QTableWidgetItem(device_summary['variable'])) # 这是设备前缀
+                
+                variable_prefix_text = device_summary.get('variable_prefix', '')
+                description_prefix_text = device_summary.get('description_prefix', '') 
+                
+                item_var_prefix = QTableWidgetItem(variable_prefix_text)
+                item_var_prefix.setData(Qt.ItemDataRole.UserRole, description_prefix_text) # 存储 description_prefix
+                
+                self.third_party_table.setItem(row, 1, item_var_prefix) # 使用新的键 'variable_prefix'
                 self.third_party_table.setItem(row, 2, QTableWidgetItem(str(device_summary['count'])))
                 self.third_party_table.setItem(row, 3, QTableWidgetItem(device_summary['status']))
         except Exception as e:
@@ -108,33 +116,37 @@ class ThirdPartyDeviceArea(QGroupBox):
 
         current_row = selected_rows[0].row()
         template_name_item = self.third_party_table.item(current_row, 0)
-        device_prefix_item = self.third_party_table.item(current_row, 1)
+        variable_prefix_item = self.third_party_table.item(current_row, 1) # 第二列现在是 variable_prefix
 
-        if not template_name_item or not device_prefix_item:
+        if not template_name_item or not variable_prefix_item:
             QMessageBox.warning(self, "错误", "无法获取选中配置的详细信息。")
             return
 
         template_name = template_name_item.text()
-        device_prefix = device_prefix_item.text()
+        variable_prefix = variable_prefix_item.text() # 获取 variable_prefix
+        description_prefix = variable_prefix_item.data(Qt.ItemDataRole.UserRole) # 从用户数据获取 description_prefix
+        
+        if description_prefix is None: 
+            description_prefix = "" 
 
         reply = QMessageBox.question(
             self, "确认删除",
-            f"确定要删除模板为 '{template_name}'，设备前缀为 '{device_prefix}' 的配置吗？\n此操作将删除其所有相关点位，且不可恢复。",
+            f"确定要删除模板为 '{template_name}' (变量前缀: '{variable_prefix}', 描述前缀: '{description_prefix}') 的配置吗？\n此操作将删除其所有相关点位，且不可恢复。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
 
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                success = self.config_service.delete_device_configuration(template_name, device_prefix)
+                success = self.config_service.delete_device_configuration(template_name, variable_prefix, description_prefix)
                 if success:
                     self.update_third_party_table()
-                    QMessageBox.information(self, "删除成功", f"设备配置 '{template_name} ({device_prefix})' 已成功删除。")
+                    QMessageBox.information(self, "删除成功", f"设备配置 '{template_name}' (变量前缀: '{variable_prefix}', 描述前缀: '{description_prefix}') 已成功删除。")
                 else:
-                    QMessageBox.warning(self, "删除失败", f"未能删除设备配置 '{template_name} ({device_prefix})'。它可能已被删除或操作失败。")
+                    QMessageBox.warning(self, "删除失败", f"未能删除设备配置 '{template_name}' (变量前缀: '{variable_prefix}', 描述前缀: '{description_prefix}')。它可能已被删除或操作失败。")
             except Exception as e:
-                logger.error(f"删除选中设备配置 (模板: {template_name}, 前缀: {device_prefix}) 时发生错误: {e}", exc_info=True)
-                QMessageBox.critical(self, "删除错误", f"删除设备配置 '{template_name} ({device_prefix})' 时发生错误: {str(e)}")
+                logger.error(f"删除选中设备配置 (模板: {template_name}, 变量前缀: {variable_prefix}, 描述前缀: {description_prefix}) 时发生错误: {e}", exc_info=True)
+                QMessageBox.critical(self, "删除错误", f"删除设备配置时发生错误: {str(e)}")
 
     def clear_device_config(self):
         """清空所有设备配置"""
