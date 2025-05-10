@@ -6,7 +6,7 @@ from PySide6.QtCore import Signal
 class QueryArea(QGroupBox):
     """查询条件区域"""
     # 定义信号
-    query_requested = Signal(str, str)  # 项目编号, 场站编号
+    query_requested = Signal(str)  # 项目编号 (移除了场站编号)
     clear_requested = Signal()
     generate_points_requested = Signal(str)  # 修改信号以传递场站编号
     upload_hmi_requested = Signal(str)  # HMI类型
@@ -110,8 +110,9 @@ class QueryArea(QGroupBox):
     def _on_query_clicked(self):
         """处理查询按钮点击"""
         project_no = self.project_input.text().strip()
-        site_no = self.station_input.text().strip()
-        self.query_requested.emit(project_no, site_no)
+        # site_no 不再通过此信号发送，但仍可用于其他目的
+        # site_no = self.station_input.text().strip() 
+        self.query_requested.emit(project_no)
 
     def _on_generate_points_clicked(self):
         """处理生成IO点表按钮点击"""

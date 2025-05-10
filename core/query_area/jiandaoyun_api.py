@@ -26,11 +26,10 @@ class JianDaoYunAPI:
             logging.error(f"读取配置文件失败: {str(e)}")
             raise
         
-    def query_data(self, project_no: str = None, site_no: str = None) -> List[Dict[str, Any]]:
+    def query_data(self, project_no: str = None) -> List[Dict[str, Any]]:
         """
         查询简道云数据
         :param project_no: 项目编号（用于过滤）
-        :param site_no: 场站编号（用于过滤）
         :return: 数据列表
         """
         all_data = []
@@ -45,13 +44,6 @@ class JianDaoYunAPI:
                 "type": "text",
                 "method": "eq",
                 "value": [project_no]
-            })
-        if site_no:
-            filter_cond.append({
-                "field": "_widget_1635777114903",  # 场站编号字段
-                "type": "text",
-                "method": "eq",
-                "value": [site_no]
             })
 
         while True:

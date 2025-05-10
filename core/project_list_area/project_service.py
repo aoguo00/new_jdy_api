@@ -17,12 +17,12 @@ class ProjectService:
         self.jdy_api = jdy_api
         logger.info("ProjectService 初始化完成。")
 
-    def get_formatted_projects(self, project_no: str = None, site_no: str = None) -> List[Dict[str, Any]]:
+    def get_formatted_projects(self, project_no: str = None) -> List[Dict[str, Any]]:
         """获取并格式化项目列表数据以供UI使用。"""
         try:
-            logger.info(f"ProjectService: 开始查询项目数据 (项目号: {project_no}, 场站号: {site_no})")
+            logger.info(f"ProjectService: 开始查询项目数据 (项目号: {project_no})")
             # 1. 调用 API 获取原始数据
-            raw_data = self.jdy_api.query_data(project_no=project_no, site_no=site_no)
+            raw_data = self.jdy_api.query_data(project_no=project_no)
             
             # 2. 调用处理器格式化数据
             formatted_data = format_project_data_for_ui(raw_data)

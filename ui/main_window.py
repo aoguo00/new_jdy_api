@@ -147,13 +147,13 @@ class MainWindow(QMainWindow):
         # 项目列表信号
         self.project_list_area.project_selected.connect(self._handle_project_selected)
 
-    def _handle_query(self, project_no: str, site_no: str):
+    def _handle_query(self, project_no: str):
         """处理查询请求"""
         try:
             # 执行查询 (调用 ProjectService)
             if not self.project_service:
                 raise Exception("项目服务未初始化")
-            projects = self.project_service.get_formatted_projects(project_no, site_no)
+            projects = self.project_service.get_formatted_projects(project_no=project_no)
             # 更新列表
             self.project_list_area.update_project_list(projects)
         except Exception as e:
