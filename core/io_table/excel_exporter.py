@@ -1,7 +1,9 @@
 import logging
 from typing import List, Dict, Any, Optional
+import re # 新增导入
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 # 尝试导入 openpyxl 及其组件，以便在类定义中引用类型提示
 try:
@@ -145,6 +147,46 @@ class PLCSheetExporter(BaseSheetExporter):
             "PLC绝对地址", "上位机通讯地址"
         ] # 53列
 
+    def _get_modbus_address(self, plc_address: str) -> str:
+        """
+        根据PLC地址计算Modbus通讯地址。
+        规则:
+        - %MDx -> (x // 2) + 3000 + 1
+        - %MXm.n -> (m * 8) + n + 3000 + 1
+        如果PLC地址为空或无法识别，则返回空字符串。
+        """
+        if not plc_address:
+            return ""
+
+        md_match = re.fullmatch(r"%MD(\d+)", plc_address)
+        if md_match:
+            try:
+                val = int(md_match.group(1))
+                return str((val // 2) + 3000 + 40000 + 1)
+            except ValueError:
+                logger.warning(f"无法解析%MD地址中的数字: {plc_address}")
+                return ""
+
+        logger.debug(f"尝试匹配MX地址: {plc_address}") # 新增日志
+        mx_match = re.fullmatch(r"%MX(\d+)\.(\d+)", plc_address) # 注意转义点号
+        if mx_match:
+            logger.debug(f"MX地址匹配成功: Groups={mx_match.groups()}") # 新增日志
+            try:
+                m_val = int(mx_match.group(1))
+                n_val = int(mx_match.group(2))
+                comm_addr = (m_val * 8) + n_val + 3000 + 1
+                logger.debug(f"计算得到的MX通讯地址: {comm_addr} for {plc_address}") # 新增日志
+                return str(comm_addr)
+            except ValueError:
+                logger.warning(f"无法解析%MX地址中的数字: {plc_address}, Groups={mx_match.groups()}")
+                return ""
+        else: # 新增else分支明确记录未匹配情况
+            logger.debug(f"MX地址匹配失败: {plc_address}")
+        
+        # 这条日志现在应该只在两种类型都不匹配时执行
+        logger.debug(f"未识别的PLC地址格式 (非MD也非MX)，无法转换为Modbus地址: {plc_address}") 
+        return ""
+
     def populate_sheet(self, ws: Worksheet, plc_io_data: List[Dict[str, Any]], site_name: Optional[str], site_no: Optional[str]):
         """
         填充PLC IO数据到指定的工作表。
@@ -164,14 +206,36 @@ class PLCSheetExporter(BaseSheetExporter):
         address_allocator = PLCAddressAllocator() # 初始化地址分配器
 
         for idx, point_data in enumerate(plc_io_data, 1):
-            channel_io_type = point_data.get('type', '')
-            data_type_value = ""
+            # --- 1. 初始化 final_row_data 和填充基础信息 START ---
+            final_row_data = ["" for _ in range(len(self.headers_plc))]
+            final_row_data[0] = idx
+            final_row_data[1] = point_data.get('model', '')
+            channel_io_type = point_data.get('type', '') # 获取 channel_io_type
+            final_row_data[2] = channel_io_type
+            # final_row_data[3] = "" # 供电类型（有源/无源）
+            # final_row_data[4] = "" # 线制
+            final_row_data[5] = point_data.get('address', '') # 通道位号
+            final_row_data[6] = site_name if site_name else ""
+            final_row_data[7] = site_no if site_no else ""
+            
+            final_row_data[8] = "" # “变量名称（HMI）”列，用户填写
+
+            final_row_data[9] = point_data.get('description', '')
+            
+            data_type_value = "" # 获取 data_type_value
             if channel_io_type in ["AI", "AO"]:
                 data_type_value = "REAL"
             elif channel_io_type in ["DI", "DO"]:
                 data_type_value = "BOOL"
+            final_row_data[10] = data_type_value # 数据类型
+            
+            final_row_data[11] = "R/W" # 读写属性
+            final_row_data[12] = "是"   # 保存历史
+            final_row_data[13] = "是"   # 掉电保护
+            # 量程 (14, 15) - 空
+            # --- 1. 初始化 final_row_data 和填充基础信息 END ---
 
-            # 初始化PLC地址列为空字符串
+            # 初始化PLC地址列为空字符串 (这些变量用于后续的PLC地址和通讯地址的填充)
             sll_set_plc_addr, sl_set_plc_addr, sh_set_plc_addr, shh_set_plc_addr = "", "", "", ""
             ll_alarm_plc_addr, l_alarm_plc_addr, h_alarm_plc_addr, hh_alarm_plc_addr = "", "", "", ""
             maint_val_set_plc_addr, maint_enable_plc_addr, plc_absolute_addr = "", "", ""
@@ -182,8 +246,9 @@ class PLCSheetExporter(BaseSheetExporter):
             elif data_type_value == "BOOL":
                 plc_absolute_addr = address_allocator.allocate_bool_address()
 
-            # 根据模块IO类型分配其他相关地址
+            # 根据模块IO类型分配其他相关PLC地址 和 生成特定点位名称
             if channel_io_type == "AI":
+                # PLC地址分配
                 sll_set_plc_addr = address_allocator.allocate_real_address()
                 sl_set_plc_addr = address_allocator.allocate_real_address()
                 sh_set_plc_addr = address_allocator.allocate_real_address()
@@ -194,109 +259,84 @@ class PLCSheetExporter(BaseSheetExporter):
                 hh_alarm_plc_addr = address_allocator.allocate_bool_address()
                 maint_val_set_plc_addr = address_allocator.allocate_real_address()
                 maint_enable_plc_addr = address_allocator.allocate_bool_address()
+
+                # Excel formulas for point/alarm names based on HMI Name column (column I)
+                # Column I is get_column_letter(8 + 1)
+                # Excel data row number is idx + 1 (idx is 1-based from enumerate)
+                hmi_name_cell_ref = f"{get_column_letter(8 + 1)}{idx + 1}"
+
+                final_row_data[17] = f'=IF(ISBLANK({hmi_name_cell_ref}), "", {hmi_name_cell_ref} & "_LoLoLimit")' # SLL设定点位
+                final_row_data[21] = f'=IF(ISBLANK({hmi_name_cell_ref}), "", {hmi_name_cell_ref} & "_LoLimit")'   # SL设定点位
+                final_row_data[25] = f'=IF(ISBLANK({hmi_name_cell_ref}), "", {hmi_name_cell_ref} & "_HiLimit")'   # SH设定点位
+                final_row_data[29] = f'=IF(ISBLANK({hmi_name_cell_ref}), "", {hmi_name_cell_ref} & "_HiHiLimit")' # SHH设定点位
+                
+                final_row_data[32] = f'=IF(ISBLANK({hmi_name_cell_ref}), "", {hmi_name_cell_ref} & "_LL")'        # LL报警
+                final_row_data[35] = f'=IF(ISBLANK({hmi_name_cell_ref}), "", {hmi_name_cell_ref} & "_L")'         # L报警
+                final_row_data[38] = f'=IF(ISBLANK({hmi_name_cell_ref}), "", {hmi_name_cell_ref} & "_H")'         # H报警
+                final_row_data[41] = f'=IF(ISBLANK({hmi_name_cell_ref}), "", {hmi_name_cell_ref} & "_HH")'        # HH报警
+                
+                final_row_data[45] = f'=IF(ISBLANK({hmi_name_cell_ref}), "", {hmi_name_cell_ref} & "_whz")'       # 维护值设定点位
+                final_row_data[48] = f'=IF(ISBLANK({hmi_name_cell_ref}), "", {hmi_name_cell_ref} & "_whzzt")'    # 维护使能开关点位
+
             elif channel_io_type == "DI":
-                # DI模块：不分配LL, L, H, HH报警的PLC地址，不分配维护值设定PLC地址，也不分配维护使能开关点位_PLC地址。
-                # maint_enable_plc_addr = address_allocator.allocate_bool_address() # 移除
-                pass # DI模块除了绝对地址外，不主动分配其他特定用途的PLC地址
+                pass 
+
             elif channel_io_type == "AO":
+                # PLC地址分配
                 maint_val_set_plc_addr = address_allocator.allocate_real_address()
                 maint_enable_plc_addr = address_allocator.allocate_bool_address()
+                # 预留：未来可在此处为AO模块添加基于HMI名称的点位名称生成逻辑
+                # if final_row_data[8]: 
+                #     current_hmi_name = final_row_data[8]
+                #     pass 
+
             elif channel_io_type == "DO":
-                # DO模块：除了绝对地址外，不主动分配其他特定用途的PLC地址 (包括维护使能开关)
-                # maint_enable_plc_addr = address_allocator.allocate_bool_address() # 移除
-                pass
+                pass 
 
-            # 获取表头中各PLC地址列的索引，以便正确填充
-            # 注意：如果表头顺序改变，这里的硬编码索引需要更新，更健壮的方法是动态查找索引
-            # 但为了简化，我们暂时假设表头顺序固定
-            # headers_plc 列表：
-            # ..., "SLL设定点位_PLC地址" (idx 18), ..., "SL设定点位_PLC地址" (idx 22), ... 
-            # "SH设定点位_PLC地址" (idx 26), ..., "SHH设定点位_PLC地址" (idx 30), ...
-            # "LL报警_PLC地址" (idx 33), ..., "L报警_PLC地址" (idx 36), ..., "H报警_PLC地址" (idx 39), ...
-            # "HH报警_PLC地址" (idx 42), ..., "维护值设定点位_PLC地址" (idx 46), ...
-            # "维护使能开关点位_PLC地址" (idx 49), "PLC绝对地址" (idx 51)
+            # 计算对应的通讯地址 (这部分现在不需要显式初始化通讯地址变量，因为它们会在下面直接被赋值)
+            # sll_set_comm_addr, sl_set_comm_addr, ... = "", "", ... (这些可以移除)
+            
+            # --- 2. 将所有地址和计算出的通讯地址填充到 final_row_data --- 
+            # SLL (16设定值, 17设定点位(已在AI分支填充), 18 PLC地址, 19通讯地址)
+            final_row_data[18] = sll_set_plc_addr
+            final_row_data[19] = self._get_modbus_address(sll_set_plc_addr)
+            # SL (20设定值, 21设定点位(已在AI分支填充), 22 PLC地址, 23通讯地址)
+            final_row_data[22] = sl_set_plc_addr
+            final_row_data[23] = self._get_modbus_address(sl_set_plc_addr)
+            # SH (24设定值, 25设定点位(已在AI分支填充), 26 PLC地址, 27通讯地址)
+            final_row_data[26] = sh_set_plc_addr
+            final_row_data[27] = self._get_modbus_address(sh_set_plc_addr)
+            # SHH (28设定值, 29设定点位(已在AI分支填充), 30 PLC地址, 31通讯地址)
+            final_row_data[30] = shh_set_plc_addr
+            final_row_data[31] = self._get_modbus_address(shh_set_plc_addr)
+            
+            # LL报警 (32报警(已在AI分支填充), 33 PLC地址, 34通讯地址)
+            final_row_data[33] = ll_alarm_plc_addr
+            final_row_data[34] = self._get_modbus_address(ll_alarm_plc_addr)
+            # L报警 (35报警(已在AI分支填充), 36 PLC地址, 37通讯地址)
+            final_row_data[36] = l_alarm_plc_addr
+            final_row_data[37] = self._get_modbus_address(l_alarm_plc_addr)
+            # H报警 (38报警(已在AI分支填充), 39 PLC地址, 40通讯地址)
+            final_row_data[39] = h_alarm_plc_addr
+            final_row_data[40] = self._get_modbus_address(h_alarm_plc_addr)
+            # HH报警 (41报警(已在AI分支填充), 42 PLC地址, 43通讯地址)
+            final_row_data[42] = hh_alarm_plc_addr
+            final_row_data[43] = self._get_modbus_address(hh_alarm_plc_addr)
+            
+            # 维护值设定 (44值, 45点位(已在AI分支填充), 46 PLC地址, 47通讯地址)
+            final_row_data[46] = maint_val_set_plc_addr
+            final_row_data[47] = self._get_modbus_address(maint_val_set_plc_addr)
+            # 维护使能开关 (48点位(已在AI分支填充), 49 PLC地址, 50通讯地址)
+            final_row_data[49] = maint_enable_plc_addr
+            final_row_data[50] = self._get_modbus_address(maint_enable_plc_addr)
+            
+            # PLC绝对地址 (51)
+            final_row_data[51] = plc_absolute_addr
+            # 上位机通讯地址 (52)
+            final_row_data[52] = self._get_modbus_address(plc_absolute_addr)
 
-            current_row_values = [
-                idx, 
-                point_data.get('model', ''), 
-                channel_io_type, 
-                "",  # 供电类型
-                "",  # 线制
-                point_data.get('address', ''), # 通道位号
-                site_name if site_name else "",
-                site_no if site_no else "",
-                "",  # 变量名称（HMI）
-                point_data.get('description', ''),
-                data_type_value, # 数据类型
-                "R/W", # 读写属性
-                "是",   # 保存历史
-                "是",   # 掉电保护
-                "", "", # 量程低限, 量程高限
-                "", "", sll_set_plc_addr, "",  # SLL设定值, SLL设定点位, SLL设定点位_PLC地址, SLL设定点位_通讯地址
-                "", "", sl_set_plc_addr, "",   # SL...
-                "", "", sh_set_plc_addr, "",   # SH...
-                "", "", shh_set_plc_addr, "", # SHH...
-                "", ll_alarm_plc_addr, "",    # LL报警, LL报警_PLC地址, LL报警_通讯地址
-                "", l_alarm_plc_addr, "",     # L报警...
-                "", h_alarm_plc_addr, "",     # H报警...
-                "", hh_alarm_plc_addr, "",    # HH报警...
-                "", "", maint_val_set_plc_addr, "", # 维护值设定, 维护值设定点位, 维护值设定点位_PLC地址, 维护值设定点位_通讯地址
-                "", maint_enable_plc_addr, "", # 维护使能开关点位, 维护使能开关点位_PLC地址, 维护使能开关点位_通讯地址
-                plc_absolute_addr,        # PLC绝对地址
-                ""                        # 上位机通讯地址
-            ]
-            # 确保 row_data 长度与 headers_plc 一致
-            if len(current_row_values) != len(self.headers_plc):
-                logger.error(f"Row data length ({len(current_row_values)}) does not match headers length ({len(self.headers_plc)}). Aborting row append for safety.")
-                # 根据实际情况决定是跳过此行，还是填充空值以匹配长度，或者抛出异常
-                # 为安全起见，这里可以先不添加此行或添加填充了空值的行
-                # 例如，补齐空值：
-                # current_row_values.extend(["" for _ in range(len(self.headers_plc) - len(current_row_values))])
-            else:
-                 # 重新组织 row_data 以匹配 headers_plc 的顺序
-                 # 这部分逻辑需要非常小心，确保每个值都放在正确的列
-                 # 假设 self.headers_plc 是最终的列顺序权威来源
-                final_row_data = ["" for _ in range(len(self.headers_plc))]
-                final_row_data[0] = idx
-                final_row_data[1] = point_data.get('model', '')
-                final_row_data[2] = channel_io_type
-                # final_row_data[3] = "" # 供电类型（有源/无源）
-                # final_row_data[4] = "" # 线制
-                final_row_data[5] = point_data.get('address', '') # 通道位号
-                final_row_data[6] = site_name if site_name else ""
-                final_row_data[7] = site_no if site_no else ""
-                # final_row_data[8] = "" # 变量名称（HMI）
-                final_row_data[9] = point_data.get('description', '')
-                final_row_data[10] = data_type_value # 数据类型
-                final_row_data[11] = "R/W" # 读写属性
-                final_row_data[12] = "是"   # 保存历史
-                final_row_data[13] = "是"   # 掉电保护
-                # 量程 (14, 15) - 空
-                # SLL (16设定值, 17设定点位, 18 PLC地址, 19通讯地址)
-                final_row_data[18] = sll_set_plc_addr
-                # SL (20设定值, 21设定点位, 22 PLC地址, 23通讯地址)
-                final_row_data[22] = sl_set_plc_addr
-                # SH (24设定值, 25设定点位, 26 PLC地址, 27通讯地址)
-                final_row_data[26] = sh_set_plc_addr
-                # SHH (28设定值, 29设定点位, 30 PLC地址, 31通讯地址)
-                final_row_data[30] = shh_set_plc_addr
-                # LL报警 (32报警, 33 PLC地址, 34通讯地址)
-                final_row_data[33] = ll_alarm_plc_addr
-                # L报警 (35报警, 36 PLC地址, 37通讯地址)
-                final_row_data[36] = l_alarm_plc_addr
-                # H报警 (38报警, 39 PLC地址, 40通讯地址)
-                final_row_data[39] = h_alarm_plc_addr
-                # HH报警 (41报警, 42 PLC地址, 43通讯地址)
-                final_row_data[42] = hh_alarm_plc_addr
-                # 维护值设定 (44值, 45点位, 46 PLC地址, 47通讯地址)
-                final_row_data[46] = maint_val_set_plc_addr
-                # 维护使能开关 (48点位, 49 PLC地址, 50通讯地址)
-                final_row_data[49] = maint_enable_plc_addr
-                # PLC绝对地址 (51)
-                final_row_data[51] = plc_absolute_addr
-                # 上位机通讯地址 (52) - 空
-
-                ws.append(final_row_data)
+            # logger.debug(f"准备写入行: LL报警通讯地址='{final_row_data[34]}', L报警通讯地址='{final_row_data[37]}', H报警通讯地址='{final_row_data[40]}', HH报警通讯地址='{final_row_data[43]}', 维护使能通讯地址='{final_row_data[50]}', 上位机通讯地址='{final_row_data[52]}'")
+            ws.append(final_row_data)
 
             if left_alignment:
                 for cell in ws[ws.max_row]: # Apply to the newly added row
