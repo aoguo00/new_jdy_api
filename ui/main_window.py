@@ -257,9 +257,19 @@ class MainWindow(QMainWindow):
             
             # 使用 QFileDialog 让用户选择保存路径和文件名
             # pylint: disable=line-too-long
+            default_filename = "IO_点表.xlsx"  # 默认文件名，以防场站名为空
+            if self.current_site_name:
+                # 对场站名进行清理，确保文件名合法
+                # 移除或替换文件名中不允许的字符，并将空格替换为下划线
+                safe_site_name = "".join(c if c.isalnum() or c in ['-', '_', ' '] else '_' for c in self.current_site_name.strip()).replace(' ', '_')
+                # 移除文件名开头和结尾可能存在的下划线
+                safe_site_name = safe_site_name.strip('_')
+                if safe_site_name: # 确保处理后仍有有效字符
+                    default_filename = f"{safe_site_name}_IO_点表.xlsx"
+
             file_path, _ = QFileDialog.getSaveFileName(self, 
                                                        "保存IO点表", 
-                                                       "IO_Table.xlsx", 
+                                                       default_filename, # 使用新的动态文件名 
                                                        "Excel 文件 (*.xlsx);;所有文件 (*)")
             # pylint: enable=line-too-long
 
