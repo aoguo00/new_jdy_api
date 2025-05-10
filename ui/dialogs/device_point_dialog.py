@@ -39,6 +39,14 @@ class DevicePointDialog(QDialog):
 
         self.setup_ui()
 
+    def _setup_table_widget(self, table_widget: QTableWidget, column_headers: List[str]):
+        """辅助方法：设置QTableWidget的通用属性"""
+        table_widget.setColumnCount(len(column_headers))
+        table_widget.setHorizontalHeaderLabels(column_headers)
+        header = table_widget.horizontalHeader()
+        for i in range(len(column_headers)):
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+
     def setup_ui(self):
         """设置UI界面"""
         layout = QVBoxLayout(self)
@@ -85,16 +93,11 @@ class DevicePointDialog(QDialog):
         points_layout = QVBoxLayout()
 
         self.point_table = QTableWidget()
-        self.point_table.setColumnCount(7)
-        self.point_table.setHorizontalHeaderLabels([
+        point_table_headers = [
             "变量名后缀", "描述后缀", "数据类型",
             "SLL设定值", "SL设定值", "SH设定值", "SHH设定值"
-        ])
-
-        # 设置表格列宽
-        header = self.point_table.horizontalHeader()
-        for i in range(7):
-            header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+        ]
+        self._setup_table_widget(self.point_table, point_table_headers)
 
         points_layout.addWidget(self.point_table)
         config_group.setLayout(points_layout)
@@ -117,16 +120,11 @@ class DevicePointDialog(QDialog):
         preview_table_layout = QVBoxLayout()
 
         self.preview_table = QTableWidget()
-        self.preview_table.setColumnCount(7)
-        self.preview_table.setHorizontalHeaderLabels([
+        preview_table_headers = [
             "完整变量名", "完整描述", "数据类型",
             "SLL设定值", "SL设定值", "SH设定值", "SHH设定值"
-        ])
-
-        # 设置表格列宽
-        header = self.preview_table.horizontalHeader()
-        for i in range(7):
-            header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+        ]
+        self._setup_table_widget(self.preview_table, preview_table_headers)
 
         preview_table_layout.addWidget(self.preview_table)
         preview_group.setLayout(preview_table_layout)
