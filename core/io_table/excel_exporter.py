@@ -9,7 +9,7 @@ logger.setLevel(logging.INFO)
 try:
     import openpyxl
     from openpyxl.worksheet.worksheet import Worksheet
-    from openpyxl.styles import Font, Alignment
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
     from openpyxl.utils import get_column_letter
 except ImportError:
     # 如果导入失败，定义一个占位符，以便类型提示不会引发错误
@@ -17,6 +17,9 @@ except ImportError:
     Worksheet = Any 
     Font = Any
     Alignment = Any
+    PatternFill = Any
+    Border = Any
+    Side = Any
     get_column_letter = Any
     openpyxl = None
 
@@ -131,6 +134,24 @@ class PLCSheetExporter(BaseSheetExporter):
     """
     负责生成 "IO点表" (PLC IO数据) 的Sheet页。
     """
+    # Columns that always require user input
+    ALWAYS_HIGHLIGHT_HEADERS = {
+        "供电类型（有源/无源）",
+        "线制",
+        "变量名称（HMI）",
+        "变量描述"
+    }
+
+    # Columns that require user input specifically for AI modules
+    AI_SPECIFIC_HIGHLIGHT_HEADERS = {
+        "量程低限",
+        "量程高限",
+        "SLL设定值",
+        "SL设定值",
+        "SH设定值",
+        "SHH设定值"
+    }
+
     def __init__(self):
         self.headers_plc = [
             "序号", "模块名称", "模块类型", "供电类型（有源/无源）", "线制", "通道位号",
@@ -194,14 +215,27 @@ class PLCSheetExporter(BaseSheetExporter):
         if not openpyxl: return
 
         left_alignment = None
-        if Alignment and Alignment is not Any: # Check if Alignment is properly imported
+        thin_border_style = None
+        highlight_fill_color = "FFE4E1E1" # 默认为浅灰色，您可以更改此颜色代码
+        user_input_fill = None
+
+        if Alignment and Alignment is not Any:
             left_alignment = Alignment(horizontal='left', vertical='center')
+        
+        if Border and Side and Border is not Any and Side is not Any:
+            thin_side = Side(border_style="thin", color="000000")
+            thin_border_style = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+        
+        if PatternFill and PatternFill is not Any:
+            user_input_fill = PatternFill(start_color=highlight_fill_color, end_color=highlight_fill_color, fill_type="solid")
 
         ws.append(self.headers_plc)
-        for cell in ws[1]:
+        for cell in ws[1]: # Header row
             cell.font = Font(bold=True)
             if left_alignment:
                 cell.alignment = left_alignment
+            if thin_border_style:
+                cell.border = thin_border_style
 
         address_allocator = PLCAddressAllocator() # 初始化地址分配器
 
@@ -218,7 +252,7 @@ class PLCSheetExporter(BaseSheetExporter):
             final_row_data[6] = site_name if site_name else ""
             final_row_data[7] = site_no if site_no else ""
             
-            final_row_data[8] = "" # “变量名称（HMI）”列，用户填写
+            final_row_data[8] = "" # "变量名称（HMI）"列，用户填写
 
             final_row_data[9] = point_data.get('description', '')
             
@@ -338,7 +372,27 @@ class PLCSheetExporter(BaseSheetExporter):
             # logger.debug(f"准备写入行: LL报警通讯地址='{final_row_data[34]}', L报警通讯地址='{final_row_data[37]}', H报警通讯地址='{final_row_data[40]}', HH报警通讯地址='{final_row_data[43]}', 维护使能通讯地址='{final_row_data[50]}', 上位机通讯地址='{final_row_data[52]}'")
             ws.append(final_row_data)
 
-            if left_alignment:
+            # Apply highlighting for user input cells and borders for all cells in the row
+            current_excel_row = ws.max_row
+            for col_idx, header in enumerate(self.headers_plc):
+                cell = ws.cell(row=current_excel_row, column=col_idx + 1)
+                
+                # Apply highlight
+                if user_input_fill:
+                    should_highlight = False
+                    if header in self.ALWAYS_HIGHLIGHT_HEADERS:
+                        should_highlight = True
+                    elif header in self.AI_SPECIFIC_HIGHLIGHT_HEADERS and channel_io_type == "AI":
+                        should_highlight = True
+                    
+                    if should_highlight:
+                        cell.fill = user_input_fill
+                
+                # Apply border
+                if thin_border_style:
+                    cell.border = thin_border_style
+            
+            if left_alignment: # This alignment was applied to the whole row before, keeping it if still desired
                 for cell in ws[ws.max_row]: # Apply to the newly added row
                     cell.alignment = left_alignment
         
@@ -414,12 +468,12 @@ class IOExcelExporter:
         logger.info(f"Received third_party_data type: {type(third_party_data)}, content: {third_party_data}")
 
         # 模块的导入移到这里，确保在尝试使用前检查
-        global openpyxl, Worksheet, Font, get_column_letter, Alignment # 声明为全局，以便修改上面定义的占位符
+        global openpyxl, Worksheet, Font, get_column_letter, Alignment, PatternFill, Border, Side
         if openpyxl is None: # 检查是否在文件顶部成功导入
             try:
                 import openpyxl as opxl_main # 使用别名避免与全局变量冲突
                 from openpyxl.worksheet.worksheet import Worksheet as OpxlWorksheet
-                from openpyxl.styles import Font as OpxlFont, Alignment as OpxlAlignment
+                from openpyxl.styles import Font as OpxlFont, Alignment as OpxlAlignment, PatternFill as OpxlPatternFill, Border as OpxlBorder, Side as OpxlSide
                 from openpyxl.utils import get_column_letter as opxl_get_column_letter
                 
                 # 更新全局变量
@@ -427,8 +481,11 @@ class IOExcelExporter:
                 Worksheet = OpxlWorksheet
                 Font = OpxlFont
                 Alignment = OpxlAlignment
+                PatternFill = OpxlPatternFill
+                Border = OpxlBorder
+                Side = OpxlSide
                 get_column_letter = opxl_get_column_letter
-                logger.info("openpyxl library loaded successfully.")
+                logger.info("openpyxl library including PatternFill, Border, Side loaded successfully.")
             except ImportError:
                 logger.error("导出Excel失败：openpyxl 库未安装。请运行 'pip install openpyxl'")
                 return False
