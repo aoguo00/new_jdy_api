@@ -85,14 +85,15 @@ class DevicePointDialog(QDialog):
         points_layout = QVBoxLayout()
 
         self.point_table = QTableWidget()
-        self.point_table.setColumnCount(3)
+        self.point_table.setColumnCount(7)
         self.point_table.setHorizontalHeaderLabels([
-            "变量名后缀", "描述后缀", "数据类型"
+            "变量名后缀", "描述后缀", "数据类型",
+            "SLL设定值", "SL设定值", "SH设定值", "SHH设定值"
         ])
 
         # 设置表格列宽
         header = self.point_table.horizontalHeader()
-        for i in range(3):
+        for i in range(7):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
 
         points_layout.addWidget(self.point_table)
@@ -116,14 +117,15 @@ class DevicePointDialog(QDialog):
         preview_table_layout = QVBoxLayout()
 
         self.preview_table = QTableWidget()
-        self.preview_table.setColumnCount(3)
+        self.preview_table.setColumnCount(7)
         self.preview_table.setHorizontalHeaderLabels([
-            "完整变量名", "完整描述", "数据类型"
+            "完整变量名", "完整描述", "数据类型",
+            "SLL设定值", "SL设定值", "SH设定值", "SHH设定值"
         ])
 
         # 设置表格列宽
         header = self.preview_table.horizontalHeader()
-        for i in range(3):
+        for i in range(7):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
 
         preview_table_layout.addWidget(self.preview_table)
@@ -245,6 +247,10 @@ class DevicePointDialog(QDialog):
                 self.point_table.setItem(row, 0, QTableWidgetItem(point_model.var_suffix))
                 self.point_table.setItem(row, 1, QTableWidgetItem(point_model.desc_suffix))
                 self.point_table.setItem(row, 2, QTableWidgetItem(point_model.data_type))
+                self.point_table.setItem(row, 3, QTableWidgetItem(point_model.sll_setpoint or ""))
+                self.point_table.setItem(row, 4, QTableWidgetItem(point_model.sl_setpoint or ""))
+                self.point_table.setItem(row, 5, QTableWidgetItem(point_model.sh_setpoint or ""))
+                self.point_table.setItem(row, 6, QTableWidgetItem(point_model.shh_setpoint or ""))
 
     def update_preview(self):
         """更新预览表格"""
@@ -273,6 +279,10 @@ class DevicePointDialog(QDialog):
                 self.preview_table.setItem(row, 0, QTableWidgetItem(full_var_name))
                 self.preview_table.setItem(row, 1, QTableWidgetItem(full_desc))
                 self.preview_table.setItem(row, 2, QTableWidgetItem(point_model.data_type))
+                self.preview_table.setItem(row, 3, QTableWidgetItem(point_model.sll_setpoint or ""))
+                self.preview_table.setItem(row, 4, QTableWidgetItem(point_model.sl_setpoint or ""))
+                self.preview_table.setItem(row, 5, QTableWidgetItem(point_model.sh_setpoint or ""))
+                self.preview_table.setItem(row, 6, QTableWidgetItem(point_model.shh_setpoint or ""))
 
     def save_config(self):
         """保存配置"""
@@ -300,7 +310,11 @@ class DevicePointDialog(QDialog):
                 points_to_save.append({
                     "var_suffix": point_model.var_suffix,
                     "desc_suffix": point_model.desc_suffix,
-                    "data_type": point_model.data_type
+                    "data_type": point_model.data_type,
+                    "sll_setpoint": point_model.sll_setpoint or "", #确保提供默认值
+                    "sl_setpoint": point_model.sl_setpoint or "",
+                    "sh_setpoint": point_model.sh_setpoint or "",
+                    "shh_setpoint": point_model.shh_setpoint or ""
                 })
         
         if not points_to_save and self.template.points: # 模板有点位但生成列表为空

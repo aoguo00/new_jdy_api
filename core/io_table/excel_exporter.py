@@ -640,10 +640,10 @@ class ThirdPartySheetExporter(BaseSheetExporter):
                 tp_point.get('point_name', ''), # 假设原始数据包含 point_name
                 tp_point.get('description', ''),# 假设原始数据包含 description
                 tp_point.get('data_type', ''), # 使用原始数据类型以保持大小写一致性（如果需要）
-                "", # SLL设定值 - 保持为空
-                "", # SL设定值 - 保持为空
-                "", # SH设定值 - 保持为空
-                "", # SHH设定值 - 保持为空
+                tp_point.get('sll_setpoint', ""), # SLL设定值
+                tp_point.get('sl_setpoint', ""),  # SL设定值
+                tp_point.get('sh_setpoint', ""),  # SH设定值
+                tp_point.get('shh_setpoint', ""), # SHH设定值
                 plc_address,
                 modbus_address  
             ]

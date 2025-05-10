@@ -19,6 +19,10 @@ TEMPLATE_SQL = {
         var_suffix TEXT NOT NULL,
         desc_suffix TEXT NOT NULL,
         data_type TEXT NOT NULL,
+        sll_setpoint TEXT,
+        sl_setpoint TEXT,
+        sh_setpoint TEXT,
+        shh_setpoint TEXT,
         FOREIGN KEY(template_id) REFERENCES third_device_templates(id) ON DELETE CASCADE
     )
     ''',
@@ -44,8 +48,8 @@ TEMPLATE_SQL = {
     
     'INSERT_POINT': '''
     INSERT INTO third_device_template_points
-    (template_id, var_suffix, desc_suffix, data_type)
-    VALUES (?, ?, ?, ?)
+    (template_id, var_suffix, desc_suffix, data_type, sll_setpoint, sl_setpoint, sh_setpoint, shh_setpoint)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ''',
 
     'GET_TEMPLATE_BY_ID': '''
@@ -67,7 +71,7 @@ TEMPLATE_SQL = {
     ''',
 
     'GET_POINTS_BY_TEMPLATE_ID': '''
-    SELECT id, template_id, var_suffix, desc_suffix, data_type
+    SELECT id, template_id, var_suffix, desc_suffix, data_type, sll_setpoint, sl_setpoint, sh_setpoint, shh_setpoint
     FROM third_device_template_points
     WHERE template_id = ?
     '''
@@ -82,6 +86,10 @@ CONFIGURED_DEVICE_SQL = {
         var_suffix TEXT NOT NULL,    -- 来自模板的点位变量名后缀 (快照)
         desc_suffix TEXT NOT NULL,   -- 来自模板的点位描述后缀 (快照)
         data_type TEXT NOT NULL,     -- 来自模板的点位数据类型 (快照)
+        sll_setpoint TEXT,
+        sl_setpoint TEXT,
+        sh_setpoint TEXT,
+        shh_setpoint TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 配置生成时间
         UNIQUE (device_prefix, var_suffix) -- 确保设备前缀和变量后缀的组合是唯一的
     )
@@ -89,12 +97,12 @@ CONFIGURED_DEVICE_SQL = {
 
     'INSERT_CONFIGURED_POINTS_BATCH': '''
     INSERT INTO configured_device_points
-    (template_name, device_prefix, var_suffix, desc_suffix, data_type)
-    VALUES (?, ?, ?, ?, ?)
+    (template_name, device_prefix, var_suffix, desc_suffix, data_type, sll_setpoint, sl_setpoint, sh_setpoint, shh_setpoint)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', # 用于 executemany
 
     'GET_ALL_CONFIGURED_POINTS': '''
-    SELECT id, template_name, device_prefix, var_suffix, desc_suffix, data_type, created_at
+    SELECT id, template_name, device_prefix, var_suffix, desc_suffix, data_type, sll_setpoint, sl_setpoint, sh_setpoint, shh_setpoint, created_at
     FROM configured_device_points
     ORDER BY device_prefix, var_suffix -- 或其他排序方式
     ''',

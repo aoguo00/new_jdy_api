@@ -12,6 +12,10 @@ class TemplatePointModel(BaseModel):
     var_suffix: str = Field(..., description="变量名后缀 (例如 _AI, _STATUS)")
     desc_suffix: str = Field(..., description="描述后缀 (例如 温度, 阀门状态)")
     data_type: str = Field(..., description="数据类型 (例如 REAL, BOOL)")
+    sll_setpoint: Optional[str] = Field(default="", description="SLL设定值")
+    sl_setpoint: Optional[str] = Field(default="", description="SL设定值")
+    sh_setpoint: Optional[str] = Field(default="", description="SH设定值")
+    shh_setpoint: Optional[str] = Field(default="", description="SHH设定值")
 
 class DeviceTemplateModel(BaseModel):
     """表示一个设备模板，包含基本信息和点位列表"""

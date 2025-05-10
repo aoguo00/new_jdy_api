@@ -3,8 +3,9 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
                                QFormLayout, QLineEdit, QTableWidget, QTableWidgetItem,
                                QPushButton, QHeaderView, QMessageBox,
-                               QDialogButtonBox, QComboBox, QListWidgetItem)
+                               QDialogButtonBox, QComboBox, QListWidgetItem, QLabel)
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QDoubleValidator
 from core.third_party_config_area import TemplateService
 from core.third_party_config_area.models import DeviceTemplateModel, TemplatePointModel
 import logging
@@ -54,7 +55,7 @@ class TemplateManageDialogUI:
         template_btn_layout.addWidget(self.delete_template_btn)
         template_list_layout.addLayout(template_btn_layout)
         template_list_group.setLayout(template_list_layout)
-        h_layout.addWidget(template_list_group)
+        h_layout.addWidget(template_list_group, 1)
 
         template_detail_group = QGroupBox("模板详情")
         template_detail_layout = QVBoxLayout()
@@ -66,10 +67,13 @@ class TemplateManageDialogUI:
         point_list_group = QGroupBox("点位列表")
         point_list_layout = QVBoxLayout()
         self.point_table = QTableWidget()
-        self.point_table.setColumnCount(3)
-        self.point_table.setHorizontalHeaderLabels(["变量名后缀", "描述后缀", "类型"])
+        self.point_table.setColumnCount(7)
+        self.point_table.setHorizontalHeaderLabels([
+            "变量名后缀", "描述后缀", "类型", 
+            "SLL设定值", "SL设定值", "SH设定值", "SHH设定值"
+        ])
         header_points = self.point_table.horizontalHeader()
-        for i in range(3):
+        for i in range(7):
             header_points.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
         point_list_layout.addWidget(self.point_table)
 
@@ -94,7 +98,7 @@ class TemplateManageDialogUI:
         save_layout.addWidget(self.save_template_btn)
         template_detail_layout.addLayout(save_layout)
         template_detail_group.setLayout(template_detail_layout)
-        h_layout.addWidget(template_detail_group)
+        h_layout.addWidget(template_detail_group, 2)
 
         layout.addLayout(h_layout)
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -261,6 +265,10 @@ class TemplateManageDialog(QDialog):
                 self.view.point_table.setItem(i, 0, QTableWidgetItem(point_model.var_suffix or '')) 
                 self.view.point_table.setItem(i, 1, QTableWidgetItem(point_model.desc_suffix or ''))
                 self.view.point_table.setItem(i, 2, QTableWidgetItem(point_model.data_type or 'BOOL'))
+                self.view.point_table.setItem(i, 3, QTableWidgetItem(point_model.sll_setpoint or ''))
+                self.view.point_table.setItem(i, 4, QTableWidgetItem(point_model.sl_setpoint or ''))
+                self.view.point_table.setItem(i, 5, QTableWidgetItem(point_model.sh_setpoint or ''))
+                self.view.point_table.setItem(i, 6, QTableWidgetItem(point_model.shh_setpoint or ''))
         
         self.view.delete_template_btn.setEnabled(True)
         self.view.add_point_btn.setEnabled(True)
@@ -385,6 +393,10 @@ class TemplateManageDialog(QDialog):
             self.view.point_table.setItem(row, 0, QTableWidgetItem(point_data['var_suffix']))
             self.view.point_table.setItem(row, 1, QTableWidgetItem(point_data['desc_suffix']))
             self.view.point_table.setItem(row, 2, QTableWidgetItem(point_data['data_type']))
+            self.view.point_table.setItem(row, 3, QTableWidgetItem(point_data['sll_setpoint']))
+            self.view.point_table.setItem(row, 4, QTableWidgetItem(point_data['sl_setpoint']))
+            self.view.point_table.setItem(row, 5, QTableWidgetItem(point_data['sh_setpoint']))
+            self.view.point_table.setItem(row, 6, QTableWidgetItem(point_data['shh_setpoint']))
             
             self.template_data_changed() # 点位变动也算数据变动
             self.update_point_buttons_state()
@@ -407,7 +419,11 @@ class TemplateManageDialog(QDialog):
         dialog = self._create_point_dialog(
             var_suffix=self.view.point_table.item(row, 0).text(),
             desc_suffix=self.view.point_table.item(row, 1).text(),
-            data_type=self.view.point_table.item(row, 2).text()
+            data_type=self.view.point_table.item(row, 2).text(),
+            sll_setpoint=self.view.point_table.item(row, 3).text(),
+            sl_setpoint=self.view.point_table.item(row, 4).text(),
+            sh_setpoint=self.view.point_table.item(row, 5).text(),
+            shh_setpoint=self.view.point_table.item(row, 6).text()
         )
 
         if dialog.exec() == QDialog.Accepted:
@@ -415,6 +431,10 @@ class TemplateManageDialog(QDialog):
             self.view.point_table.setItem(row, 0, QTableWidgetItem(point_data['var_suffix']))
             self.view.point_table.setItem(row, 1, QTableWidgetItem(point_data['desc_suffix']))
             self.view.point_table.setItem(row, 2, QTableWidgetItem(point_data['data_type']))
+            self.view.point_table.setItem(row, 3, QTableWidgetItem(point_data['sll_setpoint']))
+            self.view.point_table.setItem(row, 4, QTableWidgetItem(point_data['sl_setpoint']))
+            self.view.point_table.setItem(row, 5, QTableWidgetItem(point_data['sh_setpoint']))
+            self.view.point_table.setItem(row, 6, QTableWidgetItem(point_data['shh_setpoint']))
             self.template_data_changed() # 点位变动也算数据变动
 
     def delete_point(self):
@@ -447,19 +467,10 @@ class TemplateManageDialog(QDialog):
         self.template_data_changed() # 点位变动也算数据变动
         self.update_point_buttons_state()
 
-    def _create_point_dialog(self, var_suffix="", desc_suffix="", data_type="BOOL") -> 'QDialog':
-        """内部辅助方法：创建并配置一个用于添加或编辑单个点位信息的对话框。
-        
-        Args:
-            var_suffix (str, optional): 变量名后缀的初始值 (用于编辑)。默认为 ""。
-            desc_suffix (str, optional): 描述后缀的初始值 (用于编辑)。默认为 ""。
-            data_type (str, optional): 数据类型的初始值 (用于编辑)。默认为 "BOOL"。
-            
-        Returns:
-            QDialog: 配置好的点位编辑对话框实例。该对话框实例上会附加一个 get_point_data 方法，
-                     用于获取用户输入的数据。
-        """
-        dialog = QDialog(self) # 父窗口是 TemplateManageDialog 实例
+    def _create_point_dialog(self, var_suffix="", desc_suffix="", data_type="BOOL", 
+                               sll_setpoint="", sl_setpoint="", sh_setpoint="", 
+                               shh_setpoint="") -> 'QDialog':
+        dialog = QDialog(self)
         dialog.setWindowTitle("编辑点位")
         layout = QVBoxLayout(dialog)
         form = QFormLayout()
@@ -468,10 +479,54 @@ class TemplateManageDialog(QDialog):
         form.addRow("变量名后缀:", var_suffix_input)
         desc_suffix_input = QLineEdit(desc_suffix)
         form.addRow("描述后缀:", desc_suffix_input)
+        
         type_combo = QComboBox()
-        type_combo.addItems(["BOOL", "INT", "REAL", "DINT"]) # 根据需要扩展类型
+        type_combo.addItems(["BOOL", "REAL"]) 
         type_combo.setCurrentText(data_type)
-        form.addRow("数据类型:", type_combo)
+        type_label_widget = QLabel("数据类型:")
+        form.addRow(type_label_widget, type_combo)
+
+        # 创建 DoubleValidator，允许输入一定范围和精度的小数
+        double_validator = QDoubleValidator() 
+
+        sll_label = QLabel("SLL设定值:")
+        sll_setpoint_input = QLineEdit(sll_setpoint)
+        sll_setpoint_input.setValidator(double_validator) # 设置验证器
+        form.addRow(sll_label, sll_setpoint_input)
+
+        sl_label = QLabel("SL设定值:")
+        sl_setpoint_input = QLineEdit(sl_setpoint)
+        sl_setpoint_input.setValidator(double_validator) # 设置验证器
+        form.addRow(sl_label, sl_setpoint_input)
+
+        sh_label = QLabel("SH设定值:")
+        sh_setpoint_input = QLineEdit(sh_setpoint)
+        sh_setpoint_input.setValidator(double_validator) # 设置验证器
+        form.addRow(sh_label, sh_setpoint_input)
+
+        shh_label = QLabel("SHH设定值:")
+        shh_setpoint_input = QLineEdit(shh_setpoint)
+        shh_setpoint_input.setValidator(double_validator) # 设置验证器
+        form.addRow(shh_label, shh_setpoint_input)
+
+        dialog.setpoint_widgets = [
+            (sll_label, sll_setpoint_input),
+            (sl_label, sl_setpoint_input),
+            (sh_label, sh_setpoint_input),
+            (shh_label, shh_setpoint_input)
+        ]
+
+        def _toggle_setpoint_fields(current_type_text: str):
+            is_real = (current_type_text == "REAL")
+            for label_widget, input_widget in dialog.setpoint_widgets:
+                label_widget.setVisible(is_real)
+                input_widget.setVisible(is_real)
+                if not is_real:
+                    input_widget.clear()
+
+        type_combo.currentTextChanged.connect(_toggle_setpoint_fields)
+        _toggle_setpoint_fields(type_combo.currentText())
+
         layout.addLayout(form)
 
         button_box_point = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -479,18 +534,32 @@ class TemplateManageDialog(QDialog):
         button_box_point.rejected.connect(dialog.reject)
         layout.addWidget(button_box_point)
 
-        # 将输入控件附加到对话框实例上，以便 get_point_data 可以访问它们
         dialog.var_suffix_input = var_suffix_input
         dialog.desc_suffix_input = desc_suffix_input
         dialog.type_combo = type_combo
+        dialog.sll_setpoint_input = sll_setpoint_input
+        dialog.sl_setpoint_input = sl_setpoint_input
+        dialog.sh_setpoint_input = sh_setpoint_input
+        dialog.shh_setpoint_input = shh_setpoint_input
         
         def get_point_data_method():
-            return {
+            current_type = dialog.type_combo.currentText()
+            data = {
                 'var_suffix': dialog.var_suffix_input.text().strip(),
                 'desc_suffix': dialog.desc_suffix_input.text().strip(),
-                'data_type': dialog.type_combo.currentText()
+                'data_type': current_type,
+                'sll_setpoint': "",
+                'sl_setpoint': "",
+                'sh_setpoint': "",
+                'shh_setpoint': ""
             }
-        dialog.get_point_data = get_point_data_method # 将方法附加到对话框实例
+            if current_type == "REAL":
+                data['sll_setpoint'] = dialog.sll_setpoint_input.text().strip()
+                data['sl_setpoint'] = dialog.sl_setpoint_input.text().strip()
+                data['sh_setpoint'] = dialog.sh_setpoint_input.text().strip()
+                data['shh_setpoint'] = dialog.shh_setpoint_input.text().strip()
+            return data
+        dialog.get_point_data = get_point_data_method
         return dialog
 
     def save_template(self):
@@ -515,7 +584,11 @@ class TemplateManageDialog(QDialog):
             points_ui_data.append({
                 'var_suffix': self.view.point_table.item(row, 0).text(),
                 'desc_suffix': self.view.point_table.item(row, 1).text(),
-                'data_type': self.view.point_table.item(row, 2).text()
+                'data_type': self.view.point_table.item(row, 2).text(),
+                'sll_setpoint': self.view.point_table.item(row, 3).text(),
+                'sl_setpoint': self.view.point_table.item(row, 4).text(),
+                'sh_setpoint': self.view.point_table.item(row, 5).text(),
+                'shh_setpoint': self.view.point_table.item(row, 6).text()
             })
         
         is_creating_new = self.current_template_id is None

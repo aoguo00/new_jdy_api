@@ -217,7 +217,12 @@ class MainWindow(QMainWindow):
                                 # 尝试映射到 "所属设备"
                                 'device_name': tp_model.device_prefix,
                                 # "功能位置" 在 ConfiguredDevicePointModel 中没有直接对应，暂时留空
-                                'functional_location': '' 
+                                'functional_location': '',
+                                # 新增：从模型获取设定值，如果模型中不存在这些属性，确保默认值
+                                'sll_setpoint': getattr(tp_model, 'sll_setpoint', ""),
+                                'sl_setpoint': getattr(tp_model, 'sl_setpoint', ""),
+                                'sh_setpoint': getattr(tp_model, 'sh_setpoint', ""),
+                                'shh_setpoint': getattr(tp_model, 'shh_setpoint', "")
                             }
                             third_party_points_for_export.append(point_dict)
                         logger.info(f"成功转换 {len(third_party_points_for_export)} 个第三方点位用于导出。")

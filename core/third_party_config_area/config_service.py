@@ -56,7 +56,11 @@ class ConfigService:
                     device_prefix=device_prefix,
                     var_suffix=point_raw['var_suffix'],
                     desc_suffix=point_raw.get('desc_suffix', ""), # desc_suffix 可能为空
-                    data_type=point_raw['data_type']
+                    data_type=point_raw['data_type'],
+                    sll_setpoint=point_raw.get('sll_setpoint', ""),
+                    sl_setpoint=point_raw.get('sl_setpoint', ""),
+                    sh_setpoint=point_raw.get('sh_setpoint', ""),
+                    shh_setpoint=point_raw.get('shh_setpoint', "")
                 )
                 configured_points_to_save.append(configured_point)
             except KeyError as ke:

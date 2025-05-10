@@ -15,6 +15,10 @@ class ConfiguredDevicePointModel(BaseModel):
     var_suffix: str = Field(..., description="来自模板的点位变量名后缀")
     desc_suffix: str = Field(..., description="来自模板的点位描述后缀")
     data_type: str = Field(..., description="来自模板的点位数据类型")
+    sll_setpoint: Optional[str] = Field(default="", description="SLL设定值 (来自模板的快照)")
+    sl_setpoint: Optional[str] = Field(default="", description="SL设定值 (来自模板的快照)")
+    sh_setpoint: Optional[str] = Field(default="", description="SH设定值 (来自模板的快照)")
+    shh_setpoint: Optional[str] = Field(default="", description="SHH设定值 (来自模板的快照)")
     # 时间戳
     created_at: Optional[datetime] = Field(default=None, description="配置生成时间")
 

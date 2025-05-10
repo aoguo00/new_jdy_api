@@ -63,7 +63,8 @@ class TemplateDAO:
                 if template_data.points:
                     sql_point = TEMPLATE_SQL['INSERT_POINT']
                     point_params_list = [
-                        (template_id, p.var_suffix, p.desc_suffix, p.data_type)
+                        (template_id, p.var_suffix, p.desc_suffix, p.data_type,
+                         p.sll_setpoint, p.sl_setpoint, p.sh_setpoint, p.shh_setpoint)
                         for p in template_data.points
                     ]
                     cursor.executemany(sql_point, point_params_list)
@@ -140,7 +141,8 @@ class TemplateDAO:
                 if template_data.points:
                     sql_point = TEMPLATE_SQL['INSERT_POINT']
                     point_params_list = [
-                        (template_id, p.var_suffix, p.desc_suffix, p.data_type)
+                        (template_id, p.var_suffix, p.desc_suffix, p.data_type,
+                         p.sll_setpoint, p.sl_setpoint, p.sh_setpoint, p.shh_setpoint)
                         for p in template_data.points
                     ]
                     cursor.executemany(sql_point, point_params_list)
@@ -197,7 +199,8 @@ class ConfiguredDeviceDAO:
         
         sql = CONFIGURED_DEVICE_SQL['INSERT_CONFIGURED_POINTS_BATCH']
         params_list = [
-            (p.template_name, p.device_prefix, p.var_suffix, p.desc_suffix, p.data_type)
+            (p.template_name, p.device_prefix, p.var_suffix, p.desc_suffix, p.data_type,
+             p.sll_setpoint, p.sl_setpoint, p.sh_setpoint, p.shh_setpoint)
             for p in points
         ]
         try:
