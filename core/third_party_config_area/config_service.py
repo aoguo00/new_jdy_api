@@ -34,10 +34,10 @@ class ConfigService:
             msg = "模板名称不能为空。"
             logger.warning(f"保存设备配置失败: {msg}")
             return False, msg
-        if not device_prefix:
-            msg = "设备前缀不能为空。"
-            logger.warning(f"保存设备配置失败: {msg}")
-            return False, msg # 或者可以允许空前缀，取决于业务逻辑
+        # if not device_prefix: # 允许设备前缀为空，移除此校验
+        #     msg = "设备前缀不能为空。"
+        #     logger.warning(f"保存设备配置失败: {msg}")
+        #     return False, msg 
         
         # DevicePointDialog 应该已经处理了空点位列表的确认逻辑。
         # 此处不再需要对 points_data 为空的初步日志记录或特殊处理，

@@ -67,7 +67,7 @@ class DevicePointDialog(QDialog):
 
         # 恢复设备前缀输入框
         self.prefix_input = QLineEdit()
-        self.prefix_input.setPlaceholderText("请输入设备/变量名前缀 (例如 T01)")
+        self.prefix_input.setPlaceholderText("请输入设备/变量名前缀 (例如 PT0101)，不需要请留空！")
         self.prefix_input.textChanged.connect(self.update_preview)
         info_layout.addRow("设备前缀:", self.prefix_input)
 
@@ -285,11 +285,11 @@ class DevicePointDialog(QDialog):
         if hasattr(self, 'prefix_input'):
             device_prefix = self.prefix_input.text().strip()
         
-        if not device_prefix:
-            QMessageBox.warning(self, "警告", "设备前缀不能为空。")
-            if hasattr(self, 'prefix_input'):
-                self.prefix_input.setFocus()
-            return
+        # if not device_prefix:  # 允许设备前缀为空，移除强制校验
+        #     QMessageBox.warning(self, "警告", "设备前缀不能为空。")
+        #     if hasattr(self, 'prefix_input'):
+        #         self.prefix_input.setFocus()
+        #     return
 
         template_name = self.template.name # 获取模板名称
 

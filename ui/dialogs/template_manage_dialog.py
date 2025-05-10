@@ -302,6 +302,10 @@ class TemplateManageDialog(QDialog):
             return
 
         logger.info("Initiating new template creation flow.")
+        
+        # 新增：清除模板列表中的当前选择，以确保后续点击列表项能触发 selectionChanged
+        self.view.template_list.clearSelection()
+
         self.current_template_id = None # 明确表示正在创建新模板
         self.current_template = None
         self.clear_template_details_ui(for_new_template_creation=True) # 清空详情，但保留一些状态用于新模板

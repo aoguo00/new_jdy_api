@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 import re # 新增导入
 
 logger = logging.getLogger(__name__)
@@ -582,6 +582,7 @@ class PLCSheetExporter(BaseSheetExporter):
         
         # --- 4. 调整所有列的宽度 --- 
         self._adjust_column_widths(ws, self.headers_plc)
+        return address_allocator # 返回最终的地址分配器实例
 
 
 class ThirdPartySheetExporter(BaseSheetExporter):
@@ -589,42 +590,67 @@ class ThirdPartySheetExporter(BaseSheetExporter):
     负责生成第三方设备点表的Sheet页。
     """
     def __init__(self):
+        super().__init__() # 调用父类的构造函数，如果BaseSheetExporter有__init__
         self.headers_tp = [
             "场站名", "变量名称", "变量描述", "数据类型", 
-            "SH设定值", "SHH设定值", "PLC地址", "MODBUS地址"
+            "SLL设定值", "SL设定值", "SH设定值", "SHH设定值",  # 新增和调整顺序后的设定值列
+            "PLC地址", "MODBUS地址"
         ]
+        # self.get_modbus_address_func = None # 移除旧的成员变量方式
 
-    def populate_sheet(self, ws: Worksheet, points_in_template: List[Dict[str, Any]], site_name: Optional[str]):
+    def populate_sheet(self, ws: Worksheet, points_in_template: List[Dict[str, Any]], site_name: Optional[str], address_allocator: PLCAddressAllocator, get_modbus_address_func: Callable[[str], str]):
         """
-        填充第三方设备数据到指定的工作表。
+        填充第三方设备数据到指定的工作表，并使用传入的地址分配器和转换函数。
         """
         if not openpyxl: return
 
         left_alignment = None
-        if Alignment and Alignment is not Any: # Check if Alignment is properly imported
+        if Alignment and Alignment is not Any: 
             left_alignment = Alignment(horizontal='left', vertical='center')
 
         ws.append(self.headers_tp)
+        header_font = Font(bold=True)
         for cell in ws[1]:
-            cell.font = Font(bold=True)
+            cell.font = header_font
             if left_alignment:
                 cell.alignment = left_alignment
 
         for tp_point in points_in_template:
+            plc_address = ""
+            modbus_address = ""
+            # points_in_template 中的每个点期望有 'data_type' 字段
+            data_type = tp_point.get('data_type', '').upper()
+
+            if data_type == "REAL" or data_type == "INT" or data_type == "DINT": 
+                plc_address = address_allocator.allocate_real_address()
+            elif data_type == "BOOL":
+                plc_address = address_allocator.allocate_bool_address()
+            else:
+                logger.warning(f"第三方点位 '{tp_point.get('point_name', '未知')}' 数据类型 '{data_type}' 未知或不支持自动分配PLC地址，将留空。")
+
+            if plc_address:
+                try:
+                    modbus_address = get_modbus_address_func(plc_address)
+                except Exception as e:
+                    logger.error(f"为PLC地址 '{plc_address}' 计算MODBUS地址时出错: {e}")
+                    modbus_address = "计算错误"
+            
             row_data_tp = [
                 site_name if site_name else "",
-                tp_point.get('point_name', ''),
-                tp_point.get('description', ''),
-                tp_point.get('data_type', ''),
-                "", 
-                "", 
-                "", 
-                ""  
+                tp_point.get('point_name', ''), # 假设原始数据包含 point_name
+                tp_point.get('description', ''),# 假设原始数据包含 description
+                tp_point.get('data_type', ''), # 使用原始数据类型以保持大小写一致性（如果需要）
+                "", # SLL设定值 - 保持为空
+                "", # SL设定值 - 保持为空
+                "", # SH设定值 - 保持为空
+                "", # SHH设定值 - 保持为空
+                plc_address,
+                modbus_address  
             ]
             ws.append(row_data_tp)
             if left_alignment:
-                for cell in ws[ws.max_row]: # Apply to the newly added row
-                    cell.alignment = left_alignment
+                for cell_in_row in ws[ws.max_row]: 
+                    cell_in_row.alignment = left_alignment
         
         self._adjust_column_widths(ws, self.headers_tp)
 
@@ -686,10 +712,11 @@ class IOExcelExporter:
             logger.info("Removed default 'Sheet'.")
 
         # --- 处理PLC IO数据 ---
+        shared_address_allocator: Optional[PLCAddressAllocator] = None # 显式声明类型
         if plc_io_data:
             logger.info("Processing PLC IO data...")
             ws_plc = wb.create_sheet(title="IO点表")
-            self.plc_sheet_exporter.populate_sheet(ws_plc, plc_io_data, site_name, site_no)
+            shared_address_allocator = self.plc_sheet_exporter.populate_sheet(ws_plc, plc_io_data, site_name, site_no)
             logger.info("'IO点表' sheet populated.")
 
         # --- 处理第三方设备数据 ---
@@ -708,7 +735,17 @@ class IOExcelExporter:
                 logger.info(f"尝试为模板 '{template_name}' 创建Sheet，安全名称为: '{safe_sheet_name}'")
                 
                 ws_tp = wb.create_sheet(title=safe_sheet_name)
-                self.third_party_sheet_exporter.populate_sheet(ws_tp, points_in_template, site_name)
+                
+                # 决定使用哪个地址分配器实例
+                allocator_for_tp = shared_address_allocator if shared_address_allocator else PLCAddressAllocator()
+                # 传递地址分配器和地址转换函数
+                self.third_party_sheet_exporter.populate_sheet(
+                    ws_tp, 
+                    points_in_template, 
+                    site_name, 
+                    allocator_for_tp, 
+                    self.plc_sheet_exporter._get_modbus_address # 传递方法引用
+                )
                 logger.info(f"Sheet '{safe_sheet_name}' for template '{template_name}' populated. Current sheets: {wb.sheetnames}")
         
         if not wb.sheetnames:
