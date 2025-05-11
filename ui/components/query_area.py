@@ -12,6 +12,7 @@ class QueryArea(QGroupBox):
     upload_hmi_requested = Signal(str)  # HMI类型
     upload_plc_requested = Signal(str)  # PLC类型
     plc_config_requested = Signal()  # PLC配置信号
+    upload_io_table_requested = Signal() # 新增信号：上传IO点表
 
     def __init__(self, parent=None):
         super().__init__("查询条件", parent)
@@ -56,6 +57,7 @@ class QueryArea(QGroupBox):
         self.query_btn = QPushButton("查询")
         self.clear_btn = QPushButton("清空")
         self.generate_btn = QPushButton("生成IO点表")
+        self.upload_io_table_btn = QPushButton("上传IO点表") # 新增：上传IO点表按钮
         
         # 创建HMI点表下拉菜单按钮
         self.upload_hmi_btn = QPushButton("上传HMI点表")
@@ -76,8 +78,9 @@ class QueryArea(QGroupBox):
 
         # 统一设置按钮大小
         buttons = [self.query_btn, self.clear_btn, self.generate_btn, 
-                  self.upload_hmi_btn, self.upload_plc_btn, 
-                  self.plc_config_button]
+                   self.upload_io_table_btn, # 新增：添加到按钮列表，确保在"生成IO点表"右侧
+                   self.upload_hmi_btn, self.upload_plc_btn, 
+                   self.plc_config_button]
         for btn in buttons:
             btn.setFixedWidth(100)
             button_layout.addWidget(btn)
@@ -95,6 +98,7 @@ class QueryArea(QGroupBox):
         self.query_btn.clicked.connect(self._on_query_clicked)
         self.clear_btn.clicked.connect(self.clear_requested)
         self.generate_btn.clicked.connect(self._on_generate_points_clicked)
+        self.upload_io_table_btn.clicked.connect(self.upload_io_table_requested.emit) # 新增：连接上传IO点表按钮的信号
 
         # 设置HMI菜单动作
         hmi_menu = self.upload_hmi_btn.menu()

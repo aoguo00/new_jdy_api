@@ -1,7 +1,7 @@
 """主窗口UI模块"""
 
 import logging
-from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QMessageBox, QDialog, QFileDialog
+from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QMessageBox, QDialog, QFileDialog, QStatusBar
 from typing import List, Dict, Any, Optional
 
 # API and old DeviceManager (if still needed for other parts, though ideally not for third_party)
@@ -20,6 +20,9 @@ from core.third_party_config_area.config_service import ConfigService
 # 导入新的 IO 数据加载器
 from core.io_table import IODataLoader, IOExcelExporter
 
+# 导入文件验证器
+from core.upload_handler.validator import validate_io_table
+
 # Import new data processors
 from core.project_list_area import ProjectService
 from core.device_list_area import DeviceService
@@ -32,6 +35,7 @@ from ui.components.third_party_device_area import ThirdPartyDeviceArea
 
 # Dialogs
 from ui.dialogs.plc_config_dialog import PLCConfigDialog
+from ui.dialogs.error_display_dialog import ErrorDisplayDialog
 # 移除模块管理对话框导入
 # from ui.dialogs.module_manager_dialog import ModuleManagerDialog
 
@@ -51,8 +55,16 @@ class MainWindow(QMainWindow):
         # For development, a fixed reasonable size might be better than always maximized
         self.resize(1280, 800)
 
+        # 初始化状态栏
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        self.status_bar.showMessage("准备就绪")
+
         # 初始化当前场站名称
         self.current_site_name: Optional[str] = None
+        # 新增：用于存储已验证的IO点表路径和选择的PLC类型
+        self.verified_io_table_path: Optional[str] = None
+        self.selected_plc_type_for_upload: Optional[str] = None
 
         # 初始化核心服务和管理器
         try:
@@ -141,6 +153,8 @@ class MainWindow(QMainWindow):
         self.query_area.clear_requested.connect(self._handle_clear)
         self.query_area.generate_points_requested.connect(self._handle_generate_points)
         self.query_area.plc_config_requested.connect(self.show_plc_config_dialog)
+        self.query_area.upload_io_table_requested.connect(self._handle_upload_io_table)
+        self.query_area.upload_plc_requested.connect(self._handle_upload_plc_type_selected) # 新增：连接上传PLC点表类型选择信号
         # 移除模块管理信号连接
         # self.query_area.module_manage_requested.connect(self.show_module_manager)
 
@@ -314,6 +328,68 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"获取场站 '{site_name}' 的设备数据失败: {e}", exc_info=True)
             QMessageBox.critical(self, "数据加载错误", f"获取场站设备数据失败: {str(e)}")
+
+    def _handle_upload_io_table(self):
+        """处理上传IO点表请求"""
+        # pylint: disable=line-too-long
+        file_path, _ = QFileDialog.getOpenFileName(self,
+                                                   "选择要上传的IO点表文件",
+                                                   "",  # 默认目录
+                                                   "Excel 文件 (*.xlsx *.xls);;所有文件 (*)")
+        # pylint: enable=line-too-long
+        if file_path:
+            file_name = file_path.split('/')[-1]
+            logger.info(f"用户选择了IO点表文件进行上传: {file_path}")
+
+            is_valid, message = validate_io_table(file_path)
+
+            if not is_valid:
+                self.status_bar.showMessage(f"文件验证失败: {file_name}")
+                error_dialog = ErrorDisplayDialog(message, self)
+                error_dialog.exec()
+                logger.warning(f"IO点表文件 '{file_path}' 验证失败: {message}")
+                return
+            
+            self.status_bar.showMessage(f"文件验证通过: {file_name}。等待后续操作。")
+            logger.info(f"IO点表文件 '{file_path}' 验证通过。")
+
+            self.verified_io_table_path = file_path 
+            self.selected_plc_type_for_upload = None
+
+        else:
+            self.status_bar.showMessage("未选择文件")
+            logger.info("用户取消了选择IO点表文件。")
+            self.verified_io_table_path = None 
+            self.selected_plc_type_for_upload = None
+
+    def _handle_upload_plc_type_selected(self, plc_type: str):
+        """处理用户选择上传的PLC点表类型"""
+        logger.info(f"用户选择了PLC类型进行上传: {plc_type}")
+        self.selected_plc_type_for_upload = plc_type
+
+        if not self.verified_io_table_path:
+            QMessageBox.warning(self, "操作无效", "请先上传并验证一个IO点表文件，然后再选择要生成的PLC点表类型。")
+            logger.warning("用户在未上传有效IO点表的情况下尝试选择PLC上传类型。")
+            self.status_bar.showMessage("请先上传IO点表")
+            return
+
+        file_name = self.verified_io_table_path.split('/')[-1]
+        self.status_bar.showMessage(f"准备为 '{file_name}' 生成 '{plc_type}' PLC点表...")
+
+        if plc_type == "和利时":
+            logger.info(f"准备根据IO点表 '{self.verified_io_table_path}' 生成和利时PLC点表。")
+            # 调用生成和利时PLC点表的具体方法
+            # self._generate_hollysys_plc_points(self.verified_io_table_path)
+            QMessageBox.information(self, "功能待实现", f"已选择根据 '{file_name}' 生成 '{plc_type}' PLC点表。\n该功能正在开发中。")
+            # 实际实现后，可以更新状态栏，例如：
+            # self.status_bar.showMessage(f"'{plc_type}' PLC点表已根据 '{file_name}' 生成。", 5000)
+        elif plc_type == "中控PLC":
+            logger.info(f"准备根据IO点表 '{self.verified_io_table_path}' 生成中控PLC点表。")
+            QMessageBox.information(self, "功能待实现", f"已选择根据 '{file_name}' 生成 '{plc_type}' PLC点表。\n该功能正在开发中。")
+        else:
+            QMessageBox.warning(self, "类型不支持", f"目前不支持为PLC类型 '{plc_type}' 生成点表。")
+            logger.warning(f"用户尝试为不支持的PLC类型 '{plc_type}' 生成点表。")
+            self.status_bar.showMessage(f"不支持的PLC类型: {plc_type}")
 
     def get_current_devices(self) -> List[Dict[str, Any]]:
         """获取当前加载的设备数据，用于传递给其他对话框"""
