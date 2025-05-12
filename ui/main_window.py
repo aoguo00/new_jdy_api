@@ -2,8 +2,9 @@
 
 import logging
 from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QMessageBox, QDialog, QFileDialog, QStatusBar
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import pandas as pd # 确保导入 pandas
+import os
 
 # API and old DeviceManager (if still needed for other parts, though ideally not for third_party)
 from core.query_area import JianDaoYunAPI
@@ -447,7 +448,7 @@ class MainWindow(QMainWindow):
                 if save_path:
                     # 4. 调用生成器
                     generator = HollysysGenerator()
-                    success = generator.generate_hollysys_table(
+                    success, error_message = generator.generate_hollysys_table(
                         io_data_df=main_io_df,
                         source_sheet_name=source_sheet_name_for_generator, # 使用实际读取的主Sheet名
                         output_path=save_path,
@@ -458,8 +459,11 @@ class MainWindow(QMainWindow):
                         QMessageBox.information(self, "成功", f"和利时PLC点表已成功导出到:\n{save_path}")
                         self.status_bar.showMessage(f"和利时点表已生成: {save_path}", 7000)
                     else:
-                        QMessageBox.warning(self, "导出失败", "和利时PLC点表导出失败。\n请查看日志获取详细信息。")
-                        self.status_bar.showMessage("和利时点表生成失败。")
+                        # 如果生成失败，error_message应该包含具体的错误原因
+                        detailed_error_msg = error_message if error_message else "生成和利时PLC点表失败，但未提供具体错误信息。"
+                        QMessageBox.critical(self, "生成失败", detailed_error_msg)
+                        logger.error(f"HollysysGenerator生成点表失败: {detailed_error_msg}")
+                        self.status_bar.showMessage("和利时点表生成失败 (未知错误)。")
                 else:
                     logger.info("用户取消了保存和利时PLC点表操作。")
                     self.status_bar.showMessage("已取消生成和利时点表。")

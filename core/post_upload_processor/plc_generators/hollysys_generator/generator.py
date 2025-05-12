@@ -1,7 +1,7 @@
 import pandas as pd
 import xlwt
 import logging
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Any
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +37,15 @@ IP_HH_AL_PLC_ADDR_COL  = "HH报警_PLC地址"
 IP_MAINT_VAL_SP_PLC_ADDR_COL = "维护值设定点位_PLC地址"
 IP_MAINT_EN_SW_PLC_ADDR_COL  = "维护使能开关点位_PLC地址"
 
-# --- Constants for Third-Party Input Sheet Columns (based on "电动阀" example) ---
+# --- Constants for Third-Party Input Sheet Columns (based on "电动阀" and "可燃气体探测器" examples) ---
 TP_INPUT_VAR_NAME_COL = "变量名称"
 TP_INPUT_PLC_ADDRESS_COL = "PLC地址"
 TP_INPUT_DESCRIPTION_COL = "变量描述"
 TP_INPUT_DATA_TYPE_COL = "数据类型"
+TP_INPUT_SLL_SET_COL = "SLL设定值"
+TP_INPUT_SL_SET_COL = "SL设定值"
+TP_INPUT_SH_SET_COL = "SH设定值"
+TP_INPUT_SHH_SET_COL = "SHH设定值"
 
 # Configuration for AI module's intermediate points
 # Structure: (name_col, addr_col, data_type, desc_suffix, name_suffix_for_reserved_main_point)
@@ -69,6 +73,12 @@ def _is_value_empty_for_hmi_or_desc(value) -> bool:
         return True
     return False
 
+def _get_value_if_present(value):
+    """辅助函数：如果值存在（非NaN，非None，非空字符串），则返回该值，否则返回None。"""
+    if pd.isna(value) or value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    return value
+
 class HollysysGenerator:
     """
     负责根据已验证的IO点表数据生成和利时PLC点表 (.xls格式)。
@@ -81,7 +91,8 @@ class HollysysGenerator:
                                 io_data_df: pd.DataFrame, 
                                 source_sheet_name: str, 
                                 output_path: str,
-                                third_party_data: Optional[List[Tuple[str, pd.DataFrame]]] = None) -> bool:
+                                third_party_data: Optional[List[Tuple[str, pd.DataFrame]]] = None
+                               ) -> Tuple[bool, Optional[str]]:
         """
         生成和利时PLC点表。
 
@@ -94,7 +105,7 @@ class HollysysGenerator:
                 默认为None。
 
         返回:
-            bool: True 表示成功，False 表示失败。
+            Tuple[bool, Optional[str]]: (操作是否成功, 错误消息或None)
         """
         logger.info(f"开始生成和利时PLC点表，主源Sheet: '{source_sheet_name}', 输出路径: '{output_path}'")
         if third_party_data:
@@ -105,226 +116,112 @@ class HollysysGenerator:
             workbook = xlwt.Workbook(encoding='utf-8')
             
             # --- 1. 处理主IO点表 (第一个Sheet) ---
-            main_sheet = workbook.add_sheet(source_sheet_name) 
+            main_sheet = workbook.add_sheet(source_sheet_name)
             logger.info(f"主IO点表Sheet '{source_sheet_name}' 创建成功。")
-
-            font_style = xlwt.XFStyle()
-            font = xlwt.Font()
-            font.name = '宋体'
-            font.height = 20 * 11
-            font_style.font = font
-
-            alignment = xlwt.Alignment()
-            alignment.horz = xlwt.Alignment.HORZ_LEFT
-            alignment.vert = xlwt.Alignment.VERT_CENTER
-            font_style.alignment = alignment
-
+            font_style = xlwt.XFStyle(); font = xlwt.Font(); font.name = '宋体'; font.height = 20 * 11; font_style.font = font
+            alignment = xlwt.Alignment(); alignment.horz = xlwt.Alignment.HORZ_LEFT; alignment.vert = xlwt.Alignment.VERT_CENTER; font_style.alignment = alignment
             main_sheet.write(0, 0, f"{source_sheet_name}(COMMON)", font_style)
-
-            headers = [
-                "变量名", "直接地址", "变量说明", "变量类型",
-                "初始值", "掉电保护", "可强制", "SOE使能"
-            ]
-            for col_idx, header_title in enumerate(headers):
-                main_sheet.write(1, col_idx, header_title, font_style)
-
+            headers = ["变量名", "直接地址", "变量说明", "变量类型", "初始值", "掉电保护", "可强制", "SOE使能"]
+            for col_idx, header_title in enumerate(headers): main_sheet.write(1, col_idx, header_title, font_style)
             if not io_data_df.empty:
                 excel_write_row_counter = 1 
                 for _, main_row_data in io_data_df.iterrows():
                     excel_write_row_counter += 1
                     current_main_excel_row = excel_write_row_counter
-                    # --- 1. 处理主I/O点 --- 
-                    main_hmi_name_raw = main_row_data.get(INPUT_HMI_NAME_COL)
-                    main_plc_address = str(main_row_data.get(INPUT_PLC_ADDRESS_COL, "")).strip()
-                    main_description_raw = main_row_data.get(INPUT_DESCRIPTION_COL)
-                    main_data_type = str(main_row_data.get(INPUT_DATA_TYPE_COL, "")).upper()
-                    main_channel_no_raw = str(main_row_data.get(INPUT_CHANNEL_NO_COL, "")).strip()
-                    module_type = str(main_row_data.get(INPUT_MODULE_TYPE_COL, "")).upper()
-
+                    main_hmi_name_raw = main_row_data.get(INPUT_HMI_NAME_COL); main_plc_address = str(main_row_data.get(INPUT_PLC_ADDRESS_COL, "")).strip()
+                    main_description_raw = main_row_data.get(INPUT_DESCRIPTION_COL); main_data_type = str(main_row_data.get(INPUT_DATA_TYPE_COL, "")).upper()
+                    main_channel_no_raw = str(main_row_data.get(INPUT_CHANNEL_NO_COL, "")).strip(); module_type = str(main_row_data.get(INPUT_MODULE_TYPE_COL, "")).upper()
                     is_main_point_reserved = _is_value_empty_for_hmi_or_desc(main_hmi_name_raw)
-                    output_main_hmi_name: str
-                    output_main_description: str
-
-                    if is_main_point_reserved:
-                        channel_no_for_display = main_channel_no_raw if main_channel_no_raw else "未知"
-                        output_main_hmi_name = f"YLDW{channel_no_for_display}"
-                        output_main_description = f"预留点位{channel_no_for_display}"
-                    else:
-                        output_main_hmi_name = str(main_hmi_name_raw).strip()
-                        output_main_description = str(main_description_raw).strip() if not _is_value_empty_for_hmi_or_desc(main_description_raw) else ""
-                    
-                    if not main_plc_address and not is_main_point_reserved: # 预留点位即使没PLC地址也可能要生成，但非预留点没有地址则跳过
-                        logger.warning(f"主点位 '{output_main_hmi_name}' 的PLC绝对地址为空，跳过此行及其关联点。")
-                        excel_write_row_counter -=1 
-                        continue
-                    
-                    # --- 根据方案A确定各属性值 ---
-                    # 初始值
-                    main_initial_value_to_write = 0 if main_data_type == "REAL" else "FALSE"
-                    
-                    # 掉电保护 (方案A: REAL为TRUE，其他全为FALSE)
-                    main_power_off_protection_to_write = "TRUE" if main_data_type == "REAL" else "FALSE"
-                    
-                    # 可强制 (始终为TRUE)
-                    main_can_force_to_write = "TRUE"
-                    
-                    # SOE使能 (BOOL为TRUE，其他为FALSE)
-                    main_soe_enable_to_write = "TRUE" if main_data_type == "BOOL" else "FALSE"
-                    
-                    main_sheet.write(current_main_excel_row, 0, output_main_hmi_name, font_style)
-                    main_sheet.write(current_main_excel_row, 1, main_plc_address, font_style)
-                    main_sheet.write(current_main_excel_row, 2, output_main_description, font_style)
-                    main_sheet.write(current_main_excel_row, 3, main_data_type if main_data_type else "", font_style)
-                    main_sheet.write(current_main_excel_row, 4, main_initial_value_to_write, font_style)
-                    main_sheet.write(current_main_excel_row, 5, main_power_off_protection_to_write, font_style)
-                    main_sheet.write(current_main_excel_row, 6, main_can_force_to_write, font_style)
-                    main_sheet.write(current_main_excel_row, 7, main_soe_enable_to_write, font_style)
-
-                    # --- 2. 处理关联的中间点 (主要针对 AI 模块) ---
+                    output_main_hmi_name: str; output_main_description: str
+                    if is_main_point_reserved: channel_no_for_display = main_channel_no_raw if main_channel_no_raw else "未知"; output_main_hmi_name = f"YLDW{channel_no_for_display}"; output_main_description = f"预留点位{channel_no_for_display}"
+                    else: output_main_hmi_name = str(main_hmi_name_raw).strip(); output_main_description = str(main_description_raw).strip() if not _is_value_empty_for_hmi_or_desc(main_description_raw) else ""
+                    if not main_plc_address and not is_main_point_reserved: logger.warning(f"主点位 '{output_main_hmi_name}' 的PLC绝对地址为空，跳过此行及其关联点。"); excel_write_row_counter -=1; continue
+                    main_initial_value_to_write = 0 if main_data_type == "REAL" else "FALSE"; main_power_off_protection_to_write = "TRUE" if main_data_type == "REAL" else "FALSE"
+                    main_can_force_to_write = "TRUE"; main_soe_enable_to_write = "TRUE" if main_data_type == "BOOL" else "FALSE"
+                    main_sheet.write(current_main_excel_row, 0, output_main_hmi_name, font_style); main_sheet.write(current_main_excel_row, 1, main_plc_address, font_style); main_sheet.write(current_main_excel_row, 2, output_main_description, font_style); main_sheet.write(current_main_excel_row, 3, main_data_type if main_data_type else "", font_style); main_sheet.write(current_main_excel_row, 4, main_initial_value_to_write, font_style); main_sheet.write(current_main_excel_row, 5, main_power_off_protection_to_write, font_style); main_sheet.write(current_main_excel_row, 6, main_can_force_to_write, font_style); main_sheet.write(current_main_excel_row, 7, main_soe_enable_to_write, font_style)
                     if module_type == 'AI':
                         for ip_config in INTERMEDIATE_POINTS_CONFIG_AI:
                             intermediate_address = str(main_row_data.get(ip_config['addr_col'], "")).strip()
-                            if not intermediate_address:
-                                logger.debug(f"中间点 '{ip_config['name_col']}' for main HMI '{output_main_hmi_name}' 的PLC地址为空，跳过。")
-                                continue
-                            
-                            excel_write_row_counter += 1
-                            current_ip_excel_row = excel_write_row_counter
-
-                            intermediate_name_from_cell = main_row_data.get(ip_config['name_col'])
-                            final_intermediate_name: str
-
-                            if is_main_point_reserved:
-                                final_intermediate_name = output_main_hmi_name + ip_config['name_suffix_for_reserved']
+                            if not intermediate_address: continue
+                            excel_write_row_counter += 1; current_ip_excel_row = excel_write_row_counter; intermediate_name_from_cell = main_row_data.get(ip_config['name_col']); final_intermediate_name: str
+                            if is_main_point_reserved: final_intermediate_name = output_main_hmi_name + ip_config['name_suffix_for_reserved']
                             else:
-                                if _is_value_empty_for_hmi_or_desc(intermediate_name_from_cell):
-                                    base_name_for_ip = output_main_hmi_name
-                                    if not base_name_for_ip: 
-                                        logger.warning(f"非预留主点位的HMI名称在处理后为空，用于中间点 '{ip_config['name_col']}'。将使用 'UNKNOWN_MAIN' 作为基础。")
-                                        base_name_for_ip = "UNKNOWN_MAIN"
-                                    final_intermediate_name = base_name_for_ip + ip_config['name_suffix_for_reserved']
-                                else:
-                                    final_intermediate_name = str(intermediate_name_from_cell).strip()
-                            
-                            final_intermediate_description = f"{output_main_description}_{ip_config['desc_suffix']}"
-                            intermediate_data_type = ip_config['type']
-
-                            # --- 根据方案A确定AI中间点各属性值 ---
-                            # 初始值
-                            ip_initial_value_to_write = 0 if intermediate_data_type == "REAL" else "FALSE"
-                            
-                            # 掉电保护 (方案A: REAL为TRUE，其他全为FALSE)
-                            ip_power_off_protection_to_write = "TRUE" if intermediate_data_type == "REAL" else "FALSE"
-                            
-                            # 可强制 (始终为TRUE)
-                            ip_can_force_to_write = "TRUE"
-                            
-                            # SOE使能 (BOOL为TRUE，其他为FALSE)
-                            ip_soe_enable_to_write = "TRUE" if intermediate_data_type == "BOOL" else "FALSE"
-
-                            main_sheet.write(current_ip_excel_row, 0, final_intermediate_name, font_style)
-                            main_sheet.write(current_ip_excel_row, 1, intermediate_address, font_style)
-                            main_sheet.write(current_ip_excel_row, 2, final_intermediate_description, font_style)
-                            main_sheet.write(current_ip_excel_row, 3, intermediate_data_type, font_style)
-                            main_sheet.write(current_ip_excel_row, 4, ip_initial_value_to_write, font_style)
-                            main_sheet.write(current_ip_excel_row, 5, ip_power_off_protection_to_write, font_style)
-                            main_sheet.write(current_ip_excel_row, 6, ip_can_force_to_write, font_style)
-                            main_sheet.write(current_ip_excel_row, 7, ip_soe_enable_to_write, font_style)
-            
-            # --- 列宽调整 (一次性完成) ---
-            main_sheet.col(0).width = 256 * 35  # 变量名
-            main_sheet.col(1).width = 256 * 20  # 直接地址
-            main_sheet.col(2).width = 256 * 45  # 变量说明 (可能更长)
-            main_sheet.col(3).width = 256 * 15  # 变量类型
-            main_sheet.col(4).width = 256 * 10  # 初始值
-            main_sheet.col(5).width = 256 * 12  # 掉电保护
-            main_sheet.col(6).width = 256 * 10  # 可强制
-            main_sheet.col(7).width = 256 * 12  # SOE使能
-
+                                if _is_value_empty_for_hmi_or_desc(intermediate_name_from_cell): base_name_for_ip = output_main_hmi_name; final_intermediate_name = (base_name_for_ip if base_name_for_ip else "UNKNOWN_MAIN") + ip_config['name_suffix_for_reserved']
+                                else: final_intermediate_name = str(intermediate_name_from_cell).strip()
+                            final_intermediate_description = f"{output_main_description}_{ip_config['desc_suffix']}"; intermediate_data_type = ip_config['type']
+                            ip_initial_value_to_write = 0 if intermediate_data_type == "REAL" else "FALSE"; ip_power_off_protection_to_write = "TRUE" if intermediate_data_type == "REAL" else "FALSE"; ip_can_force_to_write = "TRUE"; ip_soe_enable_to_write = "TRUE" if intermediate_data_type == "BOOL" else "FALSE"
+                            main_sheet.write(current_ip_excel_row, 0, final_intermediate_name, font_style); main_sheet.write(current_ip_excel_row, 1, intermediate_address, font_style); main_sheet.write(current_ip_excel_row, 2, final_intermediate_description, font_style); main_sheet.write(current_ip_excel_row, 3, intermediate_data_type, font_style); main_sheet.write(current_ip_excel_row, 4, ip_initial_value_to_write, font_style); main_sheet.write(current_ip_excel_row, 5, ip_power_off_protection_to_write, font_style); main_sheet.write(current_ip_excel_row, 6, ip_can_force_to_write, font_style); main_sheet.write(current_ip_excel_row, 7, ip_soe_enable_to_write, font_style)
+            else: logger.info(f"主IO点表Sheet '{source_sheet_name}' 的输入数据为空。")
+            main_sheet.col(0).width = 256 * 35; main_sheet.col(1).width = 256 * 20; main_sheet.col(2).width = 256 * 45; main_sheet.col(3).width = 256 * 15; main_sheet.col(4).width = 256 * 10; main_sheet.col(5).width = 256 * 12; main_sheet.col(6).width = 256 * 10; main_sheet.col(7).width = 256 * 12
             logger.info(f"主IO点表Sheet '{source_sheet_name}' 处理完毕。")
 
             # --- 2. 处理第三方设备点表 (后续Sheets) ---
             if third_party_data:
                 for tp_idx, (tp_sheet_name, tp_df) in enumerate(third_party_data):
                     logger.info(f"开始处理第 {tp_idx+1} 个第三方设备Sheet: '{tp_sheet_name}'")
-                    if tp_df.empty:
-                        logger.warning(f"第三方设备Sheet '{tp_sheet_name}' 的数据为空，跳过。")
-                        # 创建一个空sheet并写入A1和表头，以保持一致性，或者完全跳过
-                        tp_output_sheet = workbook.add_sheet(tp_sheet_name)
-                        tp_output_sheet.write(0, 0, f"{tp_sheet_name}(COMMON)", font_style)
-                        for col_idx, header_title in enumerate(headers): # 使用与主表相同的headers
-                            tp_output_sheet.write(1, col_idx, header_title, font_style)
-                        logger.info(f"为空的第三方设备Sheet '{tp_sheet_name}' 已创建表头。")
-                        # 设置列宽
-                        tp_output_sheet.col(0).width = 256 * 35
-                        tp_output_sheet.col(1).width = 256 * 20
-                        tp_output_sheet.col(2).width = 256 * 45
-                        tp_output_sheet.col(3).width = 256 * 15
-                        tp_output_sheet.col(4).width = 256 * 10
-                        tp_output_sheet.col(5).width = 256 * 12
-                        tp_output_sheet.col(6).width = 256 * 10
-                        tp_output_sheet.col(7).width = 256 * 12
-                        continue
-
                     tp_output_sheet = workbook.add_sheet(tp_sheet_name)
                     tp_output_sheet.write(0, 0, f"{tp_sheet_name}(COMMON)", font_style)
+                    for col_idx, header_title in enumerate(headers): tp_output_sheet.write(1, col_idx, header_title, font_style)
 
-                    for col_idx, header_title in enumerate(headers): # 使用与主表相同的headers
-                        tp_output_sheet.write(1, col_idx, header_title, font_style)
-
-                    excel_tp_write_row_counter = 1 # Excel行索引，表头在第1行, 数据从第2行开始
+                    if tp_df.empty:
+                        logger.warning(f"第三方设备Sheet '{tp_sheet_name}' 的数据为空。已创建带表头的空Sheet。")
+                        tp_output_sheet.col(0).width = 256 * 35; tp_output_sheet.col(1).width = 256 * 20; tp_output_sheet.col(2).width = 256 * 45; tp_output_sheet.col(3).width = 256 * 15; tp_output_sheet.col(4).width = 256 * 10; tp_output_sheet.col(5).width = 256 * 12; tp_output_sheet.col(6).width = 256 * 10; tp_output_sheet.col(7).width = 256 * 12
+                        continue
+                    
+                    excel_tp_write_row_counter = 1
                     for _, tp_row_data in tp_df.iterrows():
                         excel_tp_write_row_counter += 1
-                        current_tp_excel_row = excel_tp_write_row_counter
+                        var_name = tp_row_data.get(TP_INPUT_VAR_NAME_COL, ""); plc_addr = str(tp_row_data.get(TP_INPUT_PLC_ADDRESS_COL, "")).strip(); desc = tp_row_data.get(TP_INPUT_DESCRIPTION_COL, ""); data_type = str(tp_row_data.get(TP_INPUT_DATA_TYPE_COL, "")).upper()
+                        if not var_name and not plc_addr: logger.debug(f"第三方Sheet '{tp_sheet_name}' 行 {excel_tp_write_row_counter} 的变量名和PLC地址均为空，跳过。"); excel_tp_write_row_counter -=1; continue
 
-                        # 从第三方Sheet的输入行提取数据
-                        var_name = tp_row_data.get(TP_INPUT_VAR_NAME_COL, "")
-                        plc_addr = str(tp_row_data.get(TP_INPUT_PLC_ADDRESS_COL, "")).strip()
-                        desc = tp_row_data.get(TP_INPUT_DESCRIPTION_COL, "")
-                        data_type = str(tp_row_data.get(TP_INPUT_DATA_TYPE_COL, "")).upper()
-
-                        if not var_name and not plc_addr: # 如果关键信息缺失，可以考虑跳过此行
-                            logger.debug(f"第三方Sheet '{tp_sheet_name}' 行 {excel_tp_write_row_counter} 的变量名和PLC地址均为空，跳过。")
-                            excel_tp_write_row_counter -=1 # 回滚计数器
-                            continue
+                        initial_val_to_write: Any
+                        if data_type == "REAL":
+                            sll_val = _get_value_if_present(tp_row_data.get(TP_INPUT_SLL_SET_COL))
+                            sl_val = _get_value_if_present(tp_row_data.get(TP_INPUT_SL_SET_COL))
+                            sh_val = _get_value_if_present(tp_row_data.get(TP_INPUT_SH_SET_COL))
+                            shh_val = _get_value_if_present(tp_row_data.get(TP_INPUT_SHH_SET_COL))
                             
-                        # 应用方案A计算属性值
-                        initial_val_to_write = 0 if data_type == "REAL" else "FALSE"
+                            present_settings = []
+                            if sll_val is not None: present_settings.append(sll_val)
+                            if sl_val is not None: present_settings.append(sl_val)
+                            if sh_val is not None: present_settings.append(sh_val)
+                            if shh_val is not None: present_settings.append(shh_val)
+
+                            # 校验逻辑已移至 validator.py, 此处直接取值或报错
+                            if len(present_settings) == 1:
+                                try: initial_val_to_write = float(present_settings[0])
+                                except (ValueError, TypeError): 
+                                    logger.warning(f"第三方Sheet '{tp_sheet_name}' 行 {excel_tp_write_row_counter} 点位 '{var_name}' 的设定值 '{present_settings[0]}' 不是有效数字，初始值将设为0。 (此警告理论上不应出现，若校验通过)"); 
+                                    initial_val_to_write = 0
+                            elif len(present_settings) > 1:
+                                # 此情况理论上不应发生，因为 validator.py 应该已经捕获
+                                # 但为保持健壮性，仍可记录一个更严重的错误或抛出内部异常
+                                logger.error(f"内部逻辑错误: 第三方Sheet '{tp_sheet_name}' 点位 '{var_name}' (行号参考 {excel_tp_write_row_counter}) 通过了validator校验，但在生成时仍检测到多个设定值: {present_settings}。将使用0作为初始值。")
+                                initial_val_to_write = 0 # 或者可以 return False, "内部逻辑错误..." 
+                            else: # len(present_settings) == 0
+                                initial_val_to_write = 0
+                        elif data_type == "BOOL": initial_val_to_write = "FALSE"
+                        else: logger.warning(f"第三方Sheet '{tp_sheet_name}' 行 {excel_tp_write_row_counter} 点位 '{var_name}' 数据类型 '{data_type}' 未知，初始值将设为0。"); initial_val_to_write = 0
+                        
                         power_off_prot_to_write = "TRUE" if data_type == "REAL" else "FALSE"
                         can_force_to_write = "TRUE"
                         soe_enable_to_write = "TRUE" if data_type == "BOOL" else "FALSE"
+                        tp_output_sheet.write(excel_tp_write_row_counter, 0, var_name, font_style); tp_output_sheet.write(excel_tp_write_row_counter, 1, plc_addr, font_style); tp_output_sheet.write(excel_tp_write_row_counter, 2, desc, font_style); tp_output_sheet.write(excel_tp_write_row_counter, 3, data_type if data_type else "", font_style); tp_output_sheet.write(excel_tp_write_row_counter, 4, initial_val_to_write, font_style); tp_output_sheet.write(excel_tp_write_row_counter, 5, power_off_prot_to_write, font_style); tp_output_sheet.write(excel_tp_write_row_counter, 6, can_force_to_write, font_style); tp_output_sheet.write(excel_tp_write_row_counter, 7, soe_enable_to_write, font_style)
 
-                        # 写入到输出的第三方Sheet
-                        tp_output_sheet.write(current_tp_excel_row, 0, var_name, font_style)
-                        tp_output_sheet.write(current_tp_excel_row, 1, plc_addr, font_style)
-                        tp_output_sheet.write(current_tp_excel_row, 2, desc, font_style)
-                        tp_output_sheet.write(current_tp_excel_row, 3, data_type if data_type else "", font_style)
-                        tp_output_sheet.write(current_tp_excel_row, 4, initial_val_to_write, font_style)
-                        tp_output_sheet.write(current_tp_excel_row, 5, power_off_prot_to_write, font_style)
-                        tp_output_sheet.write(current_tp_excel_row, 6, can_force_to_write, font_style)
-                        tp_output_sheet.write(current_tp_excel_row, 7, soe_enable_to_write, font_style)
-                    
-                    # 设置列宽 (与主Sheet一致)
-                    tp_output_sheet.col(0).width = 256 * 35
-                    tp_output_sheet.col(1).width = 256 * 20
-                    tp_output_sheet.col(2).width = 256 * 45
-                    tp_output_sheet.col(3).width = 256 * 15
-                    tp_output_sheet.col(4).width = 256 * 10
-                    tp_output_sheet.col(5).width = 256 * 12
-                    tp_output_sheet.col(6).width = 256 * 10
-                    tp_output_sheet.col(7).width = 256 * 12
+                    tp_output_sheet.col(0).width = 256 * 35; tp_output_sheet.col(1).width = 256 * 20; tp_output_sheet.col(2).width = 256 * 45; tp_output_sheet.col(3).width = 256 * 15; tp_output_sheet.col(4).width = 256 * 10; tp_output_sheet.col(5).width = 256 * 12; tp_output_sheet.col(6).width = 256 * 10; tp_output_sheet.col(7).width = 256 * 12
                     logger.info(f"第三方设备Sheet '{tp_sheet_name}' 处理完毕。")
             
             workbook.save(output_path)
             logger.info(f"和利时PLC点表已成功生成并保存到: {output_path} (包含主IO点表和所有第三方设备点表)")
-            return True
-
+            return True, None
         except KeyError as ke:
-            logger.error(f"生成和利时点表失败：输入数据中缺少必需的列: {ke}", exc_info=True)
-            return False
+            error_msg = f"生成和利时点表失败：输入数据中缺少必需的列: {ke}"
+            logger.error(error_msg, exc_info=True)
+            return False, error_msg
         except Exception as e:
-            logger.error(f"生成和利时PLC点表时发生未知错误: {e}", exc_info=True)
-            return False
+            error_msg = f"生成和利时PLC点表时发生未知错误: {e}"
+            logger.error(error_msg, exc_info=True)
+            return False, error_msg
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
