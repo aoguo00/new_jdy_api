@@ -19,37 +19,66 @@ project_root/
 ├── requirements.txt        # 项目依赖
 ├── core/                   # 核心业务逻辑
 │   ├── __init__.py
-│   ├── api/               # API接口
+│   ├── query_area/        # 查询服务 (如简道云API)
 │   │   ├── __init__.py
-│   │   └── jiandaoyun.py # 简道云API
-│   ├── devices/           # 设备管理
+│   │   └── jiandaoyun_api.py
+│   ├── project_list_area/ # 项目列表服务与处理
 │   │   ├── __init__.py
-│   │   ├── device_manager.py
-│   │   └── template_manager.py
-│   ├── plc/               # PLC相关
-│   │   └── hollysys/     # 和利时PLC
+│   │   ├── project_processor.py
+│   │   └── project_service.py
+│   ├── device_list_area/  # 设备列表服务与处理
+│   │   ├── __init__.py
+│   │   ├── device_processor.py
+│   │   └── device_service.py
+│   ├── io_table/          # IO点表数据处理与导出
+│   │   ├── __init__.py
+│   │   ├── excel_exporter.py
+│   │   ├── get_data.py         # (包含IODataLoader, PLCConfigurationHandler等)
+│   │   └── plc_modules.py
+│   ├── third_party_config_area/ # 第三方设备配置
+│   │   ├── __init__.py
+│   │   ├── config_service.py
+│   │   ├── template_service.py
+│   │   ├── database/        # 数据库服务与DAO
+│   │   │   ├── __init__.py
+│   │   │   ├── dao.py
+│   │   │   ├── database_service.py
+│   │   │   └── sql.py
+│   │   └── models/          # 数据模型
 │   │       ├── __init__.py
-│   │       ├── series.py
-│   │       └── lk_db.py
-│   └── db/                # 数据库操作
+│   │       ├── configured_device_models.py
+│   │       └── template_models.py
+│   └── post_upload_processor/ # IO点表上传后处理
 │       ├── __init__.py
-│       ├── db_manager.py
-│       └── sql_queries.py
+│       ├── io_validation/      # IO点表验证
+│       │   ├── __init__.py
+│       │   └── validator.py
+│       ├── hmi_generators/     # HMI点表生成
+│       │   ├── __init__.py
+│       │   ├── lk_generator/   # 力控
+│       │   │   └── __init__.py
+│       │   └── yk_generator/   # 亚控
+│       │       └── __init__.py
+│       └── plc_generators/       # PLC点表生成
+│           ├── __init__.py
+│           ├── hollysys_generator/ # 和利时
+│           │   └── __init__.py
+│           └── supcon_generator/   # 中控
+│               └── __init__.py
 └── ui/                    # 用户界面
     ├── __init__.py
     ├── main_window.py     # 主窗口
     ├── components/        # UI组件
-    │   ├── __init__.py
-    │   ├── query_area.py          # 查询区域
-    │   ├── project_list_area.py   # 项目列表
-    │   ├── device_list_area.py    # 设备列表
-    │   └── third_party_device_area.py  # 第三方设备
+    │   ├── query_area.py
+    │   ├── project_list_area.py
+    │   ├── device_list_area.py
+    │   └── third_party_device_area.py
     └── dialogs/           # 对话框
         ├── __init__.py
-        ├── device_point_dialog.py      # 设备点位配置
-        ├── template_manage_dialog.py   # 模板管理
-        ├── module_manager_dialog.py    # 模块管理
-        └── plc_config_dialog.py        # PLC配置
+        ├── device_point_dialog.py
+        ├── error_display_dialog.py
+        ├── plc_config_dialog.py
+        └── template_manage_dialog.py
 ```
 
 ## 开发环境

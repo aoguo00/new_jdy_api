@@ -3,6 +3,7 @@
 import logging
 from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QMessageBox, QDialog, QFileDialog, QStatusBar
 from typing import List, Dict, Any, Optional
+import pandas as pd # 确保导入 pandas
 
 # API and old DeviceManager (if still needed for other parts, though ideally not for third_party)
 from core.query_area import JianDaoYunAPI
@@ -21,7 +22,9 @@ from core.third_party_config_area.config_service import ConfigService
 from core.io_table import IODataLoader, IOExcelExporter
 
 # 导入文件验证器
-from core.upload_handler.validator import validate_io_table
+from core.post_upload_processor.io_validation.validator import validate_io_table, PLC_IO_SHEET_NAME # 导入常量
+# 导入和利时点表生成器
+from core.post_upload_processor.plc_generators.hollysys_generator.generator import HollysysGenerator
 
 # Import new data processors
 from core.project_list_area import ProjectService
@@ -373,19 +376,115 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("请先上传IO点表")
             return
 
-        file_name = self.verified_io_table_path.split('/')[-1]
-        self.status_bar.showMessage(f"准备为 '{file_name}' 生成 '{plc_type}' PLC点表...")
+        file_name_base = self.verified_io_table_path.split('/')[-1]
+        self.status_bar.showMessage(f"准备为 '{file_name_base}' 生成 '{plc_type}' PLC点表...")
 
         if plc_type == "和利时":
             logger.info(f"准备根据IO点表 '{self.verified_io_table_path}' 生成和利时PLC点表。")
-            # 调用生成和利时PLC点表的具体方法
-            # self._generate_hollysys_plc_points(self.verified_io_table_path)
-            QMessageBox.information(self, "功能待实现", f"已选择根据 '{file_name}' 生成 '{plc_type}' PLC点表。\n该功能正在开发中。")
-            # 实际实现后，可以更新状态栏，例如：
-            # self.status_bar.showMessage(f"'{plc_type}' PLC点表已根据 '{file_name}' 生成。", 5000)
+            try:
+                # 1. 读取主IO点表数据 (通常是第一个被命名的Sheet)
+                # PLC_IO_SHEET_NAME 常量应与 validator.py 和 excel_exporter.py 中一致
+                try:
+                    main_io_df = pd.read_excel(self.verified_io_table_path, sheet_name=PLC_IO_SHEET_NAME)
+                    source_sheet_name_for_generator = PLC_IO_SHEET_NAME
+                    logger.info(f"主IO点表Sheet '{source_sheet_name_for_generator}' 读取成功。")
+                except ValueError as ve_main_sheet:
+                    # 如果明确命名的 PLC_IO_SHEET_NAME 不存在，尝试读取第一个Sheet作为主IO点表
+                    logger.warning(f"未找到名为 '{PLC_IO_SHEET_NAME}' 的Sheet。尝试读取Excel的第一个Sheet作为主IO点表。错误: {ve_main_sheet}")
+                    try:
+                        xls_file_for_names = pd.ExcelFile(self.verified_io_table_path)
+                        if not xls_file_for_names.sheet_names:
+                            raise ValueError("Excel文件中没有任何Sheet页。")
+                        source_sheet_name_for_generator = xls_file_for_names.sheet_names[0]
+                        main_io_df = pd.read_excel(self.verified_io_table_path, sheet_name=source_sheet_name_for_generator)
+                        logger.info(f"已读取第一个Sheet '{source_sheet_name_for_generator}' 作为主IO点表。")
+                    except Exception as e_first_sheet:
+                        logger.error(f"尝试读取第一个Sheet作为主IO点表失败: {e_first_sheet}", exc_info=True)
+                        raise ValueError(f"未找到指定的 '{PLC_IO_SHEET_NAME}' Sheet，且读取第一个Sheet也失败。") from e_first_sheet
+
+                # 2. 读取所有第三方设备Sheet的数据
+                list_of_third_party_data = []
+                xls_file_all_sheets = pd.ExcelFile(self.verified_io_table_path)
+                all_sheet_names_in_file = xls_file_all_sheets.sheet_names
+
+                if len(all_sheet_names_in_file) > 0:
+                    # 确定主Sheet是否是第一个，以便正确识别第三方Sheets
+                    # (通常 source_sheet_name_for_generator 就是第一个，但以防万一)
+                    start_index_for_third_party = 0
+                    if all_sheet_names_in_file[0] == source_sheet_name_for_generator:
+                        start_index_for_third_party = 1
+                    else: # 如果主Sheet不是第一个（例如，PLC_IO_SHEET_NAME是第二个，第一个是其他），则所有非主Sheet都是第三方
+                        pass # start_index_for_third_party 保持0，下面循环会跳过主sheet
+                    
+                    for i in range(start_index_for_third_party, len(all_sheet_names_in_file)):
+                        tp_sheet_name = all_sheet_names_in_file[i]
+                        # 再次检查，确保不会重复处理主IO点表Sheet
+                        if tp_sheet_name == source_sheet_name_for_generator and start_index_for_third_party == 0:
+                            logger.info(f"跳过主IO点表Sheet '{tp_sheet_name}' (当其不是第一个Sheet时，已被识别为source_sheet_name_for_generator)。")
+                            continue # 如果主Sheet不是第一个，且当前迭代到它，则跳过
+
+                        try:
+                            tp_df = pd.read_excel(xls_file_all_sheets, sheet_name=tp_sheet_name)
+                            list_of_third_party_data.append((tp_sheet_name, tp_df))
+                            self.status_bar.showMessage(f"已读取第三方Sheet: {tp_sheet_name}", 3000)
+                            logger.info(f"已读取第三方设备Sheet: {tp_sheet_name}，包含 {len(tp_df)} 行数据。")
+                        except Exception as e_read_tp:
+                            error_msg = f"读取第三方设备Sheet '{tp_sheet_name}' 失败: {e_read_tp}。将跳过此Sheet。"
+                            logger.warning(error_msg)
+                            QMessageBox.warning(self, "读取部分Sheet失败", error_msg)
+                else:
+                    logger.warning("上传的Excel文件中未找到任何Sheet页，无法处理。") # 应该在上传时就被捕获，但再次检查
+
+                # 3. 获取保存路径
+                default_save_name = f"{file_name_base.rsplit('.', 1)[0]}_和利时点表.xls"
+                save_path, _ = QFileDialog.getSaveFileName(
+                    self,
+                    "保存和利时PLC点表",
+                    default_save_name, # 建议的默认文件名
+                    "Excel 97-2003 Workbook (*.xls);;所有文件 (*)"
+                )
+
+                if save_path:
+                    # 4. 调用生成器
+                    generator = HollysysGenerator()
+                    success = generator.generate_hollysys_table(
+                        io_data_df=main_io_df,
+                        source_sheet_name=source_sheet_name_for_generator, # 使用实际读取的主Sheet名
+                        output_path=save_path,
+                        third_party_data=list_of_third_party_data # 传递第三方数据
+                    )
+
+                    if success:
+                        QMessageBox.information(self, "成功", f"和利时PLC点表已成功导出到:\n{save_path}")
+                        self.status_bar.showMessage(f"和利时点表已生成: {save_path}", 7000)
+                    else:
+                        QMessageBox.warning(self, "导出失败", "和利时PLC点表导出失败。\n请查看日志获取详细信息。")
+                        self.status_bar.showMessage("和利时点表生成失败。")
+                else:
+                    logger.info("用户取消了保存和利时PLC点表操作。")
+                    self.status_bar.showMessage("已取消生成和利时点表。")
+            
+            except FileNotFoundError:
+                logger.error(f"读取已验证的IO点表失败: 文件 '{self.verified_io_table_path}' 未找到。")
+                QMessageBox.critical(self, "文件错误", f"无法找到已验证的IO点表文件:\n{self.verified_io_table_path}")
+                self.status_bar.showMessage("错误：无法找到源IO点表文件。")
+            except ValueError as ve: # 通常是 sheet_name 不存在时 pandas 抛出的错误
+                if f"Worksheet named '{PLC_IO_SHEET_NAME}' not found" in str(ve) or \
+                   f"No sheet named <{PLC_IO_SHEET_NAME}>" in str(ve):
+                    logger.error(f"读取IO点表 '{self.verified_io_table_path}' 失败: 未找到名为 '{PLC_IO_SHEET_NAME}' 的Sheet页。错误: {ve}")
+                    QMessageBox.critical(self, "文件错误", f"在IO点表文件中未找到名为 '{PLC_IO_SHEET_NAME}' 的工作表。")
+                else:
+                    logger.error(f"读取IO点表 '{self.verified_io_table_path}' 时发生值错误: {ve}", exc_info=True)
+                    QMessageBox.critical(self, "文件读取错误", f"读取IO点表时发生错误: {ve}")
+                self.status_bar.showMessage("错误：读取源IO点表内容失败。")
+            except Exception as e:
+                logger.error(f"生成和利时PLC点表时发生未知错误: {e}", exc_info=True)
+                QMessageBox.critical(self, "生成错误", f"生成和利时PLC点表时发生未知错误:\n{e}")
+                self.status_bar.showMessage("和利时点表生成失败 (未知错误)。")
+
         elif plc_type == "中控PLC":
             logger.info(f"准备根据IO点表 '{self.verified_io_table_path}' 生成中控PLC点表。")
-            QMessageBox.information(self, "功能待实现", f"已选择根据 '{file_name}' 生成 '{plc_type}' PLC点表。\n该功能正在开发中。")
+            QMessageBox.information(self, "功能待实现", f"已选择根据 '{file_name_base}' 生成 '{plc_type}' PLC点表。\n该功能正在开发中。")
         else:
             QMessageBox.warning(self, "类型不支持", f"目前不支持为PLC类型 '{plc_type}' 生成点表。")
             logger.warning(f"用户尝试为不支持的PLC类型 '{plc_type}' 生成点表。")

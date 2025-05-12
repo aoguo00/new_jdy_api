@@ -1,4 +1,4 @@
-# core/upload_handler/validator.py
+# core/post_upload_processor/io_validation/validator.py
 import os
 import pandas as pd
 from typing import Tuple, List
@@ -20,6 +20,7 @@ PLC_IO_SHEET_NAME = "IO点表" # 这是 excel_exporter.py 中 PLCSheetExporter �
 # 允许值常量
 ALLOWED_POWER_SUPPLY_VALUES: List[str] = ["有源", "无源"]
 ALLOWED_WIRING_SYSTEM_VALUES: List[str] = ["2线制", "两线制", "三线制", "四线制", "3线制", "4线制"]
+ALLOWED_WIRING_SYSTEM_VALUES_DI_DO: List[str] = ["常开", "常闭"] # 新增DI/DO线制允许值
 
 def _is_value_present(value) -> bool:
     """
@@ -90,6 +91,7 @@ def validate_io_table(file_path: str) -> Tuple[bool, str]:
 
         required_cols = [
             HMI_NAME_COL, DESCRIPTION_COL, POWER_SUPPLY_TYPE_COL, WIRING_SYSTEM_COL,
+            MODULE_TYPE_COL, # 确保模块类型列是必需的
             RANGE_LOW_LIMIT_COL, RANGE_HIGH_LIMIT_COL,
             SLL_SET_COL, SL_SET_COL, SH_SET_COL, SHH_SET_COL
         ]
@@ -113,6 +115,7 @@ def validate_io_table(file_path: str) -> Tuple[bool, str]:
             sl_value = row.get(SL_SET_COL)
             sh_value = row.get(SH_SET_COL)
             shh_value = row.get(SHH_SET_COL)
+            module_type_value = str(row.get(MODULE_TYPE_COL, "")).upper().strip() # 获取模块类型并统一格式
 
             hmi_name_has_content = _is_value_present(hmi_name_value)
             description_has_content = _is_value_present(description_value)
@@ -152,35 +155,38 @@ def validate_io_table(file_path: str) -> Tuple[bool, str]:
                         f'预留点位的此列必须为空。'
                     )
                     error_messages.append(msg)
-                if low_limit_has_content:
-                    msg = (
-                        f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}):\n'
-                        f'该行为预留点位，但"{RANGE_LOW_LIMIT_COL}"不为空("{low_limit_value}")。\n'
-                        f'预留点位的此列必须为空。'
-                    )
-                    error_messages.append(msg)
-                if high_limit_has_content:
-                    msg = (
-                        f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}):\n'
-                        f'该行为预留点位，但"{RANGE_HIGH_LIMIT_COL}"不为空("{high_limit_value}")。\n'
-                        f'预留点位的此列必须为空。'
-                    )
-                    error_messages.append(msg)
-                # 预留点位的设定值列检查
-                set_points_to_check_reserved = {
-                    SLL_SET_COL: (sll_value, sll_has_content),
-                    SL_SET_COL: (sl_value, sl_has_content),
-                    SH_SET_COL: (sh_value, sh_has_content),
-                    SHH_SET_COL: (shh_value, shh_has_content),
-                }
-                for col_name, (val, val_has_content) in set_points_to_check_reserved.items():
-                    if val_has_content:
+                
+                # AI模块预留点位的特定列检查
+                if module_type_value == "AI":
+                    if low_limit_has_content:
                         msg = (
-                            f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}):\n'
-                            f'该行为预留点位，但"{col_name}"不为空("{val}")。\n'
+                            f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}, 模块类型: {module_type_value}):\n'
+                            f'该行为预留点位，但"{RANGE_LOW_LIMIT_COL}"不为空("{low_limit_value}")。\n'
                             f'预留点位的此列必须为空。'
                         )
                         error_messages.append(msg)
+                    if high_limit_has_content:
+                        msg = (
+                            f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}, 模块类型: {module_type_value}):\n'
+                            f'该行为预留点位，但"{RANGE_HIGH_LIMIT_COL}"不为空("{high_limit_value}")。\n'
+                            f'预留点位的此列必须为空。'
+                        )
+                        error_messages.append(msg)
+                    # 预留点位的设定值列检查
+                    set_points_to_check_reserved = {
+                        SLL_SET_COL: (sll_value, sll_has_content),
+                        SL_SET_COL: (sl_value, sl_has_content),
+                        SH_SET_COL: (sh_value, sh_has_content),
+                        SHH_SET_COL: (shh_value, shh_has_content),
+                    }
+                    for col_name, (val, val_has_content) in set_points_to_check_reserved.items():
+                        if val_has_content:
+                            msg = (
+                                f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}, 模块类型: {module_type_value}):\n'
+                                f'该行为预留点位，但"{col_name}"不为空("{val}")。\n'
+                                f'预留点位的此列必须为空。'
+                            )
+                            error_messages.append(msg)
             else: # 非预留点位
                 if not power_supply_has_content:
                     msg = (
@@ -198,52 +204,74 @@ def validate_io_table(file_path: str) -> Tuple[bool, str]:
                     )
                     error_messages.append(msg)
 
+                # 线制验证，区分模块类型
                 if not wiring_system_has_content:
                     msg = (
-                        f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}):\n'
+                        f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}, 模块类型: {module_type_value if module_type_value else "未知"}):\n'
                         f'该行为非预留点位，但"{WIRING_SYSTEM_COL}"为空。\n'
                         f'此列必填。'
                     )
                     error_messages.append(msg)
-                elif str(wiring_system_value).strip() not in ALLOWED_WIRING_SYSTEM_VALUES:
+                else:
                     actual_wiring_system_value = str(wiring_system_value).strip()
-                    msg = (
-                        f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}):\n'
-                        f'"{WIRING_SYSTEM_COL}"的值("{actual_wiring_system_value}")无效。\n'
-                        f'允许的值为: {", ".join(ALLOWED_WIRING_SYSTEM_VALUES)}。'
-                    )
-                    error_messages.append(msg)
-                
-                if not low_limit_has_content:
-                    msg = (
-                        f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}):\n'
-                        f'该行为非预留点位，但"{RANGE_LOW_LIMIT_COL}"为空。\n'
-                        f'此列必填。'
-                    )
-                    error_messages.append(msg)
-                if not high_limit_has_content:
-                    msg = (
-                        f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}):\n'
-                        f'该行为非预留点位，但"{RANGE_HIGH_LIMIT_COL}"为空。\n'
-                        f'此列必填。'
-                    )
-                    error_messages.append(msg)
-
-                # 非预留点位的设定值列检查 (如果填写了，则必须是数字；允许为空)
-                set_points_to_check_non_reserved = {
-                    SLL_SET_COL: (sll_value, sll_has_content),
-                    SL_SET_COL: (sl_value, sl_has_content),
-                    SH_SET_COL: (sh_value, sh_has_content),
-                    SHH_SET_COL: (shh_value, shh_has_content),
-                }
-                for col_name, (val, val_has_content) in set_points_to_check_non_reserved.items():
-                    if val_has_content and not _is_numeric(val):
-                        msg = (
+                    if module_type_value in ["AI", "AO"]:
+                        if actual_wiring_system_value not in ALLOWED_WIRING_SYSTEM_VALUES:
+                            msg = (
+                                f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}, 模块类型: {module_type_value}):\n'
+                                f'"{WIRING_SYSTEM_COL}"的值("{actual_wiring_system_value}")对AI/AO模块无效。\n'
+                                f'允许的值为: {", ".join(ALLOWED_WIRING_SYSTEM_VALUES)}。'
+                            )
+                            error_messages.append(msg)
+                    elif module_type_value in ["DI", "DO"]:
+                        if actual_wiring_system_value not in ALLOWED_WIRING_SYSTEM_VALUES_DI_DO:
+                            msg = (
+                                f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}, 模块类型: {module_type_value}):\n'
+                                f'"{WIRING_SYSTEM_COL}"的值("{actual_wiring_system_value}")对DI/DO模块无效。\n'
+                                f'允许的值为: {", ".join(ALLOWED_WIRING_SYSTEM_VALUES_DI_DO)}。'
+                            )
+                            error_messages.append(msg)
+                    elif not module_type_value: # 模块类型为空
+                         msg = (
                             f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}):\n'
-                            f'"{col_name}"的值("{val}")无效。\n'
-                            f'必须为整数或小数。'
+                            f'"{MODULE_TYPE_COL}"为空，无法确定"{WIRING_SYSTEM_COL}"的有效值。\n'
+                            f'请填写模块类型。'
+                        )
+                         error_messages.append(msg)
+                    # else: # 其他模块类型，暂不强制线制或允许为空
+                    #     pass
+
+                # AI模块非预留点位的特定列检查
+                if module_type_value == "AI":
+                    if not low_limit_has_content:
+                        msg = (
+                            f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}, 模块类型: {module_type_value}):\n'
+                            f'该行为非预留点位AI模块，但"{RANGE_LOW_LIMIT_COL}"为空。\n'
+                            f'此列必填。'
                         )
                         error_messages.append(msg)
+                    if not high_limit_has_content:
+                        msg = (
+                            f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}, 模块类型: {module_type_value}):\n'
+                            f'该行为非预留点位AI模块，但"{RANGE_HIGH_LIMIT_COL}"为空。\n'
+                            f'此列必填。'
+                        )
+                        error_messages.append(msg)
+
+                    # 非预留点位的设定值列检查 (如果填写了，则必须是数字；允许为空)
+                    set_points_to_check_non_reserved = {
+                        SLL_SET_COL: (sll_value, sll_has_content),
+                        SL_SET_COL: (sl_value, sl_has_content),
+                        SH_SET_COL: (sh_value, sh_has_content),
+                        SHH_SET_COL: (shh_value, shh_has_content),
+                    }
+                    for col_name, (val, val_has_content) in set_points_to_check_non_reserved.items():
+                        if val_has_content and not _is_numeric(val):
+                            msg = (
+                                f'验证失败 (工作表:"{PLC_IO_SHEET_NAME}", Excel行号: {excel_row_number}, 模块类型: {module_type_value}):\n'
+                                f'"{col_name}"的值("{val}")无效。\n'
+                                f'必须为整数或小数。'
+                            )
+                            error_messages.append(msg)
                         
     except pd.errors.EmptyDataError:
         return False, f'文件"{os.path.basename(file_path)}"的工作表"{PLC_IO_SHEET_NAME}"为空或不包含数据。'
