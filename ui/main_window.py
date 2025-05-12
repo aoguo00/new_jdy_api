@@ -23,7 +23,8 @@ from core.third_party_config_area.config_service import ConfigService
 from core.io_table import IODataLoader, IOExcelExporter
 
 # 导入文件验证器
-from core.post_upload_processor.io_validation.validator import validate_io_table, PLC_IO_SHEET_NAME # 导入常量
+from core.post_upload_processor.io_validation.validator import validate_io_table # 导入校验函数
+from core.post_upload_processor.io_validation.constants import PLC_IO_SHEET_NAME # 从常量文件导入
 # 导入和利时点表生成器
 from core.post_upload_processor.plc_generators.hollysys_generator.generator import HollysysGenerator
 
