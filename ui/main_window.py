@@ -27,6 +27,8 @@ from core.post_upload_processor.io_validation.validator import validate_io_table
 from core.post_upload_processor.io_validation.constants import PLC_IO_SHEET_NAME # 从常量文件导入
 # 导入和利时点表生成器
 from core.post_upload_processor.plc_generators.hollysys_generator.generator import HollysysGenerator
+# 新增：导入亚控生成器
+from core.post_upload_processor.hmi_generators.yk_generator.generator import KingViewGenerator
 
 # Import new data processors
 from core.project_list_area import ProjectService
@@ -159,7 +161,8 @@ class MainWindow(QMainWindow):
         self.query_area.generate_points_requested.connect(self._handle_generate_points)
         self.query_area.plc_config_requested.connect(self.show_plc_config_dialog)
         self.query_area.upload_io_table_requested.connect(self._handle_upload_io_table)
-        self.query_area.upload_plc_requested.connect(self._handle_upload_plc_type_selected) # 新增：连接上传PLC点表类型选择信号
+        self.query_area.upload_hmi_requested.connect(self._handle_hmi_generation_requested)
+        self.query_area.upload_plc_requested.connect(self._handle_plc_generation_requested)
         # 移除模块管理信号连接
         # self.query_area.module_manage_requested.connect(self.show_module_manager)
 
@@ -367,31 +370,32 @@ class MainWindow(QMainWindow):
             self.verified_io_table_path = None 
             self.selected_plc_type_for_upload = None
 
-    def _handle_upload_plc_type_selected(self, plc_type: str):
-        """处理用户选择上传的PLC点表类型"""
-        logger.info(f"用户选择了PLC类型进行上传: {plc_type}")
-        self.selected_plc_type_for_upload = plc_type
+    def _handle_plc_generation_requested(self, plc_type: str):
+        """处理用户选择的PLC点表生成请求（例如和利时、中控等）"""
+        logger.info(f"用户选择了PLC类型进行生成: {plc_type}")
 
         if not self.verified_io_table_path:
             QMessageBox.warning(self, "操作无效", "请先上传并验证一个IO点表文件，然后再选择要生成的PLC点表类型。")
-            logger.warning("用户在未上传有效IO点表的情况下尝试选择PLC上传类型。")
+            logger.warning("用户在未上传有效IO点表的情况下尝试选择PLC生成类型。")
             self.status_bar.showMessage("请先上传IO点表")
             return
 
-        file_name_base = self.verified_io_table_path.split('/')[-1]
-        self.status_bar.showMessage(f"准备为 '{file_name_base}' 生成 '{plc_type}' PLC点表...")
+        file_name_base_with_ext = os.path.basename(self.verified_io_table_path)
+        base_io_filename, _ = os.path.splitext(file_name_base_with_ext)
+        # 移除可能存在的'(已校验)'标记，以获得更纯净的基础文件名
+        base_io_filename = base_io_filename.replace("_(已校验)", "").replace("(已校验)","")
+
+        self.status_bar.showMessage(f"准备为 '{file_name_base_with_ext}' 生成 '{plc_type}' PLC点表...")
 
         if plc_type == "和利时":
             logger.info(f"准备根据IO点表 '{self.verified_io_table_path}' 生成和利时PLC点表。")
             try:
-                # 1. 读取主IO点表数据 (通常是第一个被命名的Sheet)
-                # PLC_IO_SHEET_NAME 常量应与 validator.py 和 excel_exporter.py 中一致
+                # ... (读取主IO点表和第三方设备点表的逻辑保持不变，与之前的 _handle_upload_plc_type_selected 一致) ...
                 try:
                     main_io_df = pd.read_excel(self.verified_io_table_path, sheet_name=PLC_IO_SHEET_NAME)
                     source_sheet_name_for_generator = PLC_IO_SHEET_NAME
                     logger.info(f"主IO点表Sheet '{source_sheet_name_for_generator}' 读取成功。")
                 except ValueError as ve_main_sheet:
-                    # 如果明确命名的 PLC_IO_SHEET_NAME 不存在，尝试读取第一个Sheet作为主IO点表
                     logger.warning(f"未找到名为 '{PLC_IO_SHEET_NAME}' 的Sheet。尝试读取Excel的第一个Sheet作为主IO点表。错误: {ve_main_sheet}")
                     try:
                         xls_file_for_names = pd.ExcelFile(self.verified_io_table_path)
@@ -404,96 +408,123 @@ class MainWindow(QMainWindow):
                         logger.error(f"尝试读取第一个Sheet作为主IO点表失败: {e_first_sheet}", exc_info=True)
                         raise ValueError(f"未找到指定的 '{PLC_IO_SHEET_NAME}' Sheet，且读取第一个Sheet也失败。") from e_first_sheet
 
-                # 2. 读取所有第三方设备Sheet的数据
                 list_of_third_party_data = []
                 xls_file_all_sheets = pd.ExcelFile(self.verified_io_table_path)
                 all_sheet_names_in_file = xls_file_all_sheets.sheet_names
+                start_index_for_third_party = 0
+                if all_sheet_names_in_file and all_sheet_names_in_file[0] == source_sheet_name_for_generator:
+                    start_index_for_third_party = 1
+                
+                for i in range(start_index_for_third_party, len(all_sheet_names_in_file)):
+                    tp_sheet_name = all_sheet_names_in_file[i]
+                    if tp_sheet_name == source_sheet_name_for_generator and start_index_for_third_party == 0:
+                        continue
+                    try:
+                        tp_df = pd.read_excel(xls_file_all_sheets, sheet_name=tp_sheet_name)
+                        list_of_third_party_data.append((tp_sheet_name, tp_df))
+                        self.status_bar.showMessage(f"已读取第三方Sheet: {tp_sheet_name}", 3000)
+                        logger.info(f"已读取第三方设备Sheet: {tp_sheet_name}，包含 {len(tp_df)} 行数据。")
+                    except Exception as e_read_tp:
+                        error_msg = f"读取第三方设备Sheet '{tp_sheet_name}' 失败: {e_read_tp}。将跳过此Sheet。"
+                        logger.warning(error_msg)
+                        QMessageBox.warning(self, "读取部分Sheet失败", error_msg)
+                
+                output_dir = QFileDialog.getExistingDirectory(self, "选择保存和利时PLC点表的文件夹", ".")
+                if not output_dir:
+                    logger.info("用户取消选择输出目录。"); self.status_bar.showMessage("已取消生成和利时点表。"); return
+                
+                output_filename = f"{base_io_filename}_和利时点表.xls"
+                save_path = os.path.join(output_dir, output_filename)
 
-                if len(all_sheet_names_in_file) > 0:
-                    # 确定主Sheet是否是第一个，以便正确识别第三方Sheets
-                    # (通常 source_sheet_name_for_generator 就是第一个，但以防万一)
-                    start_index_for_third_party = 0
-                    if all_sheet_names_in_file[0] == source_sheet_name_for_generator:
-                        start_index_for_third_party = 1
-                    else: # 如果主Sheet不是第一个（例如，PLC_IO_SHEET_NAME是第二个，第一个是其他），则所有非主Sheet都是第三方
-                        pass # start_index_for_third_party 保持0，下面循环会跳过主sheet
-                    
-                    for i in range(start_index_for_third_party, len(all_sheet_names_in_file)):
-                        tp_sheet_name = all_sheet_names_in_file[i]
-                        # 再次检查，确保不会重复处理主IO点表Sheet
-                        if tp_sheet_name == source_sheet_name_for_generator and start_index_for_third_party == 0:
-                            logger.info(f"跳过主IO点表Sheet '{tp_sheet_name}' (当其不是第一个Sheet时，已被识别为source_sheet_name_for_generator)。")
-                            continue # 如果主Sheet不是第一个，且当前迭代到它，则跳过
-
-                        try:
-                            tp_df = pd.read_excel(xls_file_all_sheets, sheet_name=tp_sheet_name)
-                            list_of_third_party_data.append((tp_sheet_name, tp_df))
-                            self.status_bar.showMessage(f"已读取第三方Sheet: {tp_sheet_name}", 3000)
-                            logger.info(f"已读取第三方设备Sheet: {tp_sheet_name}，包含 {len(tp_df)} 行数据。")
-                        except Exception as e_read_tp:
-                            error_msg = f"读取第三方设备Sheet '{tp_sheet_name}' 失败: {e_read_tp}。将跳过此Sheet。"
-                            logger.warning(error_msg)
-                            QMessageBox.warning(self, "读取部分Sheet失败", error_msg)
-                else:
-                    logger.warning("上传的Excel文件中未找到任何Sheet页，无法处理。") # 应该在上传时就被捕获，但再次检查
-
-                # 3. 获取保存路径
-                default_save_name = f"{file_name_base.rsplit('.', 1)[0]}_和利时点表.xls"
-                save_path, _ = QFileDialog.getSaveFileName(
-                    self,
-                    "保存和利时PLC点表",
-                    default_save_name, # 建议的默认文件名
-                    "Excel 97-2003 Workbook (*.xls);;所有文件 (*)"
+                generator = HollysysGenerator()
+                success, error_message = generator.generate_hollysys_table(
+                    io_data_df=main_io_df,
+                    source_sheet_name=source_sheet_name_for_generator,
+                    output_path=save_path,
+                    third_party_data=list_of_third_party_data
                 )
-
-                if save_path:
-                    # 4. 调用生成器
-                    generator = HollysysGenerator()
-                    success, error_message = generator.generate_hollysys_table(
-                        io_data_df=main_io_df,
-                        source_sheet_name=source_sheet_name_for_generator, # 使用实际读取的主Sheet名
-                        output_path=save_path,
-                        third_party_data=list_of_third_party_data # 传递第三方数据
-                    )
-
-                    if success:
-                        QMessageBox.information(self, "成功", f"和利时PLC点表已成功导出到:\n{save_path}")
-                        self.status_bar.showMessage(f"和利时点表已生成: {save_path}", 7000)
-                    else:
-                        # 如果生成失败，error_message应该包含具体的错误原因
-                        detailed_error_msg = error_message if error_message else "生成和利时PLC点表失败，但未提供具体错误信息。"
-                        QMessageBox.critical(self, "生成失败", detailed_error_msg)
-                        logger.error(f"HollysysGenerator生成点表失败: {detailed_error_msg}")
-                        self.status_bar.showMessage("和利时点表生成失败 (未知错误)。")
+                if success:
+                    QMessageBox.information(self, "成功", f"和利时PLC点表已成功导出到:\n{save_path}")
+                    self.status_bar.showMessage(f"和利时点表已生成: {save_path}", 7000)
                 else:
-                    logger.info("用户取消了保存和利时PLC点表操作。")
-                    self.status_bar.showMessage("已取消生成和利时点表。")
-            
-            except FileNotFoundError:
-                logger.error(f"读取已验证的IO点表失败: 文件 '{self.verified_io_table_path}' 未找到。")
-                QMessageBox.critical(self, "文件错误", f"无法找到已验证的IO点表文件:\n{self.verified_io_table_path}")
-                self.status_bar.showMessage("错误：无法找到源IO点表文件。")
-            except ValueError as ve: # 通常是 sheet_name 不存在时 pandas 抛出的错误
-                if f"Worksheet named '{PLC_IO_SHEET_NAME}' not found" in str(ve) or \
-                   f"No sheet named <{PLC_IO_SHEET_NAME}>" in str(ve):
-                    logger.error(f"读取IO点表 '{self.verified_io_table_path}' 失败: 未找到名为 '{PLC_IO_SHEET_NAME}' 的Sheet页。错误: {ve}")
-                    QMessageBox.critical(self, "文件错误", f"在IO点表文件中未找到名为 '{PLC_IO_SHEET_NAME}' 的工作表。")
-                else:
-                    logger.error(f"读取IO点表 '{self.verified_io_table_path}' 时发生值错误: {ve}", exc_info=True)
-                    QMessageBox.critical(self, "文件读取错误", f"读取IO点表时发生错误: {ve}")
+                    detailed_error_msg = error_message if error_message else "生成和利时PLC点表失败，但未提供具体错误信息。"
+                    QMessageBox.critical(self, "生成失败", detailed_error_msg)
+                    logger.error(f"HollysysGenerator生成点表失败: {detailed_error_msg}")
+                    self.status_bar.showMessage("和利时点表生成失败。")
+            except FileNotFoundError: logger.error(f"读取已验证的IO点表失败: 文件 '{self.verified_io_table_path}' 未找到。"); QMessageBox.critical(self, "文件错误", f"无法找到已验证的IO点表文件:\n{self.verified_io_table_path}"); self.status_bar.showMessage("错误：无法找到源IO点表文件。")
+            except ValueError as ve: 
+                if f"Worksheet named '{PLC_IO_SHEET_NAME}' not found" in str(ve) or f"No sheet named <{PLC_IO_SHEET_NAME}>" in str(ve): logger.error(f"读取IO点表 '{self.verified_io_table_path}' 失败: 未找到名为 '{PLC_IO_SHEET_NAME}' 的Sheet页。错误: {ve}"); QMessageBox.critical(self, "文件错误", f"在IO点表文件中未找到名为 '{PLC_IO_SHEET_NAME}' 的工作表。")
+                else: logger.error(f"读取IO点表 '{self.verified_io_table_path}' 时发生值错误: {ve}", exc_info=True); QMessageBox.critical(self, "文件读取错误", f"读取IO点表时发生错误: {ve}")
                 self.status_bar.showMessage("错误：读取源IO点表内容失败。")
-            except Exception as e:
-                logger.error(f"生成和利时PLC点表时发生未知错误: {e}", exc_info=True)
-                QMessageBox.critical(self, "生成错误", f"生成和利时PLC点表时发生未知错误:\n{e}")
-                self.status_bar.showMessage("和利时点表生成失败 (未知错误)。")
+            except Exception as e: logger.error(f"生成和利时PLC点表时发生未知错误: {e}", exc_info=True); QMessageBox.critical(self, "生成错误", f"生成和利时PLC点表时发生未知错误:\n{e}"); self.status_bar.showMessage("和利时点表生成失败 (未知错误)。")
 
         elif plc_type == "中控PLC":
             logger.info(f"准备根据IO点表 '{self.verified_io_table_path}' 生成中控PLC点表。")
-            QMessageBox.information(self, "功能待实现", f"已选择根据 '{file_name_base}' 生成 '{plc_type}' PLC点表。\n该功能正在开发中。")
+            QMessageBox.information(self, "功能待实现", f"已选择根据 '{file_name_base_with_ext}' 生成 '{plc_type}' PLC点表。\n该功能正在开发中。")
         else:
             QMessageBox.warning(self, "类型不支持", f"目前不支持为PLC类型 '{plc_type}' 生成点表。")
             logger.warning(f"用户尝试为不支持的PLC类型 '{plc_type}' 生成点表。")
             self.status_bar.showMessage(f"不支持的PLC类型: {plc_type}")
+
+    def _handle_hmi_generation_requested(self, hmi_type: str):
+        """处理用户选择的HMI点表生成请求（例如亚控、力控等）"""
+        logger.info(f"用户选择了HMI类型进行生成: {hmi_type}")
+
+        if not self.verified_io_table_path:
+            QMessageBox.warning(self, "操作无效", "请先上传并验证一个IO点表文件，然后再选择要生成的HMI点表类型。")
+            logger.warning("用户在未上传有效IO点表的情况下尝试选择HMI生成类型。")
+            self.status_bar.showMessage("请先上传IO点表")
+            return
+
+        file_name_base_with_ext = os.path.basename(self.verified_io_table_path)
+        base_io_filename, _ = os.path.splitext(file_name_base_with_ext)
+        # 移除可能存在的'(已校验)'标记
+        base_io_filename = base_io_filename.replace("_(已校验)", "").replace("(已校验)","")
+        
+        self.status_bar.showMessage(f"准备为 '{file_name_base_with_ext}' 生成 '{hmi_type}' HMI点表...")
+
+        if hmi_type == "亚控":
+            logger.info(f"准备根据IO点表 '{self.verified_io_table_path}' 生成亚控HMI点表(空结构)。")
+            output_dir = QFileDialog.getExistingDirectory(self, f"选择保存亚控HMI点表的文件夹", ".")
+            if not output_dir:
+                logger.info("用户取消选择输出目录。")
+                self.status_bar.showMessage("已取消生成亚控HMI点表。")
+                return
+            
+            try:
+                generator = KingViewGenerator()
+                # 修正：调用重命名后的方法，并传递所有需要的参数
+                success, f1_path, f2_path, err_msg = generator.generate_kingview_files(
+                    io_table_path=self.verified_io_table_path, # 源IO文件路径
+                    output_dir=output_dir, 
+                    base_io_filename=base_io_filename
+                )
+
+                if success:
+                    msg = "亚控HMI点表已成功生成:" # 修改成功消息
+                    if f1_path: msg += f"\n - IO Server 点表: {f1_path}"
+                    if f2_path: msg += f"\n - 数据词典点表: {f2_path}"
+                    QMessageBox.information(self, "成功", msg)
+                    self.status_bar.showMessage("亚控HMI点表已生成。", 7000)
+                    logger.info(msg)
+                else:
+                    detailed_error_msg = err_msg if err_msg else "生成亚控HMI点表失败，但未提供具体错误信息。"
+                    QMessageBox.critical(self, "生成失败", detailed_error_msg)
+                    logger.error(f"KingViewGenerator生成亚控点表失败: {detailed_error_msg}")
+                    self.status_bar.showMessage("亚控HMI点表生成失败。")
+            
+            except Exception as e:
+                logger.error(f"生成亚控HMI点表时发生未知错误: {e}", exc_info=True)
+                QMessageBox.critical(self, "生成错误", f"生成亚控HMI点表时发生未知错误:\n{e}")
+                self.status_bar.showMessage("亚控HMI点表生成失败 (未知错误)。")
+
+        elif hmi_type == "力控":
+            logger.info(f"准备根据IO点表 '{self.verified_io_table_path}' 生成力控HMI点表。")
+            QMessageBox.information(self, "功能待实现", f"已选择根据 '{file_name_base_with_ext}' 生成 '{hmi_type}' HMI点表。\n该功能正在开发中。")
+        else:
+            QMessageBox.warning(self, "类型不支持", f"目前不支持为HMI类型 '{hmi_type}' 生成点表。")
+            logger.warning(f"用户尝试为不支持的HMI类型 '{hmi_type}' 生成点表。")
+            self.status_bar.showMessage(f"不支持的HMI类型: {hmi_type}")
 
     def get_current_devices(self) -> List[Dict[str, Any]]:
         """获取当前加载的设备数据，用于传递给其他对话框"""
