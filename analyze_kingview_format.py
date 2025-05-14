@@ -4,7 +4,7 @@ import os
 # --- 用户需要修改的部分 ---
 # 请将下面的路径替换为您本地的亚控示例Excel文件（包含数据词典和IO Server表）的完整路径
 # 例如: r"C:\\Users\\YourUser\\Desktop\\亚控导出示例.xlsx" 或 "/home/user/亚控导出示例.xlsx"
-file_path = "./数据词典点表.xls"
+file_path = "./Basic.xls"
 # --- 修改结束 ---
 
 def analyze_excel_structure(filepath):
@@ -29,17 +29,21 @@ def analyze_excel_structure(filepath):
 
         for sheet_name in sheet_names:
             try:
-                # 读取第一个Sheet（nrows=0 只读取表头信息到 columns）
-                df_header = pd.read_excel(xls, sheet_name=sheet_name, nrows=0)
-                headers = list(df_header.columns)
+                # 读取完整的Sheet页内容
+                df_sheet_content = pd.read_excel(xls, sheet_name=sheet_name)
+                headers = list(df_sheet_content.columns)
                 print(f"--- Sheet: '{sheet_name}' ---")
                 print(f"列名: {headers}")
+                print(f"内容 (所有行):")
+                # 打印DataFrame的所有行和列
+                print(df_sheet_content.to_string()) 
+                print(f"总行数: {len(df_sheet_content)}, 总列数: {len(df_sheet_content.columns)}")
                 print("-" * (len(sheet_name) + 12)) # 分隔线
                 print() # 空行增加可读性
 
             except Exception as e_sheet:
                 print(f"--- Sheet: '{sheet_name}' ---")
-                print(f"读取表头时出错: {e_sheet}")
+                print(f"读取Sheet '{sheet_name}' 时出错: {e_sheet}")
                 print("-" * (len(sheet_name) + 12))
                 print()
 

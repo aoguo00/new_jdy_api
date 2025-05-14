@@ -33,6 +33,7 @@ from core.post_upload_processor.io_validation.validator import validate_io_table
 # 导入点表生成器
 from core.post_upload_processor.plc_generators.hollysys_generator.generator import HollysysGenerator
 from core.post_upload_processor.hmi_generators.yk_generator.generator import KingViewGenerator
+from core.post_upload_processor.hmi_generators.lk_generator.generator import LikongGenerator # 新增：导入力控生成器
 
 # Import new data processors
 from core.project_list_area import ProjectService
@@ -427,9 +428,10 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("请先上传并加载IO点表")
             return
 
-        file_name_base_with_ext = os.path.basename(self.verified_io_table_path or "Uploaded_IO_Table.xlsx")
-        base_io_filename, _ = os.path.splitext(file_name_base_with_ext)
-        base_io_filename = base_io_filename.replace("_(已校验)", "").replace("(已校验)","")
+        # base_io_filename 的提取移到各自的生成逻辑内部，因为力控 Basic.xls 不需要它
+        # file_name_base_with_ext = os.path.basename(self.verified_io_table_path or "Uploaded_IO_Table.xlsx")
+        # base_io_filename, _ = os.path.splitext(file_name_base_with_ext)
+        # base_io_filename = base_io_filename.replace("_(已校验)", "").replace("(已校验)","")
         
         self.status_bar.showMessage(f"准备为已加载数据生成 '{hmi_type}' HMI点表...")
 
@@ -442,8 +444,12 @@ class MainWindow(QMainWindow):
                 return
             
             try:
+                # base_io_filename 用于亚控生成器中构成最终文件名的一部分
+                file_name_base_with_ext = os.path.basename(self.verified_io_table_path or "Uploaded_IO_Table.xlsx")
+                base_io_filename, _ = os.path.splitext(file_name_base_with_ext)
+                base_io_filename = base_io_filename.replace("_(已校验)", "").replace("(已校验)","")
+
                 generator = KingViewGenerator()
-                # 使用已加载的数据
                 success, f1_path, f2_path, err_msg = generator.generate_kingview_files(
                     main_io_points=self.loaded_main_io_points,
                     third_party_sheet_data=self.loaded_third_party_data, 
@@ -470,8 +476,36 @@ class MainWindow(QMainWindow):
                 self.status_bar.showMessage("亚控HMI点表生成失败 (未知错误)。")
 
         elif hmi_type == "力控":
-            logger.info(f"准备根据已加载数据生成力控HMI点表。")
-            QMessageBox.information(self, "功能待实现", f"已选择根据已加载数据生成 '{hmi_type}' HMI点表。\n该功能正在开发中。")
+            logger.info(f"准备根据已加载数据生成力控HMI点表 (Basic.xls)。")
+            output_dir = QFileDialog.getExistingDirectory(self, f"选择保存力控 Basic.xls 点表的文件夹", ".")
+            if not output_dir:
+                logger.info("用户取消选择输出目录。")
+                self.status_bar.showMessage("已取消生成力控HMI点表。")
+                return
+            
+            try:
+                generator = LikongGenerator()
+                success, file_path, err_msg = generator.generate_basic_xls(
+                    output_dir=output_dir,
+                    main_io_points=self.loaded_main_io_points,       # 传递主IO点数据
+                    third_party_data=self.loaded_third_party_data  # 传递第三方数据
+                )
+
+                if success and file_path:
+                    msg = f"力控点表 Basic.xls 已成功生成:\n{file_path}"
+                    QMessageBox.information(self, "成功", msg)
+                    self.status_bar.showMessage("力控 Basic.xls 点表已生成。", 7000)
+                    logger.info(msg)
+                else:
+                    detailed_error_msg = err_msg if err_msg else "生成力控 Basic.xls 点表失败。"
+                    QMessageBox.critical(self, "生成失败", detailed_error_msg)
+                    logger.error(f"LikongGenerator生成 Basic.xls 点表失败: {detailed_error_msg}")
+                    self.status_bar.showMessage("力控 Basic.xls 点表生成失败。")
+            
+            except Exception as e:
+                logger.error(f"生成力控 Basic.xls 点表时发生未知错误: {e}", exc_info=True)
+                QMessageBox.critical(self, "生成错误", f"生成力控 Basic.xls 点表时发生未知错误:\n{e}")
+                self.status_bar.showMessage("力控 Basic.xls 点表生成失败 (未知错误)。")
         else:
             QMessageBox.warning(self, "类型不支持", f"目前不支持为HMI类型 '{hmi_type}' 生成点表。")
             logger.warning(f"用户尝试为不支持的HMI类型 '{hmi_type}' 生成点表。")
