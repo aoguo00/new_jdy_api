@@ -83,174 +83,135 @@ class KingViewGenerator:
         self._io_server_tag_id_counter = 1
         self._data_dict_tag_id_counter = 1
 
-    def _process_point_data(self, 
-                            data_source: Union[List[UploadedIOPoint], pd.DataFrame], 
-                            is_main_sheet: bool, 
-                            site_name_from_file: Optional[str], 
-                            site_no_from_file: Optional[str]):
-        """处理来自单个数据源 (UploadedIOPoint列表 或 DataFrame) 的点位数据。"""
+    def _process_single_point(self, 
+                              point: UploadedIOPoint, 
+                              apply_main_sheet_logic: bool, 
+                              site_name_from_file: Optional[str], 
+                              site_no_from_file: Optional[str],
+                              point_index_for_log: int): # 新增：用于日志记录的点位原始索引
+        """
+        处理单个UploadedIOPoint对象。
+        apply_main_sheet_logic: 一个布尔值，指示是否应用主表特定的逻辑（如预留点命名）。
+        """
         
-        # 根据 is_main_sheet 选择迭代方式和数据提取方式
-        data_iterator: Any
-        if is_main_sheet:
-            if not isinstance(data_source, list): # 类型检查，确保主表数据是列表
-                logger.error("内部错误：主表数据源期望是List[UploadedIOPoint]，但收到了其他类型。")
-                return
-            data_iterator = enumerate(data_source) # 主表迭代 UploadedIOPoint 列表
+        data_type_raw = point.data_type
+        point_name_part_raw = point.hmi_variable_name
+        description_raw = point.variable_description
+        comm_address_raw = point.hmi_communication_address
+        channel_no_raw = point.channel_tag
+        sll_val_raw = point.sll_set_value
+        sl_val_raw = point.sl_set_value
+        sh_val_raw = point.sh_set_value
+        shh_val_raw = point.shh_set_value
+
+        # ===== DETAILED LOGGING: Start processing a point =====
+        logger.debug(f"Processing UploadedIOPoint (Sheet: '{point.source_sheet_name}', Type: '{point.source_type}', Index in original list: {point_index_for_log}): "
+                     f"HMI_Name='{point.hmi_variable_name}', DataType='{point.data_type}', "
+                     f"CommAddr='{point.hmi_communication_address}', PLCAddr='{point.plc_absolute_address}', "
+                     f"Desc='{point.variable_description}'")
+        # =======================================================
+
+        data_type = str(data_type_raw or "").upper().strip()
+        log_sheet_type = "主表逻辑适用" if apply_main_sheet_logic else "第三方逻辑适用"
+
+        if not data_type:
+            logger.warning(f"跳过点位 (源: {point.source_sheet_name}, HMI: {point_name_part_raw or 'N/A'}, 索引: {point_index_for_log}): 数据类型为空。")
+            return
+
+        tag_name: str
+        description: str
+        point_name_part_for_ioaccess: str
+        comm_address = str(comm_address_raw or "").strip()
+        is_point_name_empty = not (point_name_part_raw and point_name_part_raw.strip())
+
+        if apply_main_sheet_logic and is_point_name_empty:
+            effective_channel_no = str(channel_no_raw or f"Row{point_index_for_log + 1}").strip() # 使用传入的索引
+            tag_name = f'{site_no_from_file or ""}YLDW{effective_channel_no}'
+            description = f"预留点位{effective_channel_no}"
+            point_name_part_for_ioaccess = tag_name
+            logger.debug(f"  点位 (源: {point.source_sheet_name}, 索引: {point_index_for_log}) 应用主表预留点逻辑，生成 TagName: {tag_name}")
+        elif is_point_name_empty:
+            logger.warning(f"跳过点位 (源: {point.source_sheet_name}, 索引: {point_index_for_log}): HMI变量名为空或无效，且不适用主表预留点逻辑。")
+            return
         else:
-            if not isinstance(data_source, pd.DataFrame):
-                logger.error("内部错误：第三方数据源期望是pd.DataFrame，但收到了其他类型。")
-                return
-            data_iterator = data_source.iterrows() # 第三方表迭代 DataFrame 行
+            point_name_part_for_ioaccess = str(point_name_part_raw).strip()
+            tag_name = f'{site_no_from_file or ""}{point_name_part_for_ioaccess}'
+            description = str(description_raw or "").strip()
+        
+        final_comm_address = comm_address
+        if data_type == "BOOL":
+            if comm_address.isdigit() and not comm_address.startswith('0'):
+                final_comm_address = f"0{comm_address}"
 
-        for index, item_data in data_iterator: # item_data 将是 UploadedIOPoint 或 pd.Series
-            data_type_raw: Optional[str]
-            point_name_part_raw: Optional[str]
-            description_raw: Optional[str]
-            comm_address_raw: Optional[str]
-            channel_no_raw: Optional[str] # 仅用于主表预留点位
-            # 报警限值
-            sll_val_raw: Optional[str]
-            sl_val_raw: Optional[str]
-            sh_val_raw: Optional[str]
-            shh_val_raw: Optional[str]
+        io_server_common = {
+            'TagName': tag_name, 'Description': description, 'ChannelName': "Network1", 
+            'DeviceName': site_name_from_file or "", 'ChannelDriver': "ModbusMaster", 
+            'DeviceSeries': "ModbusTCP", 'DeviceSeriesType': 0, 'CollectControl': "否", 
+            'CollectInterval': 1000, 'CollectOffset': 0, 'TimeZoneBias': 0, 
+            'TimeAdjustment': 0, 'Enable': "是", 'ForceWrite': "否", 
+            'ItemName': final_comm_address, 'HisRecordMode': "不记录", 
+            'HisDeadBand': 0, 'HisInterval': 60, 'TagGroup': site_name_from_file or "", 
+        }
+        data_dict_common = {
+            'ContainerType': 1, 'TagName': tag_name, 'Description': description,
+            'SecurityZoneID': None, 'RecordEvent': False, 'SaveValue': True, 
+            'SaveParameter': True, 'AccessByOtherApplication': False, 
+            'ExtentField1': None, 'ExtentField2': None, 'ExtentField3': None,
+            'ExtentField4': None, 'ExtentField5': None, 'ExtentField6': None,
+            'ExtentField7': None, 'ExtentField8': None,
+            'AlarmGroup': site_name_from_file or "", 'IOConfigControl': True, 
+            'IOAccess': f'Server1.{point_name_part_for_ioaccess}.Value',
+            'IOEnable': True, 'ForceRead': False, 'ForceWrite': False, 
+            'StateEnumTable': None, 
+        }
 
-            if is_main_sheet:
-                point: UploadedIOPoint = item_data # 明确类型
-                data_type_raw = point.data_type
-                point_name_part_raw = point.hmi_variable_name
-                description_raw = point.variable_description
-                comm_address_raw = point.hmi_communication_address # 主表使用上位机通讯地址
-                channel_no_raw = point.channel_tag
-                sll_val_raw = point.sll_set_value
-                sl_val_raw = point.sl_set_value
-                sh_val_raw = point.sh_set_value
-                shh_val_raw = point.shh_set_value
-            else: # is_main_sheet is False, processing a DataFrame row (pd.Series)
-                row: pd.Series = item_data # 明确类型
-                data_type_raw = str(row.get(C.TP_DATA_TYPE_COL, ""))
-                point_name_part_raw = str(row.get(C.TP_VAR_NAME_COL, ""))
-                description_raw = str(row.get(C.TP_DESCRIPTION_COL, ""))
-                comm_address_raw = str(row.get(C.TP_MODBUS_ADDR_COL, "")) # 第三方表使用Modbus地址
-                channel_no_raw = None # 第三方表通常不直接使用通道号来生成预留名
-                sll_val_raw = str(row.get(C.SLL_SET_COL, ""))
-                sl_val_raw = str(row.get(C.SL_SET_COL, ""))
-                sh_val_raw = str(row.get(C.SH_SET_COL, ""))
-                shh_val_raw = str(row.get(C.SHH_SET_COL, ""))
-
-            data_type = str(data_type_raw or "").upper().strip()
-            if not data_type:
-                 logger.warning(f"跳过行/点 {index + (2 if not is_main_sheet else 1)}: 数据类型为空。") # DataFrame enumerate 从0开始，加2；List从0开始，加1
-                 continue
-
-            tag_name: str
-            description: str
-            point_name_part_for_ioaccess: str
-            comm_address = str(comm_address_raw or "").strip()
-
-            is_point_name_empty = not (point_name_part_raw and point_name_part_raw.strip())
-
-            if is_main_sheet and is_point_name_empty: # 主表且HMI名称为空，视为预留点位
-                channel_no = str(channel_no_raw or f"Row{index + 1}").strip()
-                tag_name = f'{site_no_from_file or ""}YLDW{channel_no}'
-                description = f"预留点位{channel_no}"
-                point_name_part_for_ioaccess = tag_name
-                logger.debug(f"检测到主IO表点位 {index + 1} 为预留点位 (通道: {channel_no})，生成默认 TagName: {tag_name}")
-            elif not is_main_sheet and is_point_name_empty: # 第三方表且变量名为空
-                 logger.warning(f"跳过第三方表行 {index + 2}: 变量名为空。")
-                 continue
-            else: # HMI 名称存在 (主表或第三方表)
-                point_name_part_for_ioaccess = str(point_name_part_raw).strip() # 保证 point_name_part_raw 非空
-                tag_name = f'{site_no_from_file or ""}{point_name_part_for_ioaccess}'
-                description = str(description_raw or "").strip()
+        current_io_server_tag_id = self._io_server_tag_id_counter
+        current_data_dict_tag_id = self._data_dict_tag_id_counter
             
-            # 根据数据类型调整通讯地址 (ItemName)
-            final_comm_address = comm_address
-            if data_type == "BOOL":
-                if comm_address.isdigit() and not comm_address.startswith('0'):
-                    final_comm_address = f"0{comm_address}"
-                # 如果已经是 "0xxxx" 或者非纯数字（如 "M3010"），则不作改变
+        if data_type == "BOOL":
+            io_server_disc_row_dict = {**io_server_common, 'TagID': current_io_server_tag_id, 'TagType': "用户变量", 'TagDataType': "IODisc", 'RegName': 0, 'RegType': 0, 'ItemDataType': "BIT", 'ItemAccessMode': "读写"}
+            io_server_disc_row_list = [io_server_disc_row_dict.get(h, '') for h in IO_SERVER_SHEETS['IO_DISC']]
+            logger.debug(f"  => IO Server (IO_DISC) data for '{tag_name}': {io_server_disc_row_list}")
+            self._io_server_data['IO_DISC'].append(io_server_disc_row_list)
+            
+            data_dict_disc_row_dict = {**data_dict_common, 'TagID': current_data_dict_tag_id, 'InitialValueBool': False, 'HisRecMode': 2, 'HisRecInterval': 60, 'AlarmType': 256, 'CloseString': "关闭", 'OpenString': "打开", 'AlarmDelay': 0, 'AlarmPriority': 1, 'DiscInhibitor': None, 'CloseToOpen': "关到开", 'OpenToClose': "开到关", 'DataConvertMode': 1}
+            data_dict_disc_row_list = [data_dict_disc_row_dict.get(h, '') for h in DATA_DICTIONARY_SHEETS['IO_DISC']]
+            logger.debug(f"  => Data Dictionary (IO_DISC) data for '{tag_name}': {data_dict_disc_row_list}")
+            self._data_dict_data['IO_DISC'].append(data_dict_disc_row_list)
+            
+            self._io_server_tag_id_counter += 1
+            self._data_dict_tag_id_counter += 1
+        elif data_type == "REAL":
+            io_server_float_row_dict = {**io_server_common, 'TagID': current_io_server_tag_id, 'TagType': "用户变量", 'TagDataType': "IOFloat", 'MaxRawValue': 1000000000, 'MinRawValue': -1000000000, 'MaxValue': 1000000000, 'MinValue': -1000000000, 'NonLinearTableName': None, 'ConvertType': "无", 'IsFilter': "否", 'DeadBand': 0, 'Unit': None, 'RegName': 4, 'RegType': 3, 'ItemDataType': "FLOAT", 'ItemAccessMode': "读写"}
+            io_server_float_row_list = [io_server_float_row_dict.get(h, '') for h in IO_SERVER_SHEETS['IO_FLOAT']]
+            logger.debug(f"  => IO Server (IO_FLOAT) data for '{tag_name}': {io_server_float_row_list}")
+            self._io_server_data['IO_FLOAT'].append(io_server_float_row_list)
+            
+            sll_val = str(sll_val_raw or '').strip()
+            sl_val = str(sl_val_raw or '').strip()
+            sh_val = str(sh_val_raw or '').strip()
+            shh_val = str(shh_val_raw or '').strip()
 
-            # --- 后续公共处理逻辑 (与之前类似) ---
-            io_server_common = {
-                'TagName': tag_name,
-                'Description': description,
-                'ChannelName': "Network1", 
-                'DeviceName': site_name_from_file or "", 
-                'ChannelDriver': "ModbusMaster", 
-                'DeviceSeries': "ModbusTCP", 
-                'DeviceSeriesType': 0, 
-                'CollectControl': "否", 
-                'CollectInterval': 1000, 
-                'CollectOffset': 0, 
-                'TimeZoneBias': 0, 
-                'TimeAdjustment': 0, 
-                'Enable': "是", 
-                'ForceWrite': "否", 
-                'ItemName': final_comm_address, # 使用调整后的通讯地址
-                'HisRecordMode': "不记录", 
-                'HisDeadBand': 0, 
-                'HisInterval': 60, 
-                'TagGroup': site_name_from_file or "", 
-            }
-            data_dict_common = {
-                'ContainerType': 1, 
-                'TagName': tag_name,
-                'Description': description,
-                'SecurityZoneID': None, 
-                'RecordEvent': False, 
-                'SaveValue': True, 
-                'SaveParameter': True, 
-                'AccessByOtherApplication': False, 
-                'ExtentField1': None, 'ExtentField2': None, 'ExtentField3': None,
-                'ExtentField4': None, 'ExtentField5': None, 'ExtentField6': None,
-                'ExtentField7': None, 'ExtentField8': None,
-                'AlarmGroup': site_name_from_file or "", 
-                'IOConfigControl': True, 
-                'IOAccess': f'Server1.{point_name_part_for_ioaccess}.Value',
-                'IOEnable': True, 
-                'ForceRead': False, 
-                'ForceWrite': False, 
-                'StateEnumTable': None, 
-            }
+            sll_enabled = bool(sll_val)
+            sl_enabled = bool(sl_val)
+            sh_enabled = bool(sh_val)
+            shh_enabled = bool(shh_val)
 
-            current_io_server_tag_id = self._io_server_tag_id_counter
-            current_data_dict_tag_id = self._data_dict_tag_id_counter
-            # TagID计数器应该在成功添加条目后增加
-
-            if data_type == "BOOL":
-                io_server_disc_row = {**io_server_common, 'TagID': current_io_server_tag_id, 'TagType': "用户变量", 'TagDataType': "IODisc", 'RegName': 0, 'RegType': 0, 'ItemDataType': "BIT", 'ItemAccessMode': "读写"}
-                self._io_server_data['IO_DISC'].append([io_server_disc_row.get(h, '') for h in IO_SERVER_SHEETS['IO_DISC']])
-                data_dict_disc_row = {**data_dict_common, 'TagID': current_data_dict_tag_id, 'InitialValueBool': False, 'HisRecMode': 2, 'HisRecInterval': 60, 'AlarmType': 256, 'CloseString': "关闭", 'OpenString': "打开", 'AlarmDelay': 0, 'AlarmPriority': 1, 'DiscInhibitor': None, 'CloseToOpen': "关到开", 'OpenToClose': "开到关", 'DataConvertMode': 1}
-                self._data_dict_data['IO_DISC'].append([data_dict_disc_row.get(h, '') for h in DATA_DICTIONARY_SHEETS['IO_DISC']])
-                self._io_server_tag_id_counter += 1
-                self._data_dict_tag_id_counter += 1
-            elif data_type == "REAL":
-                io_server_float_row = {**io_server_common, 'TagID': current_io_server_tag_id, 'TagType': "用户变量", 'TagDataType': "IOFloat", 'MaxRawValue': 1000000000, 'MinRawValue': -1000000000, 'MaxValue': 1000000000, 'MinValue': -1000000000, 'NonLinearTableName': None, 'ConvertType': "无", 'IsFilter': "否", 'DeadBand': 0, 'Unit': None, 'RegName': 4, 'RegType': 3, 'ItemDataType': "FLOAT", 'ItemAccessMode': "读写"}
-                self._io_server_data['IO_FLOAT'].append([io_server_float_row.get(h, '') for h in IO_SERVER_SHEETS['IO_FLOAT']])
-                
-                sll_val = str(sll_val_raw or '').strip()
-                sl_val = str(sl_val_raw or '').strip()
-                sh_val = str(sh_val_raw or '').strip()
-                shh_val = str(shh_val_raw or '').strip()
-
-                sll_enabled = bool(sll_val)
-                sl_enabled = bool(sl_val)
-                sh_enabled = bool(sh_val)
-                shh_enabled = bool(shh_val)
-
-                data_dict_float_row = {**data_dict_common, 'TagID': current_data_dict_tag_id, 'MaxValue': 1000000000, 'MinValue': -1000000000, 'InitialValue': 0, 'Sensitivity': 0, 'EngineerUnits': None, 'HisRecMode': 2, 'HisRecChangeDeadband': 0, 'HisRecInterval': 60,
-                                     'HiHiEnabled': shh_enabled, 'HiHiLimit': shh_val if shh_enabled else '', 'HiHiText': "高高", 'HiHiPriority': 1, 'HiHiInhibitor': None,
-                                     'HiEnabled': sh_enabled, 'HiLimit': sh_val if sh_enabled else '', 'HiText': "高", 'HiPriority': 1, 'HiInhibitor': None,
-                                     'LoEnabled': sl_enabled, 'LoLimit': sl_val if sl_enabled else '', 'LoText': "低", 'LoPriority': 1, 'LoInhibitor': None,
-                                     'LoLoEnabled': sll_enabled, 'LoLoLimit': sll_val if sll_enabled else '', 'LoLoText': "低低", 'LoLoPriority': 1, 'LoLoInhibitor': None,
-                                     'LimitDeadband': 0, 'LimitDelay': 0, 'DevMajorEnabled': False, 'DevMajorLimit': 80, 'DevMajorText': "主要", 'DevMajorPriority': 1, 'MajorInhibitor': None, 'DevMinorEnabled': False, 'DevMinorLimit': 20, 'DevMinorText': "次要", 'DevMinorPriority': 1, 'MinorInhibitor': None, 'DevDeadband': 0, 'DevTargetValue': 100, 'DevDelay': 0, 'RocEnabled': False, 'RocPercent': 20, 'RocTimeUnit': 0, 'RocText': "变化率", 'RocDelay': 0, 'RocPriority': 1, 'RocInhibitor': None, 'StatusAlarmTableID': 0, 'StatusAlarmEnabled': False, 'StatusAlarmTableName': None, 'StatusInhibitor': None, 'MaxRaw': 1000000000, 'MinRaw': -1000000000, 'DataConvertMode': 1, 'NlnTableID': 0, 'AddupMaxVal': 0, 'AddupMinVal': 0}
-                self._data_dict_data['IO_FLOAT'].append([data_dict_float_row.get(h, '') for h in DATA_DICTIONARY_SHEETS['IO_FLOAT']])
-                self._io_server_tag_id_counter += 1
-                self._data_dict_tag_id_counter += 1
-            else:
-                log_point_name = point_name_part_raw if point_name_part_raw and point_name_part_raw.strip() else f"(点位{index+1})"
-                logger.warning(f"跳过点位 '{log_point_name}': 不支持的数据类型 '{data_type}' (原始: {data_type_raw})。仅支持 'BOOL' 或 'REAL'。")
+            data_dict_float_row_dict = {**data_dict_common, 'TagID': current_data_dict_tag_id, 'MaxValue': 1000000000, 'MinValue': -1000000000, 'InitialValue': 0, 'Sensitivity': 0, 'EngineerUnits': None, 'HisRecMode': 2, 'HisRecChangeDeadband': 0, 'HisRecInterval': 60,
+                                 'HiHiEnabled': shh_enabled, 'HiHiLimit': shh_val if shh_enabled else '', 'HiHiText': "高高", 'HiHiPriority': 1, 'HiHiInhibitor': None,
+                                 'HiEnabled': sh_enabled, 'HiLimit': sh_val if sh_enabled else '', 'HiText': "高", 'HiPriority': 1, 'HiInhibitor': None,
+                                 'LoEnabled': sl_enabled, 'LoLimit': sl_val if sl_enabled else '', 'LoText': "低", 'LoPriority': 1, 'LoInhibitor': None,
+                                 'LoLoEnabled': sll_enabled, 'LoLoLimit': sll_val if sll_enabled else '', 'LoLoText': "低低", 'LoLoPriority': 1, 'LoLoInhibitor': None,
+                                 'LimitDeadband': 0, 'LimitDelay': 0, 'DevMajorEnabled': False, 'DevMajorLimit': 80, 'DevMajorText': "主要", 'DevMajorPriority': 1, 'MajorInhibitor': None, 'DevMinorEnabled': False, 'DevMinorLimit': 20, 'DevMinorText': "次要", 'DevMinorPriority': 1, 'MinorInhibitor': None, 'DevDeadband': 0, 'DevTargetValue': 100, 'DevDelay': 0, 'RocEnabled': False, 'RocPercent': 20, 'RocTimeUnit': 0, 'RocText': "变化率", 'RocDelay': 0, 'RocPriority': 1, 'RocInhibitor': None, 'StatusAlarmTableID': 0, 'StatusAlarmEnabled': False, 'StatusAlarmTableName': None, 'StatusInhibitor': None, 'MaxRaw': 1000000000, 'MinRaw': -1000000000, 'DataConvertMode': 1, 'NlnTableID': 0, 'AddupMaxVal': 0, 'AddupMinVal': 0}
+            data_dict_float_row_list = [data_dict_float_row_dict.get(h, '') for h in DATA_DICTIONARY_SHEETS['IO_FLOAT']]
+            logger.debug(f"  => Data Dictionary (IO_FLOAT) data for '{tag_name}': {data_dict_float_row_list}")
+            self._data_dict_data['IO_FLOAT'].append(data_dict_float_row_list)
+            
+            self._io_server_tag_id_counter += 1
+            self._data_dict_tag_id_counter += 1
+        else:
+            log_point_name = point_name_part_raw if point_name_part_raw and point_name_part_raw.strip() else f"(索引 {point_index_for_log})"
+            logger.warning(f"跳过点位 '{log_point_name}' (源: {point.source_sheet_name}, {log_sheet_type}): 不支持的数据类型 '{data_type}' (原始: {data_type_raw})。仅支持 'BOOL' 或 'REAL'。")
 
     def _create_file_with_structure(self, filepath: str, sheet_structure: dict, sheet_data: Dict[str, List[List[Any]]]) -> Tuple[bool, Optional[str]]:
         # ... (此方法保持不变) ...
@@ -293,56 +254,55 @@ class KingViewGenerator:
             return False, error_msg
 
     def generate_kingview_files(self,
-                                main_io_points: Optional[List[UploadedIOPoint]], # 修改：接收 UploadedIOPoint 列表
-                                third_party_sheet_data: List[Tuple[str, pd.DataFrame]], # 修改：接收第三方数据列表
+                                all_points_data: List[UploadedIOPoint], # 修改：接收合并后的单一列表
                                 output_dir: str,
                                 base_io_filename: str
                                ) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
         """
-        生成两个亚控点表文件，数据从传入的参数获取。
-        场站编号和场站名称将从 main_io_points (如果可用) 的第一个点位中提取。
+        生成两个亚控点表文件，数据从传入的合并后的 UploadedIOPoint 对象列表获取。
+        场站编号和场站名称将从 all_points_data 中第一个源自主要IO工作表的点位中提取。
         """
-        logger.info(f"开始生成亚控点表文件 (新数据模型)，输出目录: {output_dir}")
+        logger.info(f"开始生成亚控点表文件 (统一数据模型，共 {len(all_points_data)} 个点位)，输出目录: {output_dir}")
         self._reset_data()
 
         extracted_site_no: Optional[str] = None
         extracted_site_name: Optional[str] = None
 
-        # 从 main_io_points 获取场站信息
-        if main_io_points and len(main_io_points) > 0:
-            first_point = main_io_points[0]
-            if first_point.site_number and first_point.site_number.strip():
-                extracted_site_no = first_point.site_number.strip()
-                logger.info(f"从主IO点数据成功读取场站编号: {extracted_site_no}")
+        # 从 all_points_data 中查找第一个主IO点以获取场站信息
+        first_main_io_point = next((p for p in all_points_data if p.source_sheet_name == C.PLC_IO_SHEET_NAME or p.source_type == "main_io"), None)
+
+        if first_main_io_point:
+            if first_main_io_point.site_number and first_main_io_point.site_number.strip():
+                extracted_site_no = first_main_io_point.site_number.strip()
+                logger.info(f"从点位 '{first_main_io_point.hmi_variable_name}' (源: {first_main_io_point.source_sheet_name}) 成功读取场站编号: {extracted_site_no}")
             else:
-                logger.warning("主IO点数据的第一个点位场站编号为空或无效。")
+                logger.warning(f"用于提取场站信息的点位 '{first_main_io_point.hmi_variable_name}' 场站编号为空或无效。")
             
-            if first_point.site_name and first_point.site_name.strip():
-                extracted_site_name = first_point.site_name.strip()
-                logger.info(f"从主IO点数据成功读取场站名称: {extracted_site_name}")
+            if first_main_io_point.site_name and first_main_io_point.site_name.strip():
+                extracted_site_name = first_main_io_point.site_name.strip()
+                logger.info(f"从点位 '{first_main_io_point.hmi_variable_name}' (源: {first_main_io_point.source_sheet_name}) 成功读取场站名称: {extracted_site_name}")
             else:
-                logger.warning("主IO点数据的第一个点位场站名称为空或无效。DeviceName/TagGroup可能为空。")
+                logger.warning(f"用于提取场站信息的点位 '{first_main_io_point.hmi_variable_name}' 场站名称为空或无效。DeviceName/TagGroup可能为空。")
         else:
-            logger.warning("主IO点数据列表为空，无法提取场站编号和场站名称。")
+            logger.warning("在提供的所有点位数据中未找到源自主要IO工作表的点，无法提取场站编号和场站名称。")
 
         # 处理数据
         try:
-            if main_io_points:
-                logger.info("开始处理主IO点表数据 (UploadedIOPoint 列表)...")
-                self._process_point_data(main_io_points, is_main_sheet=True, site_name_from_file=extracted_site_name, site_no_from_file=extracted_site_no)
-                logger.info("主IO点表数据处理完成。")
-            else:
-                logger.info("没有主IO点数据 (main_io_points is None or empty)。")
+            logger.info(f"开始处理 {len(all_points_data)} 个点位 (UploadedIOPoint 列表)...")
+            for index, point_obj in enumerate(all_points_data):
+                # 判断是否应用主表逻辑，基于点的来源
+                # (假设 excel_reader.py 在转换时正确设置了 point.source_sheet_name 或 point.source_type)
+                apply_main_logic = (point_obj.source_sheet_name == C.PLC_IO_SHEET_NAME or \
+                                    point_obj.source_type == "main_io" or \
+                                    point_obj.source_type == "intermediate_from_main")
+                
+                self._process_single_point(point_obj, 
+                                           apply_main_sheet_logic=apply_main_logic, 
+                                           site_name_from_file=extracted_site_name, 
+                                           site_no_from_file=extracted_site_no,
+                                           point_index_for_log=index) # 传递原始索引用于日志
+            logger.info("所有点位数据处理完成。")
             
-            if third_party_sheet_data:
-                logger.info(f"开始处理 {len(third_party_sheet_data)} 个第三方设备表 (DataFrame 列表)...")
-                for i, (sheet_name, tp_df_item) in enumerate(third_party_sheet_data):
-                    logger.info(f"处理第 {i+1} 个第三方DataFrame (Sheet: '{sheet_name}')...")
-                    self._process_point_data(tp_df_item, is_main_sheet=False, site_name_from_file=extracted_site_name, site_no_from_file=extracted_site_no)
-                logger.info("所有第三方设备数据处理完成。")
-            else:
-                logger.info("没有第三方设备数据 (third_party_sheet_data is empty)。")
-
         except Exception as e_proc:
             error_msg = f"处理IO点数据时发生错误: {e_proc}"
             logger.error(error_msg, exc_info=True)
@@ -365,7 +325,7 @@ class KingViewGenerator:
         success_dd, err_dd = self._create_file_with_structure(data_dictionary_filepath, DATA_DICTIONARY_SHEETS, self._data_dict_data)
         if not success_dd: all_success = False; error_messages.append(f"数据词典文件生成失败: {err_dd}"); data_dictionary_filepath = None
         
-        final_error_message = "\n".join(error_messages) if error_messages else None
+        final_error_message = "\\n".join(error_messages) if error_messages else None
 
         if all_success: logger.info("所有亚控点表文件均已成功生成并填充数据。")
         else: logger.error(f"生成亚控点表文件时发生错误: {final_error_message}")
@@ -375,80 +335,33 @@ class KingViewGenerator:
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
 
-    # 创建示例 UploadedIOPoint 数据
-    sample_main_points: List[UploadedIOPoint] = [
-        UploadedIOPoint(site_name="测试站", site_number="S007", hmi_variable_name="YK_AI_01", variable_description="亚控模拟输入1", data_type="REAL", hmi_communication_address="40001", channel_tag="AI_CH1", sll_set_value="1", sl_set_value="2", sh_set_value="98", shh_set_value="99"),
-        UploadedIOPoint(site_name="测试站", site_number="S007", hmi_variable_name="YK_DI_01", variable_description="亚控数字输入1", data_type="BOOL", hmi_communication_address="10001", channel_tag="DI_CH1"),
-        UploadedIOPoint(site_name="测试站", site_number="S007", hmi_variable_name=None, channel_tag="Res_CH1", variable_description=None, data_type="REAL", hmi_communication_address="40002"), # 预留点
+    # 创建示例 UploadedIOPoint 数据 (合并后的列表)
+    sample_all_points: List[UploadedIOPoint] = [
+        UploadedIOPoint(source_sheet_name=C.PLC_IO_SHEET_NAME, source_type="main_io", site_name="测试站", site_number="S007", hmi_variable_name="YK_AI_01", variable_description="亚控模拟输入1", data_type="REAL", hmi_communication_address="40001", channel_tag="AI_CH1", sll_set_value="1", sl_set_value="2", sh_set_value="98", shh_set_value="99"),
+        UploadedIOPoint(source_sheet_name=C.PLC_IO_SHEET_NAME, source_type="main_io", site_name="测试站", site_number="S007", hmi_variable_name="YK_DI_01", variable_description="亚控数字输入1", data_type="BOOL", hmi_communication_address="10001", channel_tag="DI_CH1"),
+        UploadedIOPoint(source_sheet_name=C.PLC_IO_SHEET_NAME, source_type="main_io", site_name="测试站", site_number="S007", hmi_variable_name=None, channel_tag="Res_CH1", variable_description=None, data_type="REAL", hmi_communication_address="40002"), # 预留点
+        UploadedIOPoint(source_sheet_name="第三方设备表A", source_type="third_party", site_name="测试站", site_number="S007", hmi_variable_name="TP_BOOL_1", variable_description="第三方1布尔", data_type="BOOL", hmi_communication_address="2001"),
+        UploadedIOPoint(source_sheet_name="第三方设备表A", source_type="third_party", site_name="测试站", site_number="S007", hmi_variable_name="TP_REAL_1", variable_description="第三方1实数", data_type="REAL", hmi_communication_address="50001", sll_set_value="5.5"),
     ]
-    sample_main_points_empty: List[UploadedIOPoint] = []
-
-    # 创建示例第三方 DataFrame 数据
-    tp_data1 = {
-        C.TP_VAR_NAME_COL: ["TP1_BOOL_1", "TP1_REAL_1"],
-        C.TP_DESCRIPTION_COL: ["第三方1布尔", "第三方1实数"],
-        C.TP_DATA_TYPE_COL: ["BOOL", "REAL"],
-        C.TP_MODBUS_ADDR_COL: ["2001", "50001"],
-        C.SLL_SET_COL: [None, "5.5"],
-    }
-    df_tp1 = pd.DataFrame(tp_data1)
-    tp_data2 = {
-        C.TP_VAR_NAME_COL: ["TP2_BOOL_X"],
-        C.TP_DESCRIPTION_COL: ["第三方2布尔X"],
-        C.TP_DATA_TYPE_COL: ["BOOL"],
-        C.TP_MODBUS_ADDR_COL: ["2005"],
-    }
-    df_tp2 = pd.DataFrame(tp_data2)
-    df_tp_empty = pd.DataFrame(columns=[C.TP_VAR_NAME_COL, C.TP_DESCRIPTION_COL, C.TP_DATA_TYPE_COL, C.TP_MODBUS_ADDR_COL])
-
-    third_party_sheets: List[Tuple[str, pd.DataFrame]] = [
-        ("第三方设备表A", df_tp1),
-        ("第三方设备表B_空", df_tp_empty),
-        ("第三方设备表C", df_tp2),
-    ]
-    third_party_sheets_empty: List[Tuple[str, pd.DataFrame]] = []
-
-    test_output_dir = "./test_kingview_output_new_model"
+    sample_empty_points_list: List[UploadedIOPoint] = []
+   
+    test_output_dir = "./test_kingview_output_unified_model"
     if not os.path.exists(test_output_dir):
         os.makedirs(test_output_dir)
 
     generator = KingViewGenerator()
 
-    logger.info("--- 测试场景1: 完整数据 ---")
+    logger.info("--- 测试场景1: 包含主表和第三方数据的合并列表 ---")
     success1, f1_1, f2_1, err1 = generator.generate_kingview_files(
-        sample_main_points, third_party_sheets, test_output_dir, "FullDataTest"
+        sample_all_points, test_output_dir, "UnifiedDataTest"
     )
     if success1: print(f"场景1成功: {f1_1}, {f2_1}")
     else: print(f"场景1失败: {err1}")
 
-    generator._reset_data() # 重置内部计数器和数据存储
-    logger.info("--- 测试场景2: 只有主IO点数据 ---")
+    generator._reset_data() 
+    logger.info("--- 测试场景2: 空的点位列表 ---")
     success2, f1_2, f2_2, err2 = generator.generate_kingview_files(
-        sample_main_points, third_party_sheets_empty, test_output_dir, "MainOnlyTest"
+        sample_empty_points_list, test_output_dir, "EmptyListTest"
     )
-    if success2: print(f"场景2成功: {f1_2}, {f2_2}")
-    else: print(f"场景2失败: {err2}")
-
-    generator._reset_data()
-    logger.info("--- 测试场景3: 只有第三方数据 ---")
-    success3, f1_3, f2_3, err3 = generator.generate_kingview_files(
-        None, third_party_sheets, test_output_dir, "ThirdPartyOnlyTest"
-    )
-    if success3: print(f"场景3成功: {f1_3}, {f2_3}")
-    else: print(f"场景3失败: {err3}")
-
-    generator._reset_data()
-    logger.info("--- 测试场景4: 主IO点数据为空列表 ---")
-    success4, f1_4, f2_4, err4 = generator.generate_kingview_files(
-        sample_main_points_empty, third_party_sheets, test_output_dir, "MainEmptyListTest"
-    )
-    if success4: print(f"场景4成功: {f1_4}, {f2_4}")
-    else: print(f"场景4失败: {err4}")
-
-    generator._reset_data()
-    logger.info("--- 测试场景5: 所有输入都为空/None ---")
-    success5, f1_5, f2_5, err5 = generator.generate_kingview_files(
-        None, third_party_sheets_empty, test_output_dir, "AllEmptyTest"
-    )
-    if success5: print(f"场景5成功: {f1_5}, {f2_5}") # 应该能生成空的结构文件
-    else: print(f"场景5失败: {err5}") 
+    if success2: print(f"场景2成功: {f1_2}, {f2_2}") # 应该能生成空的结构文件
+    else: print(f"场景2失败: {err2}") 

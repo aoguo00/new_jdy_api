@@ -2,6 +2,8 @@
 from PySide6.QtWidgets import (QGroupBox, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QMenu, QMessageBox)
 from PySide6.QtCore import Signal
+import os # Add os import for basename
+from typing import Optional
 
 class QueryArea(QGroupBox):
     """查询条件区域"""
@@ -18,6 +20,7 @@ class QueryArea(QGroupBox):
         super().__init__("查询条件", parent)
         self.setup_ui()
         self.setup_connections()
+        self.update_io_table_status(None, 0) # 初始化状态显示
         
     def setup_ui(self):
         """设置查询区域UI"""
@@ -47,6 +50,14 @@ class QueryArea(QGroupBox):
         input_container.addStretch()
         input_container.addLayout(input_layout)
         input_container.addStretch()
+
+        # 新增：IO点表状态显示区域
+        io_status_layout = QHBoxLayout()
+        self.io_status_label = QLabel("未加载IO点表")
+        self.io_status_label.setStyleSheet("font-style: italic; color: gray;") # 初始样式
+        io_status_layout.addStretch()
+        io_status_layout.addWidget(self.io_status_label)
+        io_status_layout.addStretch()
 
         # 按钮区域
         button_container = QHBoxLayout()
@@ -90,6 +101,7 @@ class QueryArea(QGroupBox):
         button_container.addStretch()
 
         query_form_layout.addLayout(input_container)
+        query_form_layout.addLayout(io_status_layout) # 在输入和按钮之间添加状态显示
         query_form_layout.addLayout(button_container)
         self.setLayout(query_form_layout)
 
@@ -129,4 +141,24 @@ class QueryArea(QGroupBox):
     def clear_inputs(self):
         """清空输入框"""
         self.project_input.clear()
-        self.station_input.clear() 
+        self.station_input.clear()
+        # MainWindow._clear_loaded_io_data 会调用 self.update_io_table_status(None, 0)
+        # 来重置状态标签，所以这里通常不需要再次显式调用，除非QueryArea的clear_inputs有独立于MainWindow的清除逻辑。
+
+    def update_io_table_status(self, file_path: Optional[str], point_count: int):
+        """
+        更新IO点表加载状态的显示标签。
+
+        参数:
+            file_path (Optional[str]): 加载的IO点表文件的完整路径，或None如果未加载。
+            point_count (int): 解析出的IO点数量。
+        """
+        if file_path:
+            file_name = os.path.basename(file_path)
+            self.io_status_label.setText(f"当前IO表: {file_name} ({point_count} 点)")
+            self.io_status_label.setStyleSheet("color: green;") # 加载成功时的样式
+            self.io_status_label.setToolTip(file_path) # 鼠标悬停时显示完整路径
+        else:
+            self.io_status_label.setText("未加载IO点表")
+            self.io_status_label.setStyleSheet("font-style: italic; color: gray;") # 未加载时的样式
+            self.io_status_label.setToolTip("") 

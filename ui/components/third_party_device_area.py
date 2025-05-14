@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (QGroupBox, QVBoxLayout, QHBoxLayout,
 from datetime import datetime
 import logging
 from PySide6.QtCore import Qt
+from typing import Optional # 确保导入 Optional
 
 # 更新的服务和模型导入
 # from core.services import DeviceConfigurationService, TemplateService # 旧导入
@@ -25,6 +26,7 @@ class ThirdPartyDeviceArea(QGroupBox):
         
         self.config_service = config_service # 使用注入的ConfigService
         self.template_service = template_service # 使用注入的TemplateService
+        self.current_site_name: Optional[str] = None # 新增：存储当前场站名称
 
         self.setup_ui()
         self.setup_connections()
@@ -201,3 +203,15 @@ class ThirdPartyDeviceArea(QGroupBox):
     #         except Exception as e:
     #             logger.error(f\"导出点表时发生未知错误: {e}\", exc_info=True)
     #             QMessageBox.critical(self, \"导出失败\", f\"导出点表时发生未知错误: {str(e)}\") 
+
+    def set_current_site_name(self, site_name: str):
+        """
+        设置当前选中的场站名称。
+        Args:
+            site_name (str): 选中的场站名称。
+        """
+        self.current_site_name = site_name
+        logger.info(f"ThirdPartyDeviceArea: 当前场站已更新为 '{site_name}'")
+        # 可选：如果 update_third_party_table 需要基于 site_name 刷新，
+        # 可以在这里调用 self.update_third_party_table()。
+        # 目前假设 update_third_party_table 显示的是全局配置。 

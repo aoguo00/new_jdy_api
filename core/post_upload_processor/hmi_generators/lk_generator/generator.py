@@ -3,35 +3,21 @@ import xlwt
 import logging
 import os
 from typing import Tuple, Optional, List, Dict, Any
-import pandas as pd
 
 # 从 Shared Models 导入 UploadedIOPoint
 from core.post_upload_processor.uploaded_file_processor.io_data_model import UploadedIOPoint
+# 导入用于获取主IO表名的常量 (如果 excel_reader 定义了这样一个可导出的常量)
+# from core.post_upload_processor.uploaded_file_processor.excel_reader import MAIN_IO_SHEET_NAME # 假设存在
 
 logger = logging.getLogger(__name__)
 
-# 定义力控生成器使用的第三方表列名常量
-class LK_TP_COLS:
-    VAR_NAME = "变量名称"    # 第三方表中的变量名列
-    DATA_TYPE = "数据类型"  # 第三方表中的数据类型列
-    # 根据需要，未来可以添加更多，例如如果第三方表有自己的场站/设备信息时
-    # SITE_NAME = "设备名" # 示例
-    # SITE_NUMBER = "设备编号" # 示例
+# MAIN_IO_SHEET_NAME_DEFAULT 用于在无法从外部导入时提供一个默认值
+MAIN_IO_SHEET_NAME_DEFAULT = "IO点表"
 
-# --- 和利时 PLC 生成器中的 AI 中间点配置 --- (直接复制并重命名)
-# 这个配置是核心，力控将尝试复用其逻辑
-LK_INTERMEDIATE_POINTS_CONFIG_AI = [
-    {'name_attr': 'sll_set_point', 'addr_attr': 'sll_set_point_plc_address', 'type': 'REAL', 'desc_suffix': 'SLL设定', 'name_suffix_for_reserved': '_LoLoLimit'},
-    {'name_attr': 'sl_set_point',  'addr_attr': 'sl_set_point_plc_address',  'type': 'REAL', 'desc_suffix': 'SL设定',  'name_suffix_for_reserved': '_LoLimit'},
-    {'name_attr': 'sh_set_point',  'addr_attr': 'sh_set_point_plc_address',  'type': 'REAL', 'desc_suffix': 'SH设定',  'name_suffix_for_reserved': '_HiLimit'},
-    {'name_attr': 'shh_set_point', 'addr_attr': 'shh_set_point_plc_address', 'type': 'REAL', 'desc_suffix': 'SHH设定', 'name_suffix_for_reserved': '_HiHiLimit'},
-    {'name_attr': 'll_alarm',  'addr_attr': 'll_alarm_plc_address',  'type': 'BOOL', 'desc_suffix': 'LL报警',  'name_suffix_for_reserved': '_LL'},
-    {'name_attr': 'l_alarm',   'addr_attr': 'l_alarm_plc_address',   'type': 'BOOL', 'desc_suffix': 'L报警',   'name_suffix_for_reserved': '_L'},
-    {'name_attr': 'h_alarm',   'addr_attr': 'h_alarm_plc_address',   'type': 'BOOL', 'desc_suffix': 'H报警',   'name_suffix_for_reserved': '_H'},
-    {'name_attr': 'hh_alarm',  'addr_attr': 'hh_alarm_plc_address',  'type': 'BOOL', 'desc_suffix': 'HH报警',  'name_suffix_for_reserved': '_HH'},
-    {'name_attr': 'maintenance_set_point', 'addr_attr': 'maintenance_set_point_plc_address', 'type': 'REAL', 'desc_suffix': '维护值设定', 'name_suffix_for_reserved': '_whz'},
-    {'name_attr': 'maintenance_enable_switch_point',  'addr_attr': 'maintenance_enable_switch_point_plc_address',  'type': 'BOOL', 'desc_suffix': '维护使能',  'name_suffix_for_reserved': '_whzzt'},
-]
+# LK_TP_COLS 不再需要，因为所有数据都来自 UploadedIOPoint 对象
+
+# LK_INTERMEDIATE_POINTS_CONFIG_AI 也不再需要，因为中间点由 excel_reader 生成
+# 并通过 point.source_type == 'intermediate_from_main' 来识别。
 
 def _is_value_empty_for_hmi(value: Optional[str]) -> bool:
     """辅助函数：检查值是否被视为空（用于HMI名称）。"""
@@ -63,184 +49,148 @@ class LikongGenerator:
 
     def generate_basic_xls(self,
                            output_dir: str,
-                           main_io_points: Optional[List[UploadedIOPoint]] = None,
-                           third_party_data: Optional[List[Tuple[str, pd.DataFrame]]] = None
+                           points_by_sheet: Dict[str, List[UploadedIOPoint]] # 修改：接收新的数据结构
                            ) -> Tuple[bool, Optional[str], Optional[str]]:
         """
         生成力控点表的第一个文件: Basic.xls
         该文件包含预定义的Sheet结构、表头，并根据输入数据填充点位信息。
         """
         self._reset_row_counters() # 每次生成新文件时重置行计数器
-        file_name = "Basic.xls"
+        # 决定主IO工作表的名称，优先使用导入的常量，否则使用默认值
+        # main_io_sheet_key = MAIN_IO_SHEET_NAME if 'MAIN_IO_SHEET_NAME' in globals() else MAIN_IO_SHEET_NAME_DEFAULT
+        # 为了简单起见，如果excel_reader.py中的MAIN_IO_SHEET_NAME固定为"IO点表",可以直接使用它
+        main_io_sheet_key = MAIN_IO_SHEET_NAME_DEFAULT # 使用 "IO点表" 作为主表键名
+
+        file_name = "Basic.xls" # 力控要求的文件名通常是固定的
         file_path = os.path.join(output_dir, file_name)
 
-        # 尝试从主IO点列表中提取默认的场站名和场站编号
         default_site_name = ""
         default_site_number = ""
-        if main_io_points and len(main_io_points) > 0:
-            first_point_with_site_name = next((p for p in main_io_points if p.site_name and p.site_name.strip()), None)
-            if first_point_with_site_name:
-                default_site_name = first_point_with_site_name.site_name.strip()
-            
-            first_point_with_site_number = next((p for p in main_io_points if p.site_number and p.site_number.strip()), None)
-            if first_point_with_site_number:
-                default_site_number = first_point_with_site_number.site_number.strip()
+
+        # 尝试从主IO点列表中提取默认的场站名和场站编号
+        main_io_points_list = points_by_sheet.get(main_io_sheet_key)
+        if main_io_points_list and len(main_io_points_list) > 0:
+            first_valid_main_point_for_site_info = next((
+                p for p in main_io_points_list 
+                if (p.site_name and p.site_name.strip()) or (p.site_number and p.site_number.strip())
+            ), None)
+
+            if first_valid_main_point_for_site_info:
+                if first_valid_main_point_for_site_info.site_name and first_valid_main_point_for_site_info.site_name.strip():
+                    default_site_name = first_valid_main_point_for_site_info.site_name.strip()
+                if first_valid_main_point_for_site_info.site_number and first_valid_main_point_for_site_info.site_number.strip():
+                    default_site_number = first_valid_main_point_for_site_info.site_number.strip()
         
-        logger.debug(f"力控 Basic.xls: 默认场站名='{default_site_name}', 默认场站编号='{default_site_number}'")
+        if not default_site_name and not default_site_number:
+            logger.warning(f"力控 Basic.xls: 未能在主IO表 '{main_io_sheet_key}' 中找到有效的全局默认场站名或场站编号。")
+        else:
+            logger.info(f"力控 Basic.xls: 使用全局默认场站名='{default_site_name}', 场站编号='{default_site_number}' (如果点位自身无特定信息)")
 
         try:
             workbook = xlwt.Workbook(encoding='utf-8')
-            sheet1 = workbook.add_sheet("Sheet1") # Empty sheet
+            # 创建固定的 "Sheet1" 和 "Basic" sheet (结构不变)
+            sheet1 = workbook.add_sheet("Sheet1") 
             basic_sheet = workbook.add_sheet("Basic")
             basic_sheet.write(0, 0, "Ver", self.style)
-            basic_sheet.write(1, 0, 10, self.style)
+            basic_sheet.write(1, 0, 10, self.style) # 版本号通常是10
             basic_sheet.col(0).width = 256 * 10
 
-            io_sheet_names_map = {
-                "模拟I_O量": "REAL",
-                "数字I_O量": "BOOL"
+            # 力控 Basic.xls 中数据点所在的Sheet名称及其对应的数据类型
+            # (通常模拟量和数字量就够了，其他如累计量、控制量等如果需要，再添加映射)
+            lk_data_sheet_map = {
+                "模拟I_O量": "REAL", # 映射到 UploadedIOPoint.data_type == "REAL"
+                "数字I_O量": "BOOL"  # 映射到 UploadedIOPoint.data_type == "BOOL"
             }
-            all_sheet_names_for_structure = [
+            # 所有需要在 Basic.xls 中创建结构的Sheet名称列表
+            all_lk_sheets_to_create = [
                 "模拟I_O量", "数字I_O量", "累计量", 
                 "控制量", "运算量", "组合量", "字符类型点"
             ]
-            column_keys = ['NodePath', 'NAME']
-            header_row_content = ["点所在的节点路径", "点名"]
+            # 表头定义
+            column_keys = ['NodePath', 'NAME'] # 列的内部标识符 (非实际Excel表头)
+            header_row_content = ["点所在的节点路径", "点名"] # Excel 中实际的表头文字
 
-            for sheet_name_for_structure in all_sheet_names_for_structure:
-                sheet = workbook.add_sheet(sheet_name_for_structure)
-                sheet.write(0, 0, column_keys[0], self.style)
-                sheet.write(0, 1, column_keys[1], self.style)
-                sheet.write(1, 0, header_row_content[0], self.style)
-                sheet.write(1, 1, header_row_content[1], self.style)
-                sheet.col(0).width = 256 * 30 # 稍宽一点以适应场站名+
-                sheet.col(1).width = 256 * 45 # Increased NAME width
+            # 创建所有结构表并写入表头
+            for sheet_name_to_create in all_lk_sheets_to_create:
+                sheet = workbook.add_sheet(sheet_name_to_create)
+                sheet.write(0, 0, column_keys[0], self.style) # 第1行第1列 (0-indexed)
+                sheet.write(0, 1, column_keys[1], self.style) # 第1行第2列
+                sheet.write(1, 0, header_row_content[0], self.style) # 第2行第1列
+                sheet.write(1, 1, header_row_content[1], self.style) # 第2行第2列
+                sheet.col(0).width = 256 * 35 # NodePath 列宽
+                sheet.col(1).width = 256 * 50 # NAME 列宽
 
-            # 处理主IO点
-            if main_io_points:
-                logger.info(f"力控 Basic.xls: 处理 {len(main_io_points)} 个主IO点...")
-                for point_idx, point in enumerate(main_io_points):
-                    point_data_type_upper = str(point.data_type or "").upper().strip()
-                    module_type_upper = str(getattr(point, 'module_type', None) or "").upper().strip()
-                    
-                    # --- 1. Process the main point itself --- 
-                    main_point_target_sheet_name = None
-                    for s_name, s_type in io_sheet_names_map.items():
-                        if point_data_type_upper == s_type:
-                            main_point_target_sheet_name = s_name
-                            break
-                    
-                    effective_site_name_for_main = str(point.site_name or default_site_name or "").strip()
-                    effective_site_number_for_main = str(point.site_number or default_site_number or "").strip()
-                    node_path_for_point_and_derived = f"{effective_site_name_for_main}\\"
-
-                    hmi_name_raw = point.hmi_variable_name
-                    is_main_point_reserved_name = _is_value_empty_for_hmi(hmi_name_raw)
-                    
-                    base_name_part_for_main_point: str
-                    if is_main_point_reserved_name:
-                        channel_tag_str = str(point.channel_tag or "").strip()
-                        placeholder_id = channel_tag_str if channel_tag_str else f"ResM{point_idx + 1}"
-                        base_name_part_for_main_point = f"YLDW{placeholder_id}"
-                    else:
-                        base_name_part_for_main_point = str(hmi_name_raw).strip()
-                    
-                    # 力控的最终NAME是 场站编号 + (YLDW{通道} 或 HMI名)
-                    final_name_for_main_point = f"{effective_site_number_for_main}{base_name_part_for_main_point}"
-
-                    if main_point_target_sheet_name: # If main point type matches a sheet
-                        current_sheet = workbook.get_sheet(main_point_target_sheet_name)
-                        if current_sheet:
-                            row_to_write = self._get_next_row_idx(main_point_target_sheet_name)
-                            current_sheet.write(row_to_write, 0, node_path_for_point_and_derived, self.style)
-                            current_sheet.write(row_to_write, 1, final_name_for_main_point, self.style)
-                    
-                    # --- 2. Process REAL intermediate setpoints if it's a REAL AI module type --- 
-                    if module_type_upper == 'AI':
-                        for ip_config in LK_INTERMEDIATE_POINTS_CONFIG_AI:
-                            intermediate_addr_raw = getattr(point, ip_config['addr_attr'], None)
-                            intermediate_addr = str(intermediate_addr_raw or "").strip()
-                            
-                            if not intermediate_addr:
-                                continue
-
-                            intermediate_point_type = ip_config['type'].upper()
-                            intermediate_target_sheet_name = None
-                            if intermediate_point_type in io_sheet_names_map.values():
-                                for s_name, s_type in io_sheet_names_map.items():
-                                    if intermediate_point_type == s_type:
-                                        intermediate_target_sheet_name = s_name
-                                        break
-                            
-                            if not intermediate_target_sheet_name:
-                                logger.debug(f"AI主点 '{final_name_for_main_point}' 的中间点 '{ip_config['desc_suffix']}' (类型 {intermediate_point_type}) 无对应力控Sheet，跳过派生。")
-                                continue
-
-                            current_intermediate_sheet = workbook.get_sheet(intermediate_target_sheet_name)
-                            if not current_intermediate_sheet: continue # Should not happen if sheet name is valid
-                            
-                            # 构建中间点的NAME (参考和利时逻辑)
-                            # final_name_for_main_point 是主AI点的完整NAME (场站编号+基础部分)
-                            # base_name_part_for_main_point 是主AI点的基础部分 (YLDW{通道} 或 HMI名)
-                            intermediate_name_from_attr_raw = getattr(point, ip_config['name_attr'], None)
-                            
-                            final_intermediate_name_part: str
-                            if is_main_point_reserved_name: # 如果主点是预留名 (YLDW...)
-                                final_intermediate_name_part = f"{base_name_part_for_main_point}{ip_config['name_suffix_for_reserved']}"
-                            else: # 主点有正常的HMI名
-                                if _is_value_empty_for_hmi(intermediate_name_from_attr_raw):
-                                    # 用户未在主点行为此中间点指定独立名称，则用 主点HMI名 + 后缀
-                                    final_intermediate_name_part = f"{base_name_part_for_main_point}{ip_config['name_suffix_for_reserved']}"
-                                else:
-                                    # 用户为此中间点指定了独立名称，直接使用
-                                    final_intermediate_name_part = str(intermediate_name_from_attr_raw).strip()
-                            
-                            # 力控的最终派生NAME是 场站编号 + 派生点名称部分
-                            final_name_for_intermediate_point = f"{effective_site_number_for_main}{final_intermediate_name_part}"
-                            
-                            row_to_write = self._get_next_row_idx(intermediate_target_sheet_name)
-                            current_intermediate_sheet.write(row_to_write, 0, node_path_for_point_and_derived, self.style)
-                            current_intermediate_sheet.write(row_to_write, 1, final_name_for_intermediate_point, self.style)
-                logger.info("力控生成器: 主IO点处理完毕。")
-
-            # 处理第三方数据
-            if third_party_data:
-                logger.info(f"力控 Basic.xls: 处理 {len(third_party_data)} 个第三方数据表...")
-                for tp_table_idx, (original_sheet_name, tp_df) in enumerate(third_party_data):
-                    logger.info(f"力控生成器: 处理第三方表 '{original_sheet_name}' (索引 {tp_table_idx})...")
-                    if tp_df.empty:
-                        logger.debug(f"第三方表 '{original_sheet_name}' 为空，跳过。")
+            # --- 开始处理所有点位 ---
+            total_points_processed_for_lk = 0
+            if not points_by_sheet:
+                logger.info("力控 Basic.xls: 传入的 points_by_sheet 为空，不处理任何点位。")
+            else:
+                for sheet_name_from_source, points_list in points_by_sheet.items():
+                    if not points_list:
+                        logger.debug(f"力控 Basic.xls: 源工作表 '{sheet_name_from_source}' 的点位列表为空，跳过。")
                         continue
-                    for tp_row_idx, tp_row in tp_df.iterrows():
-                        tp_point_data_type = str(tp_row.get(LK_TP_COLS.DATA_TYPE) or "").upper().strip()
-                        target_sheet_name = None
-                        for s_name, s_type in io_sheet_names_map.items():
-                            if tp_point_data_type == s_type:
-                                target_sheet_name = s_name
+                    
+                    logger.info(f"力控 Basic.xls: 开始处理源工作表 '{sheet_name_from_source}' 的 {len(points_list)} 个点位...")
+                    
+                    for point_idx, point in enumerate(points_list):
+                        point_data_type_upper = str(point.data_type or "").upper().strip()
+                        hmi_name_from_point = str(point.hmi_variable_name or "").strip()
+
+                        # 确定此点应写入力控的哪个Sheet
+                        target_lk_sheet_name: Optional[str] = None
+                        for lk_sheet, mapped_type in lk_data_sheet_map.items():
+                            if point_data_type_upper == mapped_type:
+                                target_lk_sheet_name = lk_sheet
                                 break
                         
-                        if not target_sheet_name:
-                            continue # 此第三方点的数据类型不映射到目标Sheet
+                        if not target_lk_sheet_name:
+                            # logger.debug(f"点 {point_idx+1} (HMI:'{hmi_name_from_point}', 源:'{sheet_name_from_source}', 类型:'{point_data_type_upper}') 的数据类型不映射到力控目标Sheet，跳过。")
+                            continue # 如果点的数据类型不是REAL或BOOL，则不写入这两个主要的数据Sheet
 
-                        tp_var_name = str(tp_row.get(LK_TP_COLS.VAR_NAME) or "").strip()
-                        if not tp_var_name: # 如果第三方变量名为空，则跳过此点
-                            logger.debug(f"第三方表 '{original_sheet_name}' 行 {tp_row_idx} 因变量名为空而被跳过。DataType: '{tp_point_data_type}'")
+                        if _is_value_empty_for_hmi(hmi_name_from_point):
+                            logger.warning(f"点 {point_idx+1} (源:'{sheet_name_from_source}', 类型:'{point_data_type_upper}', 通道:'{point.channel_tag}') HMI名称为空或无效，跳过写入力控表。")
                             continue
 
-                        current_sheet = workbook.get_sheet(target_sheet_name)
-                        if not current_sheet: continue
+                        # 确定场站信息 (优先点位自身，其次全局默认)
+                        current_point_site_name = (point.site_name if point.site_name and point.site_name.strip() else default_site_name).strip()
+                        current_point_site_number = (point.site_number if point.site_number and point.site_number.strip() else default_site_number).strip()
+
+                        # 构建 NodePath: "场站名\" (确保是单个反斜杠在路径中)
+                        # xlwt 会处理转义，所以直接用 "场站名\" 即可
+                        node_path_value = f"{current_point_site_name}\\" if current_point_site_name else ""
                         
-                        # 第三方点使用从主IO点提取的默认场站信息
-                        node_path_val = f"{default_site_name}\\"
-                        name_val = f"{default_site_number}{tp_var_name}"
+                        # 构建 NAME: "场站编号" + "HMI名"
+                        # HMI名已经由 excel_reader 处理过 (包括预留点YLDW前缀、中间点后缀等)
+                        # 如果点位是和利时相关的预留点，并且 excel_reader 已移除了场站编号前缀，
+                        # 那么这里的 current_point_site_number 可能是空的（如果该点也没有自己的场站号）
+                        # 或者 hmi_name_from_point 已经是 YLDWxxx (不含场站号)。
+                        # 力控的点名规则是：场站编号 + HMI变量名（HMI变量名可能已经是YLDWxxx）
+                        # 如果 current_point_site_number 为空，则NAME就是 hmi_name_from_point
                         
-                        row_to_write = self._get_next_row_idx(target_sheet_name)
-                        current_sheet.write(row_to_write, 0, node_path_val, self.style)
-                        current_sheet.write(row_to_write, 1, name_val, self.style)
-                logger.info("力控生成器: 第三方数据处理完毕。")
+                        name_value = f"{current_point_site_number}{hmi_name_from_point}"
+
+                        # 获取目标Sheet对象并写入
+                        try:
+                            lk_sheet_obj = workbook.get_sheet(target_lk_sheet_name) # get_sheet by name
+                            if lk_sheet_obj:
+                                row_to_write = self._get_next_row_idx(target_lk_sheet_name)
+                                lk_sheet_obj.write(row_to_write, 0, node_path_value, self.style)
+                                lk_sheet_obj.write(row_to_write, 1, name_value, self.style)
+                                total_points_processed_for_lk +=1
+                            else: # Should not happen if sheet names are correct
+                                logger.error(f"未能获取到名为 '{target_lk_sheet_name}' 的Sheet对象。")
+                        except Exception as e_sheet_write:
+                             logger.error(f"写入点到Sheet '{target_lk_sheet_name}' 时出错 (HMI: {hmi_name_from_point}): {e_sheet_write}")
+                    
+                    logger.info(f"力控 Basic.xls: 源工作表 '{sheet_name_from_source}' 处理完成。")
+            
+            if total_points_processed_for_lk > 0:
+                logger.info(f"力控 Basic.xls: 总共成功处理并写入 {total_points_processed_for_lk} 个点位到各数据类型Sheet。")
+            else:
+                logger.info("力控 Basic.xls: 未处理或写入任何有效点位。")
 
             workbook.save(file_path)
-            logger.info(f"成功生成力控基础文件 (含数据点): {file_path}")
+            logger.info(f"成功生成力控基础文件 (Basic.xls): {file_path}")
             return True, file_path, None
 
         except Exception as e:
@@ -248,26 +198,121 @@ class LikongGenerator:
             logger.error(error_msg, exc_info=True)
             return False, None, error_msg
         finally:
-            self._reset_row_counters() # 确保计数器被重置，无论成功与否
+            self._reset_row_counters() # 确保重置，即使发生错误
+
 
 if __name__ == '__main__':
-    # 用于测试的简单示例
-    # 请确保在项目根目录下创建 test_output 文件夹
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
     
-    # 获取当前脚本所在的目录
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    # 构建到项目根目录的路径 (假设此脚本在 core/post_upload_processor/hmi_generators/lk_generator/ 下)
-    project_root = os.path.abspath(os.path.join(current_dir, "..", "..", "..", "..", ".."))
-    test_output_dir = os.path.join(project_root, "test_output_lk")
-
+    generator = LikongGenerator()
+    test_output_dir = os.path.join(os.getcwd(), "test_likong_output_new_model")
     if not os.path.exists(test_output_dir):
         os.makedirs(test_output_dir)
-        print(f"创建测试输出目录: {test_output_dir}")
 
-    generator = LikongGenerator()
-    success, fp, err = generator.generate_basic_xls(output_dir=test_output_dir)
+    # --- 构建测试数据 ---
+    # 场景1: 包含主IO点 (常规点、预留点、AI派生点) 和第三方点
+    points_data_s1: Dict[str, List[UploadedIOPoint]] = {
+        "IO点表": [ # 主IO表
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_01", data_type="REAL", source_type="main_io", module_type="AI", channel_tag="CH_AI01", variable_description="模拟量输入1"),
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_01_HiLimit", data_type="REAL", source_type="intermediate_from_main", module_type="AI", channel_tag="CH_AI01", variable_description="模拟量输入1_SH设定"), # 假设这是excel_reader派生的
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_01_H", data_type="BOOL", source_type="intermediate_from_main", module_type="AI", channel_tag="CH_AI01", variable_description="模拟量输入1_H报警"), # 假设这是excel_reader派生的
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="DI_Status_01", data_type="BOOL", source_type="main_io", module_type="DI", channel_tag="CH_DI01", variable_description="数字量状态1"),
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="YLDW_CH_AI02", data_type="REAL", source_type="main_io", module_type="AI", channel_tag="CH_AI02", variable_description="预留模拟量2"), # 预留点 (假设excel_reader生成了这个名字)
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="YLDW_CH_DI02", data_type="BOOL", source_type="main_io", module_type="DI", channel_tag="CH_DI02", variable_description="预留数字量2"),
+            UploadedIOPoint(data_type="FLOAT", hmi_variable_name="NoSiteInfoPoint", source_type="main_io") # 无场站信息的点
+        ],
+        "第三方设备A": [
+            UploadedIOPoint(site_name="TP_设备A", site_number="TPA01", hmi_variable_name="TP_REAL_1", data_type="REAL", source_type="third_party", variable_description="第三方实数点1"),
+            UploadedIOPoint(site_name="TP_设备A", site_number="TPA01", hmi_variable_name="TP_BOOL_1", data_type="BOOL", source_type="third_party", variable_description="第三方布尔点1"),
+            UploadedIOPoint(hmi_variable_name="TP_NoSite_REAL", data_type="REAL", source_type="third_party") # 第三方无场站信息
+        ],
+        "空Sheet": [],
+        "只有无效类型的Sheet": [
+            UploadedIOPoint(hmi_variable_name="BadTypePoint", data_type="STRING", source_type="main_io")
+        ]
+    }
 
-    if success:
-        print(f"测试文件已生成: {fp}")
-    else:
-        print(f"测试失败: {err}") 
+    logger.info("--- 测试场景1: 完整数据 ---")
+    success1, file_path1, err_msg1 = generator.generate_basic_xls(
+        output_dir=test_output_dir,
+        points_by_sheet=points_data_s1
+    )
+    if success1: print(f"场景1成功: {file_path1}")
+    else: print(f"场景1失败: {err_msg1}")
+
+    # --- 场景2: 只有主IO点 ---
+    points_data_s2: Dict[str, List[UploadedIOPoint]] = {
+        "IO点表": points_data_s1["IO点表"]
+    }
+    logger.info("--- 测试场景2: 只有主IO点 ---")
+    success2, file_path2, err_msg2 = generator.generate_basic_xls(
+        output_dir=test_output_dir,
+        points_by_sheet=points_data_s2
+    )
+    if success2: print(f"场景2成功: {file_path2}")
+    else: print(f"场景2失败: {err_msg2}")
+
+    # --- 场景3: 只有第三方点 (无主IO表，全局场站信息应为空) ---
+    points_data_s3: Dict[str, List[UploadedIOPoint]] = {
+        "第三方设备A": points_data_s1["第三方设备A"]
+    }
+    logger.info("--- 测试场景3: 只有第三方点 ---")
+    success3, file_path3, err_msg3 = generator.generate_basic_xls(
+        output_dir=test_output_dir,
+        points_by_sheet=points_data_s3
+    )
+    if success3: print(f"场景3成功: {file_path3}")
+    else: print(f"场景3失败: {err_msg3}")
+    
+    # --- 场景4: 输入数据为空字典 ---
+    points_data_s4: Dict[str, List[UploadedIOPoint]] = {}
+    logger.info("--- 测试场景4: 输入数据为空字典 ---")
+    success4, file_path4, err_msg4 = generator.generate_basic_xls(
+        output_dir=test_output_dir,
+        points_by_sheet=points_data_s4
+    )
+    if success4: print(f"场景4成功: {file_path4}")
+    else: print(f"场景4失败: {err_msg4}")
+
+    # --- 场景5: 主IO表存在但为空列表，有第三方数据 ---
+    points_data_s5: Dict[str, List[UploadedIOPoint]] = {
+        "IO点表": [],
+        "第三方设备A": points_data_s1["第三方设备A"]
+    }
+    logger.info("--- 测试场景5: 主IO表为空列表，有第三方 ---")
+    success5, file_path5, err_msg5 = generator.generate_basic_xls(
+        output_dir=test_output_dir,
+        points_by_sheet=points_data_s5
+    )
+    if success5: print(f"场景5成功: {file_path5}")
+    else: print(f"场景5失败: {err_msg5}")
+    
+    # --- 场景6: 点位数据类型不匹配 (REAL/BOOL之外) ---
+    points_data_s6: Dict[str, List[UploadedIOPoint]] = {
+        "IO点表": [
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="INT_Value_01", data_type="INT", source_type="main_io"),
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="STR_Value_01", data_type="STRING", source_type="main_io")
+        ]
+    }
+    logger.info("--- 测试场景6: 数据类型不匹配 ---")
+    success6, file_path6, err_msg6 = generator.generate_basic_xls(
+        output_dir=test_output_dir,
+        points_by_sheet=points_data_s6
+    )
+    if success6: print(f"场景6成功 (预期不写入点): {file_path6}") # 应该生成空文件但操作成功
+    else: print(f"场景6失败: {err_msg6}")
+
+    # --- 场景7: HMI名称为空的点 ---
+    points_data_s7: Dict[str, List[UploadedIOPoint]] = {
+        "IO点表": [
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name=None, data_type="REAL", source_type="main_io"),
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="  ", data_type="BOOL", source_type="main_io")
+        ]
+    }
+    logger.info("--- 测试场景7: HMI名称为空 ---")
+    success7, file_path7, err_msg7 = generator.generate_basic_xls(
+        output_dir=test_output_dir,
+        points_by_sheet=points_data_s7
+    )
+    if success7: print(f"场景7成功 (预期不写入点): {file_path7}")
+    else: print(f"场景7失败: {err_msg7}") 

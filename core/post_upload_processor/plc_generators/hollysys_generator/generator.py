@@ -1,7 +1,7 @@
 import pandas as pd
 import xlwt
 import logging
-from typing import Optional, List, Tuple, Any
+from typing import Optional, List, Tuple, Any, Dict
 # 修改导入路径为绝对导入
 from core.post_upload_processor.uploaded_file_processor.io_data_model import UploadedIOPoint
 
@@ -24,35 +24,34 @@ logger = logging.getLogger(__name__)
 # IP_SLL_SP_PLC_ADDR_COL = "SLL设定点位_PLC地址" -> point.sll_set_point_plc_address
 # ... (其他类似映射)
 
-# --- Constants for Third-Party Input Sheet Columns (保持不变，因为第三方数据仍为DataFrame) ---
-TP_INPUT_VAR_NAME_COL = "变量名称"
-TP_INPUT_PLC_ADDRESS_COL = "PLC地址"
-TP_INPUT_DESCRIPTION_COL = "变量描述"
-TP_INPUT_DATA_TYPE_COL = "数据类型"
-TP_INPUT_SLL_SET_COL = "SLL设定值"
-TP_INPUT_SL_SET_COL = "SL设定值"
-TP_INPUT_SH_SET_COL = "SH设定值"
-TP_INPUT_SHH_SET_COL = "SHH设定值"
+# --- Constants for Third-Party Input Sheet Columns (这些将不再使用，因为数据已是UploadedIOPoint) ---
+# TP_INPUT_VAR_NAME_COL = "变量名称"
+# TP_INPUT_PLC_ADDRESS_COL = "PLC地址"
+# TP_INPUT_DESCRIPTION_COL = "变量描述"
+# TP_INPUT_DATA_TYPE_COL = "数据类型"
+# TP_INPUT_SLL_SET_COL = "SLL设定值"
+# TP_INPUT_SL_SET_COL = "SL设定值"
+# TP_INPUT_SH_SET_COL = "SH设定值"
+# TP_INPUT_SHH_SET_COL = "SHH设定值"
 
 # Configuration for AI module's intermediate points
 # 修改: name_col -> name_attr, addr_col -> addr_attr，值更新为 UploadedIOPoint 的属性名
-INTERMEDIATE_POINTS_CONFIG_AI = [
-    {'name_attr': 'sll_set_point', 'addr_attr': 'sll_set_point_plc_address', 'type': 'REAL', 'desc_suffix': 'SLL设定', 'name_suffix_for_reserved': '_LoLoLimit'},
-    {'name_attr': 'sl_set_point',  'addr_attr': 'sl_set_point_plc_address',  'type': 'REAL', 'desc_suffix': 'SL设定',  'name_suffix_for_reserved': '_LoLimit'},
-    {'name_attr': 'sh_set_point',  'addr_attr': 'sh_set_point_plc_address',  'type': 'REAL', 'desc_suffix': 'SH设定',  'name_suffix_for_reserved': '_HiLimit'},
-    {'name_attr': 'shh_set_point', 'addr_attr': 'shh_set_point_plc_address', 'type': 'REAL', 'desc_suffix': 'SHH设定', 'name_suffix_for_reserved': '_HiHiLimit'},
-    {'name_attr': 'll_alarm',  'addr_attr': 'll_alarm_plc_address',  'type': 'BOOL', 'desc_suffix': 'LL报警',  'name_suffix_for_reserved': '_LL'},
-    {'name_attr': 'l_alarm',   'addr_attr': 'l_alarm_plc_address',   'type': 'BOOL', 'desc_suffix': 'L报警',   'name_suffix_for_reserved': '_L'},
-    {'name_attr': 'h_alarm',   'addr_attr': 'h_alarm_plc_address',   'type': 'BOOL', 'desc_suffix': 'H报警',   'name_suffix_for_reserved': '_H'},
-    {'name_attr': 'hh_alarm',  'addr_attr': 'hh_alarm_plc_address',  'type': 'BOOL', 'desc_suffix': 'HH报警',  'name_suffix_for_reserved': '_HH'},
-    {'name_attr': 'maintenance_set_point', 'addr_attr': 'maintenance_set_point_plc_address', 'type': 'REAL', 'desc_suffix': '维护值设定', 'name_suffix_for_reserved': '_whz'},
-    {'name_attr': 'maintenance_enable_switch_point',  'addr_attr': 'maintenance_enable_switch_point_plc_address',  'type': 'BOOL', 'desc_suffix': '维护使能',  'name_suffix_for_reserved': '_whzzt'},
-]
+# INTERMEDIATE_POINTS_CONFIG_AI = [
+#     {'name_attr': 'sll_set_point', 'addr_attr': 'sll_set_point_plc_address', 'type': 'REAL', 'desc_suffix': 'SLL设定', 'name_suffix_for_reserved': '_LoLoLimit'},
+#     {'name_attr': 'sl_set_point',  'addr_attr': 'sl_set_point_plc_address',  'type': 'REAL', 'desc_suffix': 'SL设定',  'name_suffix_for_reserved': '_LoLimit'},
+#     {'name_attr': 'sh_set_point',  'addr_attr': 'sh_set_point_plc_address',  'type': 'REAL', 'desc_suffix': 'SH设定',  'name_suffix_for_reserved': '_HiLimit'},
+#     {'name_attr': 'shh_set_point', 'addr_attr': 'shh_set_point_plc_address', 'type': 'REAL', 'desc_suffix': 'SHH设定', 'name_suffix_for_reserved': '_HiHiLimit'},
+#     {'name_attr': 'll_alarm',  'addr_attr': 'll_alarm_plc_address',  'type': 'BOOL', 'desc_suffix': 'LL报警',  'name_suffix_for_reserved': '_LL'},
+#     {'name_attr': 'l_alarm',   'addr_attr': 'l_alarm_plc_address',   'type': 'BOOL', 'desc_suffix': 'L报警',   'name_suffix_for_reserved': '_L'},
+#     {'name_attr': 'h_alarm',   'addr_attr': 'h_alarm_plc_address',   'type': 'BOOL', 'desc_suffix': 'H报警',   'name_suffix_for_reserved': '_H'},
+#     {'name_attr': 'hh_alarm',  'addr_attr': 'hh_alarm_plc_address',  'type': 'BOOL', 'desc_suffix': 'HH报警',  'name_suffix_for_reserved': '_HH'},
+#     {'name_attr': 'maintenance_set_point', 'addr_attr': 'maintenance_set_point_plc_address', 'type': 'REAL', 'desc_suffix': '维护值设定', 'name_suffix_for_reserved': '_whz'},
+#     {'name_attr': 'maintenance_enable_switch_point',  'addr_attr': 'maintenance_enable_switch_point_plc_address',  'type': 'BOOL', 'desc_suffix': '维护使能',  'name_suffix_for_reserved': '_whzzt'},
+# ]
 
-def _is_value_empty_for_hmi_or_desc(value: Optional[str]) -> bool:
+def _is_value_empty(value: Optional[str]) -> bool:
     """
-    辅助函数：检查值是否被视为空（用于HMI名称和描述）。
-    认为 None 和纯空格字符串为空。
+    辅助函数：检查字符串值是否为空或仅包含空格。
     """
     return not (value and value.strip())
 
@@ -64,318 +63,209 @@ def _get_value_if_present(value): # 这个函数主要用于第三方DataFrame�
 
 class HollysysGenerator:
     """
-    负责根据已验证的IO点表数据生成和利时PLC点表 (.xls格式)。
+    负责根据已处理的 UploadedIOPoint 数据列表生成和利时PLC点表 (.xls格式)。
     """
 
     def __init__(self):
         pass
 
+    def _write_data_to_sheet(self, 
+                             sheet: xlwt.Worksheet, 
+                             points_for_sheet: List[UploadedIOPoint], 
+                             sheet_title: str) -> int:
+        """
+        将指定点位列表的数据写入到给定的xlwt工作表中。
+        返回写入的数据行数。
+        """
+        font_style = xlwt.XFStyle()
+        font = xlwt.Font()
+        font.name = '宋体'
+        font.height = 20 * 11 # 11号字
+        font_style.font = font
+        alignment = xlwt.Alignment()
+        alignment.horz = xlwt.Alignment.HORZ_LEFT
+        alignment.vert = xlwt.Alignment.VERT_CENTER
+        font_style.alignment = alignment
+        
+        # 写入工作表特定的大标题，例如 "IO点表(COMMON)"
+        sheet.write(0, 0, f"{sheet_title}(COMMON)", font_style)
+        headers = ["变量名", "直接地址", "变量说明", "变量类型", "初始值", "掉电保护", "可强制", "SOE使能"]
+        for col_idx, header_title in enumerate(headers):
+            sheet.write(1, col_idx, header_title, font_style)
+        
+        excel_write_row_counter = 1 # 从1开始，因为0是标题行，1是表头行
+
+        if not points_for_sheet:
+            logger.info(f"工作表 '{sheet_title}' 的IO点数据列表为空。将只包含表头。")
+        else:
+            for point_idx, point in enumerate(points_for_sheet):
+                hmi_name = point.hmi_variable_name or ""
+                plc_address = point.plc_absolute_address or ""
+                description = point.variable_description or ""
+                data_type = (point.data_type or "").upper()
+                source_sheet_from_point = point.source_sheet_name or "N/A" # 实际点位记录的来源
+                source_type = point.source_type or "N/A"
+
+                if _is_value_empty(plc_address):
+                    if _is_value_empty(hmi_name):
+                        logger.debug(f"工作表 '{sheet_title}', 点位索引 {point_idx}: 跳过点位: HMI名和PLC地址均为空。来源: {source_sheet_from_point}/{source_type}")
+                    else:
+                        logger.warning(f"工作表 '{sheet_title}', 点位索引 {point_idx}: 点位 '{hmi_name}' (描述: '{description}', 来源: {source_sheet_from_point}/{source_type}) PLC地址为空，跳过。")
+                    continue
+                
+                if _is_value_empty(hmi_name):
+                    logger.warning(f"工作表 '{sheet_title}', 点位索引 {point_idx}: 点位PLC地址 '{plc_address}' 但HMI名为空。来源: {source_sheet_from_point}/{source_type}。将用PLC地址作名称。")
+                    hmi_name = plc_address
+
+                initial_value_to_write: Any
+                if data_type == "REAL": initial_value_to_write = 0
+                elif data_type == "BOOL": initial_value_to_write = "FALSE"
+                else:
+                    logger.warning(f"工作表 '{sheet_title}', 点位 '{hmi_name}' (地址: {plc_address}, 来源: {source_sheet_from_point}/{source_type}) 数据类型 '{data_type}' 未知或为空，初始值设为0。")
+                    initial_value_to_write = "0"
+
+                power_off_protection_to_write = "TRUE" if data_type == "REAL" else "FALSE"
+                can_force_to_write = "TRUE"
+                soe_enable_to_write = "TRUE" if data_type == "BOOL" else "FALSE"
+                
+                excel_write_row_counter += 1
+                current_excel_row = excel_write_row_counter
+                
+                sheet.write(current_excel_row, 0, hmi_name, font_style)
+                sheet.write(current_excel_row, 1, plc_address, font_style)
+                sheet.write(current_excel_row, 2, description, font_style)
+                sheet.write(current_excel_row, 3, data_type if data_type else "", font_style)
+                sheet.write(current_excel_row, 4, initial_value_to_write, font_style)
+                sheet.write(current_excel_row, 5, power_off_protection_to_write, font_style)
+                sheet.write(current_excel_row, 6, can_force_to_write, font_style)
+                sheet.write(current_excel_row, 7, soe_enable_to_write, font_style)
+        
+        # 设置列宽 (针对当前sheet)
+        sheet.col(0).width = 256 * 35
+        sheet.col(1).width = 256 * 20
+        sheet.col(2).width = 256 * 45
+        sheet.col(3).width = 256 * 15
+        sheet.col(4).width = 256 * 10
+        sheet.col(5).width = 256 * 12
+        sheet.col(6).width = 256 * 10
+        sheet.col(7).width = 256 * 12
+        
+        return excel_write_row_counter - 1 # 返回实际写入的数据行数
+
     def generate_hollysys_table(self, 
-                                main_io_points: Optional[List[UploadedIOPoint]], # 修改：io_data_df -> main_io_points
-                                main_sheet_output_name: str, # 修改：source_sheet_name -> main_sheet_output_name
-                                output_path: str,
-                                third_party_data: Optional[List[Tuple[str, pd.DataFrame]]] = None
+                                points_by_sheet: Dict[str, List[UploadedIOPoint]], # 修改：接收按工作表分组的点位字典
+                                output_path: str
                                ) -> Tuple[bool, Optional[str]]:
         """
         生成和利时PLC点表。
+        会为传入字典中的每个原始工作表名创建一个对应的目标工作表，并写入其点位数据。
 
         参数:
-            main_io_points (Optional[List[UploadedIOPoint]]): 
-                从主IO点表解析的数据列表 (使用UploadedIOPoint模型)。
-            main_sheet_output_name (str): 在输出的XLS文件中，主IO点表Sheet的名称。
+            points_by_sheet (Dict[str, List[UploadedIOPoint]]): 
+                一个字典，键是原始工作表名，值是该工作表对应的 UploadedIOPoint 列表。
             output_path (str): 用户选择的 .xls 文件保存路径。
-            third_party_data (Optional[List[Tuple[str, pd.DataFrame]]]): 
-                一个包含元组的列表，每个元组代表一个第三方设备Sheet：(原始Sheet名, 该Sheet的DataFrame)。
-                默认为None。
 
         返回:
             Tuple[bool, Optional[str]]: (操作是否成功, 错误消息或None)
         """
-        logger.info(f"开始生成和利时PLC点表，主Sheet输出名称: '{main_sheet_output_name}', 输出路径: '{output_path}'")
-        if third_party_data:
-            tp_sheet_names = [name for name, _ in third_party_data]
-            logger.info(f"同时处理第三方设备Sheets: {tp_sheet_names}")
+        logger.info(f"--- HollysysGenerator: generate_hollysys_table 方法开始 (多工作表模式) ---")
+        logger.info(f"传入参数: output_path='{output_path}'")
+        logger.info(f"接收到 {len(points_by_sheet)} 个工作表的数据进行处理。")
+
+        if not points_by_sheet:
+            logger.warning("传入的点位数据字典为空，无法生成任何工作表。")
+            # 决定是生成一个空文件还是返回错误。这里选择不生成文件并返回提示。
+            return False, "没有提供任何工作表数据来生成点表。"
 
         try:
             workbook = xlwt.Workbook(encoding='utf-8')
+            total_points_written = 0
+            sheets_created_count = 0
+
+            for sheet_name, points_list_for_this_sheet in points_by_sheet.items():
+                # 对工作表名进行清理，确保符合xlwt的要求 (例如长度和特殊字符)
+                safe_sheet_name = "".join(c for c in sheet_name if c.isalnum() or c in (' ', '_', '-')).strip()
+                safe_sheet_name = safe_sheet_name[:31] # xlwt 工作表名长度限制为31
+                if not safe_sheet_name: # 如果清理后为空，给一个默认名
+                    # 生成一个基于原始键列表索引的唯一名称，以防多个清理后为空的表名
+                    original_keys = list(points_by_sheet.keys())
+                    try:
+                        idx = original_keys.index(sheet_name) + 1
+                        safe_sheet_name = f"Sheet_{idx}"
+                    except ValueError:
+                        # 理论上不应发生，因为 sheet_name 来自于 keys
+                        safe_sheet_name = f"AutoGenSheet_{sheets_created_count + 1}"
+                
+                logger.info(f"尝试为原始工作表 '{sheet_name}' 添加目标工作表，名称为: '{safe_sheet_name}'")
+                
+                try:
+                    sheet = workbook.add_sheet(safe_sheet_name)
+                    logger.info(f"成功添加工作表: '{sheet.name}' (源: '{sheet_name}') 到工作簿。")
+                    sheets_created_count += 1
+                except Exception as e_add_sheet:
+                    logger.error(f"为源工作表 '{sheet_name}' 添加目标工作表 '{safe_sheet_name}' 失败: {e_add_sheet}. 跳过此工作表。")
+                    continue # 跳过这个工作表，继续处理下一个
+
+                # 即使点位列表为空，也调用写入，_write_data_to_sheet 会处理这种情况（只写表头）
+                rows_written_for_sheet = self._write_data_to_sheet(sheet, points_list_for_this_sheet, safe_sheet_name) 
+                total_points_written += rows_written_for_sheet
+                logger.info(f"工作表 '{safe_sheet_name}' (源: '{sheet_name}') 处理完毕。写入了 {rows_written_for_sheet} 行数据。")
             
-            # --- 1. 处理主IO点表 (第一个Sheet) ---
-            main_sheet = workbook.add_sheet(main_sheet_output_name) # 使用传入的输出名称
-            logger.info(f"主IO点表Sheet '{main_sheet_output_name}' 创建成功。")
-            font_style = xlwt.XFStyle(); font = xlwt.Font(); font.name = '宋体'; font.height = 20 * 11; font_style.font = font
-            alignment = xlwt.Alignment(); alignment.horz = xlwt.Alignment.HORZ_LEFT; alignment.vert = xlwt.Alignment.VERT_CENTER; font_style.alignment = alignment
-            main_sheet.write(0, 0, f"{main_sheet_output_name}(COMMON)", font_style)
-            headers = ["变量名", "直接地址", "变量说明", "变量类型", "初始值", "掉电保护", "可强制", "SOE使能"]
-            for col_idx, header_title in enumerate(headers): main_sheet.write(1, col_idx, header_title, font_style)
-            
-            excel_write_row_counter = 1 # 从1开始，因为0是标题行，1是表头行
-            if main_io_points:
-                for point in main_io_points:
-                    excel_write_row_counter += 1
-                    current_main_excel_row = excel_write_row_counter
-                    
-                    # 从 UploadedIOPoint 对象获取数据
-                    main_hmi_name_raw = point.hmi_variable_name
-                    main_plc_address = str(point.plc_absolute_address or "").strip() # 确保是字符串且去除空格
-                    main_description_raw = point.variable_description
-                    main_data_type = str(point.data_type or "").upper()
-                    main_channel_no_raw = str(point.channel_tag or "").strip()
-                    module_type = str(point.module_type or "").upper()
-                    
-                    is_main_point_reserved = _is_value_empty_for_hmi_or_desc(main_hmi_name_raw)
-                    
-                    output_main_hmi_name: str
-                    output_main_description: str
-                    
-                    if is_main_point_reserved:
-                        channel_no_for_display = main_channel_no_raw if main_channel_no_raw else "未知"
-                        output_main_hmi_name = f"YLDW{channel_no_for_display}"
-                        output_main_description = f"预留点位{channel_no_for_display}"
-                    else:
-                        output_main_hmi_name = str(main_hmi_name_raw).strip() # main_hmi_name_raw 保证是 str
-                        output_main_description = str(main_description_raw).strip() if not _is_value_empty_for_hmi_or_desc(main_description_raw) else ""
-                    
-                    if not main_plc_address and not is_main_point_reserved:
-                        logger.warning(f"主点位 '{output_main_hmi_name}' 的PLC绝对地址为空，跳过此行及其关联点。")
-                        excel_write_row_counter -=1 # 回退计数器
-                        continue
-                        
-                    main_initial_value_to_write = 0 if main_data_type == "REAL" else "FALSE"
-                    main_power_off_protection_to_write = "TRUE" if main_data_type == "REAL" else "FALSE"
-                    main_can_force_to_write = "TRUE"
-                    main_soe_enable_to_write = "TRUE" if main_data_type == "BOOL" else "FALSE"
-                    
-                    main_sheet.write(current_main_excel_row, 0, output_main_hmi_name, font_style)
-                    main_sheet.write(current_main_excel_row, 1, main_plc_address, font_style)
-                    main_sheet.write(current_main_excel_row, 2, output_main_description, font_style)
-                    main_sheet.write(current_main_excel_row, 3, main_data_type if main_data_type else "", font_style)
-                    main_sheet.write(current_main_excel_row, 4, main_initial_value_to_write, font_style)
-                    main_sheet.write(current_main_excel_row, 5, main_power_off_protection_to_write, font_style)
-                    main_sheet.write(current_main_excel_row, 6, main_can_force_to_write, font_style)
-                    main_sheet.write(current_main_excel_row, 7, main_soe_enable_to_write, font_style)
-                    
-                    if module_type == 'AI':
-                        for ip_config in INTERMEDIATE_POINTS_CONFIG_AI:
-                            # 从 UploadedIOPoint 对象获取中间点数据
-                            intermediate_address = str(getattr(point, ip_config['addr_attr'], None) or "").strip()
-                            if not intermediate_address:
-                                continue
-                            
-                            excel_write_row_counter += 1
-                            current_ip_excel_row = excel_write_row_counter
-                            intermediate_name_from_attr = getattr(point, ip_config['name_attr'], None)
-                            
-                            final_intermediate_name: str
-                            if is_main_point_reserved:
-                                final_intermediate_name = output_main_hmi_name + ip_config['name_suffix_for_reserved']
-                            else:
-                                if _is_value_empty_for_hmi_or_desc(intermediate_name_from_attr):
-                                    base_name_for_ip = output_main_hmi_name
-                                    final_intermediate_name = (base_name_for_ip if base_name_for_ip else "UNKNOWN_MAIN") + ip_config['name_suffix_for_reserved']
-                                else:
-                                    final_intermediate_name = str(intermediate_name_from_attr).strip()
-                                    
-                            final_intermediate_description = f"{output_main_description}_{ip_config['desc_suffix']}"
-                            intermediate_data_type = ip_config['type']
-                            
-                            ip_initial_value_to_write = 0 if intermediate_data_type == "REAL" else "FALSE"
-                            ip_power_off_protection_to_write = "TRUE" if intermediate_data_type == "REAL" else "FALSE"
-                            ip_can_force_to_write = "TRUE"
-                            ip_soe_enable_to_write = "TRUE" if intermediate_data_type == "BOOL" else "FALSE"
-                            
-                            main_sheet.write(current_ip_excel_row, 0, final_intermediate_name, font_style)
-                            main_sheet.write(current_ip_excel_row, 1, intermediate_address, font_style)
-                            main_sheet.write(current_ip_excel_row, 2, final_intermediate_description, font_style)
-                            main_sheet.write(current_ip_excel_row, 3, intermediate_data_type, font_style)
-                            main_sheet.write(current_ip_excel_row, 4, ip_initial_value_to_write, font_style)
-                            main_sheet.write(current_ip_excel_row, 5, ip_power_off_protection_to_write, font_style)
-                            main_sheet.write(current_ip_excel_row, 6, ip_can_force_to_write, font_style)
-                            main_sheet.write(current_ip_excel_row, 7, ip_soe_enable_to_write, font_style)
+            if sheets_created_count > 0:
+                logger.info(f"准备保存工作簿到 '{output_path}'。总共创建 {sheets_created_count} 个工作表，写入了 {total_points_written} 个点位。")
+                workbook.save(output_path)
+                logger.info(f"和利时PLC点表已成功生成并保存到: {output_path}")
+                logger.info(f"--- HollysysGenerator: generate_hollysys_table 方法结束 (多工作表模式) ---")
+                return True, None
             else:
-                logger.info(f"主IO点表数据 (main_io_points) 为空。")
+                logger.warning("没有成功创建任何工作表，因此不保存文件。")
+                logger.info(f"--- HollysysGenerator: generate_hollysys_table 方法结束 (多工作表模式，无输出) ---")
+                return False, "未能成功创建任何工作表（可能是由于工作表名称问题或所有源表都无法添加）。"
             
-            main_sheet.col(0).width = 256 * 35; main_sheet.col(1).width = 256 * 20; main_sheet.col(2).width = 256 * 45; main_sheet.col(3).width = 256 * 15; main_sheet.col(4).width = 256 * 10; main_sheet.col(5).width = 256 * 12; main_sheet.col(6).width = 256 * 10; main_sheet.col(7).width = 256 * 12
-            logger.info(f"主IO点表Sheet '{main_sheet_output_name}' 处理完毕。")
-
-            # --- 2. 处理第三方设备点表 (后续Sheets) ---
-            # 这部分逻辑基本保持不变，因为它已经处理DataFrame
-            if third_party_data:
-                for tp_idx, (tp_sheet_name, tp_df) in enumerate(third_party_data):
-                    logger.info(f"开始处理第 {tp_idx+1} 个第三方设备Sheet: '{tp_sheet_name}'")
-                    # Sheet名称长度限制由xlwt处理，或者可以在创建时截断
-                    safe_tp_sheet_name = tp_sheet_name[:31] # 确保第三方sheet名称也不超过31字符
-                    tp_output_sheet = workbook.add_sheet(safe_tp_sheet_name)
-                    tp_output_sheet.write(0, 0, f"{safe_tp_sheet_name}(COMMON)", font_style) # 使用安全名称
-                    for col_idx, header_title in enumerate(headers): tp_output_sheet.write(1, col_idx, header_title, font_style)
-
-                    if tp_df.empty:
-                        logger.warning(f"第三方设备Sheet '{tp_sheet_name}' (输出为 '{safe_tp_sheet_name}') 的数据为空。已创建带表头的空Sheet。")
-                        # ... (设置列宽的代码保持不变)
-                        tp_output_sheet.col(0).width = 256 * 35; tp_output_sheet.col(1).width = 256 * 20 # ... etc.
-                        continue
-                    
-                    excel_tp_write_row_counter = 1 # 从1开始
-                    for _, tp_row_data in tp_df.iterrows():
-                        excel_tp_write_row_counter += 1
-                        var_name = tp_row_data.get(TP_INPUT_VAR_NAME_COL, "")
-                        plc_addr = str(tp_row_data.get(TP_INPUT_PLC_ADDRESS_COL, "")).strip()
-                        desc = tp_row_data.get(TP_INPUT_DESCRIPTION_COL, "")
-                        data_type = str(tp_row_data.get(TP_INPUT_DATA_TYPE_COL, "")).upper()
-                        
-                        if not var_name and not plc_addr:
-                            logger.debug(f"第三方Sheet '{tp_sheet_name}' 行 {excel_tp_write_row_counter} 的变量名和PLC地址均为空，跳过。")
-                            excel_tp_write_row_counter -=1
-                            continue
-
-                        initial_val_to_write: Any
-                        if data_type == "REAL":
-                            sll_val = _get_value_if_present(tp_row_data.get(TP_INPUT_SLL_SET_COL))
-                            sl_val = _get_value_if_present(tp_row_data.get(TP_INPUT_SL_SET_COL))
-                            sh_val = _get_value_if_present(tp_row_data.get(TP_INPUT_SH_SET_COL))
-                            shh_val = _get_value_if_present(tp_row_data.get(TP_INPUT_SHH_SET_COL))
-                            
-                            present_settings = []
-                            if sll_val is not None: present_settings.append(sll_val)
-                            if sl_val is not None: present_settings.append(sl_val)
-                            if sh_val is not None: present_settings.append(sh_val)
-                            if shh_val is not None: present_settings.append(shh_val)
-
-                            if len(present_settings) == 1:
-                                try: initial_val_to_write = float(present_settings[0])
-                                except (ValueError, TypeError): 
-                                    logger.warning(f"第三方Sheet '{tp_sheet_name}' 行 {excel_tp_write_row_counter} 点位 '{var_name}' 的设定值 '{present_settings[0]}' 不是有效数字，初始值将设为0。")
-                                    initial_val_to_write = 0
-                            elif len(present_settings) > 1:
-                                logger.error(f"内部逻辑错误: 第三方Sheet '{tp_sheet_name}' 点位 '{var_name}' (行号参考 {excel_tp_write_row_counter}) 通过了validator校验，但在生成时仍检测到多个设定值: {present_settings}。将使用0作为初始值。")
-                                initial_val_to_write = 0
-                            else: # len(present_settings) == 0
-                                initial_val_to_write = 0
-                        elif data_type == "BOOL": initial_val_to_write = "FALSE"
-                        else:
-                            logger.warning(f"第三方Sheet '{tp_sheet_name}' 行 {excel_tp_write_row_counter} 点位 '{var_name}' 数据类型 '{data_type}' 未知，初始值将设为0。")
-                            initial_val_to_write = 0
-                        
-                        power_off_prot_to_write = "TRUE" if data_type == "REAL" else "FALSE"
-                        can_force_to_write = "TRUE"
-                        soe_enable_to_write = "TRUE" if data_type == "BOOL" else "FALSE"
-                        tp_output_sheet.write(excel_tp_write_row_counter, 0, var_name, font_style)
-                        tp_output_sheet.write(excel_tp_write_row_counter, 1, plc_addr, font_style)
-                        tp_output_sheet.write(excel_tp_write_row_counter, 2, desc, font_style)
-                        tp_output_sheet.write(excel_tp_write_row_counter, 3, data_type if data_type else "", font_style)
-                        tp_output_sheet.write(excel_tp_write_row_counter, 4, initial_val_to_write, font_style)
-                        tp_output_sheet.write(excel_tp_write_row_counter, 5, power_off_prot_to_write, font_style)
-                        tp_output_sheet.write(excel_tp_write_row_counter, 6, can_force_to_write, font_style)
-                        tp_output_sheet.write(excel_tp_write_row_counter, 7, soe_enable_to_write, font_style)
-
-                    tp_output_sheet.col(0).width = 256 * 35; tp_output_sheet.col(1).width = 256 * 20; tp_output_sheet.col(2).width = 256 * 45; tp_output_sheet.col(3).width = 256 * 15; tp_output_sheet.col(4).width = 256 * 10; tp_output_sheet.col(5).width = 256 * 12; tp_output_sheet.col(6).width = 256 * 10; tp_output_sheet.col(7).width = 256 * 12
-                    logger.info(f"第三方设备Sheet '{tp_sheet_name}' (输出为 '{safe_tp_sheet_name}') 处理完毕。")
-            
-            workbook.save(output_path)
-            logger.info(f"和利时PLC点表已成功生成并保存到: {output_path} (包含主IO点表和所有第三方设备点表)")
-            return True, None
-        except KeyError as ke: # 虽然我们尽量避免了.get()，但万一有其他地方的KeyError
-            error_msg = f"生成和利时点表失败：代码逻辑中可能存在未预期的键错误: {ke}"
-            logger.error(error_msg, exc_info=True)
-            return False, error_msg
         except Exception as e:
             error_msg = f"生成和利时PLC点表时发生未知错误: {e}"
             logger.error(error_msg, exc_info=True)
+            logger.info(f"--- HollysysGenerator: generate_hollysys_table 方法因错误而结束 (多工作表模式) ---")
             return False, error_msg
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
     
-    # 创建示例 UploadedIOPoint 数据
-    sample_main_io_points: List[UploadedIOPoint] = [
-        UploadedIOPoint(
-            hmi_variable_name="AI_PT_001", plc_absolute_address="%MD100", variable_description="压力变送器001", 
-            data_type="REAL", channel_tag="CH1", module_type="AI",
-            sll_set_point="AI_PT_001_LoLoLimit", sll_set_point_plc_address="%MD104",
-            sl_set_point="AI_PT_001_LoLimit", sl_set_point_plc_address="%MD108",
-            sh_set_point="AI_PT_001_HiLimit", sh_set_point_plc_address="%MD112",
-            shh_set_point="AI_PT_001_HiHiLimit", shh_set_point_plc_address="%MD116",
-            ll_alarm="AI_PT_001_LL", ll_alarm_plc_address="%MX20.0",
-            l_alarm="AI_PT_001_L", l_alarm_plc_address="%MX20.1",
-            h_alarm="AI_PT_001_H", h_alarm_plc_address="%MX20.2",
-            hh_alarm="AI_PT_001_HH", hh_alarm_plc_address="%MX20.3",
-            maintenance_set_point="AI_PT_001_whz", maintenance_set_point_plc_address="%MD120",
-            maintenance_enable_switch_point="AI_PT_001_whzzt", maintenance_enable_switch_point_plc_address="%MX20.4",
-            # 其他字段根据需要填充或保持None
-        ),
-        UploadedIOPoint( # AI预留点位
-            hmi_variable_name=None, plc_absolute_address="%MD200", variable_description=None, 
-            data_type="REAL", channel_tag="CH2_AI_Res", module_type="AI",
-            sll_set_point_plc_address="%MD204", # 假设预留点位的中间点名称属性为空
-            sl_set_point_plc_address="%MD208",
-            sh_set_point_plc_address="%MD212",
-            shh_set_point_plc_address="%MD216",
-            ll_alarm_plc_address="%MX21.0",
-            l_alarm_plc_address="%MX21.1",
-            h_alarm_plc_address="%MX21.2",
-            hh_alarm_plc_address="%MX21.3",
-            maintenance_set_point_plc_address="%MD220",
-            maintenance_enable_switch_point_plc_address="%MX21.4",
-        ),
-        UploadedIOPoint(
-            hmi_variable_name="DI_PUMP_01_RUN", plc_absolute_address="%MX30.0", variable_description="1号泵运行状态", 
-            data_type="BOOL", channel_tag="CH3_DI", module_type="DI",
-        ),
-        UploadedIOPoint( # 主PLC地址为空的AI点 (应被跳过)
-            hmi_variable_name="AI_TEST_NO_MAIN_ADDR", plc_absolute_address="", variable_description="无主地址AI点", 
-            data_type="REAL", channel_tag="CH4", module_type="AI",
-            sll_set_point="AI_TEST_NO_MAIN_ADDR_LoLoLimit", sll_set_point_plc_address="%MD404",
-        ),
-        UploadedIOPoint( # 完全空的点 (应被跳过，如果hmi_variable_name 和 plc_absolute_address 都为空)
-            module_type="AI" # 假设至少有类型
-        )
-    ]
-
-    # 创建示例第三方数据
-    sample_tp_data_list = [
-        {TP_INPUT_VAR_NAME_COL: "TP_VALVE_OPEN", TP_INPUT_PLC_ADDRESS_COL: "%MX500.0", TP_INPUT_DESCRIPTION_COL: "第三方阀门开", TP_INPUT_DATA_TYPE_COL: "BOOL"},
-        {TP_INPUT_VAR_NAME_COL: "TP_MOTOR_SPEED", TP_INPUT_PLC_ADDRESS_COL: "%MD5000", TP_INPUT_DESCRIPTION_COL: "第三方马达速度", TP_INPUT_DATA_TYPE_COL: "REAL", TP_INPUT_SLL_SET_COL: "10.0"},
-    ]
-    tp_df1 = pd.DataFrame(sample_tp_data_list)
-    third_party_input_for_test: List[Tuple[str, pd.DataFrame]] = [("第三方设备1", tp_df1)]
-    
-    empty_tp_df = pd.DataFrame(columns=[TP_INPUT_VAR_NAME_COL, TP_INPUT_PLC_ADDRESS_COL, TP_INPUT_DATA_TYPE_COL])
-    third_party_input_with_empty: List[Tuple[str, pd.DataFrame]] = [("第三方设备1", tp_df1), ("空第三方", empty_tp_df)]
-
+    # 创建示例 UploadedIOPoint 数据，现在是字典结构
+    sample_points_by_sheet: Dict[str, List[UploadedIOPoint]] = {
+        "IO点表": [
+            UploadedIOPoint(hmi_variable_name="AI_PT_001", plc_absolute_address="%MD100", variable_description="压力变送器001", data_type="REAL", source_sheet_name="IO点表", source_type="main_io"),
+            UploadedIOPoint(hmi_variable_name="AI_PT_001_SLL设定", plc_absolute_address="%MD102", variable_description="压力变送器001_SLL设定",data_type="REAL", source_sheet_name="IO点表", source_type="intermediate_from_main"),
+            UploadedIOPoint(hmi_variable_name="DI_PUMP_01_RUN", plc_absolute_address="%MX30.0", variable_description="1号泵运行状态", data_type="BOOL", source_sheet_name="IO点表", source_type="main_io"),
+            UploadedIOPoint(hmi_variable_name="NO_PLC_FOR_IO_SHEET", plc_absolute_address=None, data_type="REAL", source_sheet_name="IO点表", source_type="main_io") # 应跳过
+        ],
+        "第三方设备A": [
+            UploadedIOPoint(hmi_variable_name="TP_VALVE_OPEN", plc_absolute_address="%MX500.0", variable_description="第三方阀门开", data_type="BOOL", source_sheet_name="第三方设备A", source_type="third_party"),
+            UploadedIOPoint(hmi_variable_name="TP_MOTOR_SPEED", plc_absolute_address="%MD5000", variable_description="第三方马达速度", data_type="REAL", source_sheet_name="第三方设备A", source_type="third_party")
+        ],
+        "空设备表": [], # 测试空点位列表的工作表创建
+        "特殊字符表名[]:*?/\\": [ # 测试特殊字符表名清理
+            UploadedIOPoint(hmi_variable_name="SPEC_CHAR_POINT", plc_absolute_address="%MW100", data_type="WORD", source_sheet_name="特殊字符表名[]:*?/\\", source_type="third_party")
+        ],
+        "超长工作表名这是一个非常非常非常非常非常非常长的名字用来测试截断": [
+             UploadedIOPoint(hmi_variable_name="LONG_NAME_SHT_PT", plc_absolute_address="%MW200", data_type="WORD")
+        ]
+    }
 
     generator = HollysysGenerator()
-    output_main_sheet_name = "测试IO表_Output"
     
-    output_file_complex = "test_hollysys_table_from_model_v1.xls"
-    success, msg = generator.generate_hollysys_table(sample_main_io_points, output_main_sheet_name, output_file_complex, third_party_input_for_test)
+    output_file_multisheet = "test_hollysys_multisheet_v1.xls"
+    logger.info(f"\\n--- 开始测试: 多工作表模式 ({output_file_multisheet}) ---")
+    success, msg = generator.generate_hollysys_table(sample_points_by_sheet, output_file_multisheet)
     if success:
-        print(f"复杂场景测试文件 '{output_file_complex}' 生成成功。")
+        print(f"多工作表测试文件 '{output_file_multisheet}' 生成成功。")
     else:
-        print(f"复杂场景测试文件 '{output_file_complex}' 生成失败: {msg}")
+        print(f"多工作表测试文件 '{output_file_multisheet}' 生成失败: {msg}")
 
-    output_file_no_main = "test_hollysys_no_main_v1.xls"
-    success_no_main, msg_no_main = generator.generate_hollysys_table(None, "无主IO表", output_file_no_main, third_party_input_for_test)
-    if success_no_main:
-        print(f"无主IO点测试文件 '{output_file_no_main}' 生成成功。")
+    output_file_empty_dict = "test_hollysys_empty_dict_v1.xls"
+    logger.info(f"\\n--- 开始测试: 空字典输入 ({output_file_empty_dict}) ---")
+    success_empty, msg_empty = generator.generate_hollysys_table({}, output_file_empty_dict)
+    if success_empty:
+        print(f"空字典输入测试文件 '{output_file_empty_dict}' 生成成功。") # 预期是失败或不生成文件
     else:
-        print(f"无主IO点测试文件 '{output_file_no_main}' 生成失败: {msg_no_main}")
-
-    output_file_no_tp = "test_hollysys_no_tp_v1.xls"
-    success_no_tp, msg_no_tp = generator.generate_hollysys_table(sample_main_io_points, output_main_sheet_name, output_file_no_tp, None)
-    if success_no_tp:
-        print(f"无第三方数据测试文件 '{output_file_no_tp}' 生成成功。")
-    else:
-        print(f"无第三方数据测试文件 '{output_file_no_tp}' 生成失败: {msg_no_tp}")
-        
-    output_file_all_empty = "test_hollysys_all_empty_v1.xls"
-    success_all_empty, msg_all_empty = generator.generate_hollysys_table(None, "全空表", output_file_all_empty, None)
-    if success_all_empty: # 即使都为空，也应该能生成一个带表头的空文件
-        print(f"全空输入测试文件 '{output_file_all_empty}' 生成成功。")
-    else:
-        print(f"全空输入测试文件 '{output_file_all_empty}' 生成失败: {msg_all_empty}")
-
-    output_file_with_empty_tp = "test_hollysys_with_empty_tp_v1.xls"
-    success_empty_tp, msg_empty_tp = generator.generate_hollysys_table(sample_main_io_points, output_main_sheet_name, output_file_with_empty_tp, third_party_input_with_empty)
-    if success_empty_tp:
-        print(f"包含空第三方Sheet的测试文件 '{output_file_with_empty_tp}' 生成成功。")
-    else:
-        print(f"包含空第三方Sheet的测试文件 '{output_file_with_empty_tp}' 生成失败: {msg_empty_tp}") 
+        print(f"空字典输入测试文件 '{output_file_empty_dict}' 生成失败或未生成: {msg_empty}") 

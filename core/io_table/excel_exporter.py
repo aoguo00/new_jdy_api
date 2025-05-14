@@ -444,7 +444,7 @@ class PLCSheetExporter(BaseSheetExporter):
         for target_column_header, suffix in formula_rules:
             try:
                 target_column_idx = self.headers_plc.index(target_column_header)
-                final_row_data[target_column_idx] = f'=IF(ISBLANK({hmi_name_cell_ref}), "", {hmi_name_cell_ref} & "{suffix}")'
+                final_row_data[target_column_idx] = f'={hmi_name_cell_ref} & "{suffix}"'
             except ValueError:
                 logger.warning(f"在表头中未找到列: {target_column_header} (模块类型: {channel_io_type}，用于Excel公式生成)")
 

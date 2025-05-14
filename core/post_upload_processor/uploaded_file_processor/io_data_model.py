@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, List
 
 @dataclass
 class UploadedIOPoint:
@@ -114,6 +114,13 @@ class UploadedIOPoint:
     plc_absolute_address: Optional[str] = None  # PLC绝对地址
     # 原始表头：上位机通讯地址
     hmi_communication_address: Optional[str] = None  # 上位机通讯地址
+
+    # 新增字段，用于记录点位的来源信息
+    source_sheet_name: Optional[str] = None
+    """点位来源的原始Excel工作表名称。"""
+    
+    source_type: Optional[str] = None
+    """点位来源类型 (例如: "main_io", "intermediate_from_main", "third_party")。"""
 
     # 你可以根据需要添加额外的方法，例如从字典创建实例的工厂方法
     # 或者验证数据的方法等 
