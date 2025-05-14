@@ -254,22 +254,31 @@ class KingViewGenerator:
             return False, error_msg
 
     def generate_kingview_files(self,
-                                all_points_data: List[UploadedIOPoint], # 修改：接收合并后的单一列表
+                                points_by_sheet: Dict[str, List[UploadedIOPoint]], # 修改：接收字典
                                 output_dir: str,
                                 base_io_filename: str
                                ) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
         """
-        生成两个亚控点表文件，数据从传入的合并后的 UploadedIOPoint 对象列表获取。
-        场站编号和场站名称将从 all_points_data 中第一个源自主要IO工作表的点位中提取。
+        生成两个亚控点表文件，数据从传入的按工作表组织的 UploadedIOPoint 对象字典获取。
+        场站编号和场站名称将从 points_by_sheet 中第一个源自主要IO工作表的点位中提取。
         """
-        logger.info(f"开始生成亚控点表文件 (统一数据模型，共 {len(all_points_data)} 个点位)，输出目录: {output_dir}")
+        # 将所有工作表的点位合并到一个列表中
+        all_points_list: List[UploadedIOPoint] = []
+        for sheet_name, points_list_for_sheet in points_by_sheet.items():
+            if isinstance(points_list_for_sheet, list):
+                all_points_list.extend(points_list_for_sheet)
+            else:
+                logger.warning(f"工作表 '{sheet_name}' 的数据不是预期的列表类型，已跳过。类型: {type(points_list_for_sheet)}")
+        
+        logger.info(f"开始生成亚控点表文件 (统一数据模型，共 {len(all_points_list)} 个点位，来自 {len(points_by_sheet)} 个源工作表)，输出目录: {output_dir}")
         self._reset_data()
 
         extracted_site_no: Optional[str] = None
         extracted_site_name: Optional[str] = None
 
-        # 从 all_points_data 中查找第一个主IO点以获取场站信息
-        first_main_io_point = next((p for p in all_points_data if p.source_sheet_name == C.PLC_IO_SHEET_NAME or p.source_type == "main_io"), None)
+        # 从 all_points_list (已合并) 中查找第一个主IO点以获取场站信息
+        # (或者可以更精确地遍历 points_by_sheet 来查找主表，但当前逻辑基于合并列表也可行)
+        first_main_io_point = next((p for p in all_points_list if p.source_sheet_name == C.PLC_IO_SHEET_NAME or p.source_type == "main_io"), None)
 
         if first_main_io_point:
             if first_main_io_point.site_number and first_main_io_point.site_number.strip():
@@ -288,8 +297,8 @@ class KingViewGenerator:
 
         # 处理数据
         try:
-            logger.info(f"开始处理 {len(all_points_data)} 个点位 (UploadedIOPoint 列表)...")
-            for index, point_obj in enumerate(all_points_data):
+            logger.info(f"开始处理 {len(all_points_list)} 个点位 (UploadedIOPoint 列表)...") # 使用合并后的 all_points_list
+            for index, point_obj in enumerate(all_points_list): # 使用合并后的 all_points_list
                 # 判断是否应用主表逻辑，基于点的来源
                 # (假设 excel_reader.py 在转换时正确设置了 point.source_sheet_name 或 point.source_type)
                 apply_main_logic = (point_obj.source_sheet_name == C.PLC_IO_SHEET_NAME or \
@@ -335,15 +344,19 @@ class KingViewGenerator:
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
 
-    # 创建示例 UploadedIOPoint 数据 (合并后的列表)
-    sample_all_points: List[UploadedIOPoint] = [
-        UploadedIOPoint(source_sheet_name=C.PLC_IO_SHEET_NAME, source_type="main_io", site_name="测试站", site_number="S007", hmi_variable_name="YK_AI_01", variable_description="亚控模拟输入1", data_type="REAL", hmi_communication_address="40001", channel_tag="AI_CH1", sll_set_value="1", sl_set_value="2", sh_set_value="98", shh_set_value="99"),
-        UploadedIOPoint(source_sheet_name=C.PLC_IO_SHEET_NAME, source_type="main_io", site_name="测试站", site_number="S007", hmi_variable_name="YK_DI_01", variable_description="亚控数字输入1", data_type="BOOL", hmi_communication_address="10001", channel_tag="DI_CH1"),
-        UploadedIOPoint(source_sheet_name=C.PLC_IO_SHEET_NAME, source_type="main_io", site_name="测试站", site_number="S007", hmi_variable_name=None, channel_tag="Res_CH1", variable_description=None, data_type="REAL", hmi_communication_address="40002"), # 预留点
-        UploadedIOPoint(source_sheet_name="第三方设备表A", source_type="third_party", site_name="测试站", site_number="S007", hmi_variable_name="TP_BOOL_1", variable_description="第三方1布尔", data_type="BOOL", hmi_communication_address="2001"),
-        UploadedIOPoint(source_sheet_name="第三方设备表A", source_type="third_party", site_name="测试站", site_number="S007", hmi_variable_name="TP_REAL_1", variable_description="第三方1实数", data_type="REAL", hmi_communication_address="50001", sll_set_value="5.5"),
-    ]
-    sample_empty_points_list: List[UploadedIOPoint] = []
+    # 创建示例 UploadedIOPoint 数据 (修改为字典结构)
+    sample_points_by_sheet_data: Dict[str, List[UploadedIOPoint]] = {
+        C.PLC_IO_SHEET_NAME: [ # 主IO表
+            UploadedIOPoint(source_sheet_name=C.PLC_IO_SHEET_NAME, source_type="main_io", site_name="测试站", site_number="S007", hmi_variable_name="YK_AI_01", variable_description="亚控模拟输入1", data_type="REAL", hmi_communication_address="40001", channel_tag="AI_CH1", sll_set_value="1", sl_set_value="2", sh_set_value="98", shh_set_value="99"),
+            UploadedIOPoint(source_sheet_name=C.PLC_IO_SHEET_NAME, source_type="main_io", site_name="测试站", site_number="S007", hmi_variable_name="YK_DI_01", variable_description="亚控数字输入1", data_type="BOOL", hmi_communication_address="10001", channel_tag="DI_CH1"),
+            UploadedIOPoint(source_sheet_name=C.PLC_IO_SHEET_NAME, source_type="main_io", site_name="测试站", site_number="S007", hmi_variable_name=None, channel_tag="Res_CH1", variable_description=None, data_type="REAL", hmi_communication_address="40002"), # 预留点
+        ],
+        "第三方设备表A": [ # 第三方表
+            UploadedIOPoint(source_sheet_name="第三方设备表A", source_type="third_party", site_name="测试站", site_number="S007", hmi_variable_name="TP_BOOL_1", variable_description="第三方1布尔", data_type="BOOL", hmi_communication_address="2001"),
+            UploadedIOPoint(source_sheet_name="第三方设备表A", source_type="third_party", site_name="测试站", site_number="S007", hmi_variable_name="TP_REAL_1", variable_description="第三方1实数", data_type="REAL", hmi_communication_address="50001", sll_set_value="5.5"),
+        ]
+    }
+    sample_empty_points_dict: Dict[str, List[UploadedIOPoint]] = {}
    
     test_output_dir = "./test_kingview_output_unified_model"
     if not os.path.exists(test_output_dir):
@@ -353,7 +366,7 @@ if __name__ == '__main__':
 
     logger.info("--- 测试场景1: 包含主表和第三方数据的合并列表 ---")
     success1, f1_1, f2_1, err1 = generator.generate_kingview_files(
-        sample_all_points, test_output_dir, "UnifiedDataTest"
+        sample_points_by_sheet_data, test_output_dir, "UnifiedDataTest" # 使用新的字典数据
     )
     if success1: print(f"场景1成功: {f1_1}, {f2_1}")
     else: print(f"场景1失败: {err1}")
@@ -361,7 +374,7 @@ if __name__ == '__main__':
     generator._reset_data() 
     logger.info("--- 测试场景2: 空的点位列表 ---")
     success2, f1_2, f2_2, err2 = generator.generate_kingview_files(
-        sample_empty_points_list, test_output_dir, "EmptyListTest"
+        sample_empty_points_dict, test_output_dir, "EmptyListTest" # 使用空的字典
     )
     if success2: print(f"场景2成功: {f1_2}, {f2_2}") # 应该能生成空的结构文件
     else: print(f"场景2失败: {err2}") 

@@ -434,42 +434,16 @@ class MainWindow(QMainWindow):
         logger.info(f"用户选择了HMI类型进行生成: {hmi_type}")
         logger.info(f"准备根据已加载数据生成{hmi_type}HMI点表。")
 
-        # 为KingViewGenerator准备数据: 合并所有工作表的点位数据为一个列表
-        all_points_list: List[UploadedIOPoint] = []
-        main_io_sheet_name = C.PLC_IO_SHEET_NAME # 来自 core.post_upload_processor.hmi_generators.yk_generator.generator
-        
-        main_io_data_temp: Optional[List[UploadedIOPoint]] = None
-        other_sheets_data_temp: Dict[str, List[UploadedIOPoint]] = {}
-
-        for sheet_name, data_from_sheet in self.loaded_io_data_by_sheet.items():
-            if not isinstance(data_from_sheet, list): 
-                logger.warning(f"工作表 '{sheet_name}' 的数据类型不是预期的List[UploadedIOPoint]，而是 {type(data_from_sheet)}。跳过此表。")
-                continue
-            
-            if not all(isinstance(p, UploadedIOPoint) for p in data_from_sheet):
-                logger.warning(f"工作表 '{sheet_name}' 的列表中包含非UploadedIOPoint类型的元素。跳过此表。")
-                continue
-
-            if sheet_name == main_io_sheet_name: 
-                main_io_data_temp = data_from_sheet
-                logger.info(f"提取到主IO点表 '{sheet_name}' 数据，共 {len(data_from_sheet)} 个点位。")
-            else: 
-                other_sheets_data_temp[sheet_name] = data_from_sheet
-                logger.info(f"提取到工作表 '{sheet_name}' 数据 (类型: {type(data_from_sheet)}), 共 {len(data_from_sheet)} 个点位。")
-
-        if main_io_data_temp:
-            all_points_list.extend(main_io_data_temp)
-        
-        for sheet_name, points_list in other_sheets_data_temp.items():
-            all_points_list.extend(points_list)
-            logger.info(f"已将工作表 '{sheet_name}' 的 {len(points_list)} 个点位添加到待处理列表。")
-
-        if not all_points_list:
+        # 检查 self.loaded_io_data_by_sheet 是否有内容，以及其内容是否都是有效的点位列表
+        if not self.loaded_io_data_by_sheet or \
+           not any(isinstance(points, list) and len(points) > 0 for points in self.loaded_io_data_by_sheet.values()):
             QMessageBox.warning(self, "无有效点位", "在加载的Excel文件中没有找到有效的IO点位数据进行处理。")
-            logger.warning("合并后的点位列表为空，取消HMI生成。")
+            logger.warning("加载的IO数据为空或不包含任何有效点位，取消HMI生成。")
             return
         
-        logger.info(f"所有工作表数据已合并，总共 {len(all_points_list)} 个点位准备传递给生成器。")
+        # logger.info(f"所有工作表数据已合并，总共 {len(all_points_list)} 个点位准备传递给生成器。") # 日志消息也需调整
+        total_points_for_gen = sum(len(p_list) for p_list in self.loaded_io_data_by_sheet.values() if isinstance(p_list, list))
+        logger.info(f"来自 {len(self.loaded_io_data_by_sheet)} 个工作表的总共 {total_points_for_gen} 个点位将传递给生成器。")
 
         output_dir = QFileDialog.getExistingDirectory(self, "选择HMI点表输出文件夹")
         if not output_dir:
@@ -486,7 +460,7 @@ class MainWindow(QMainWindow):
         if hmi_type == "亚控":
             generator = KingViewGenerator()
             success, io_server_file, data_dict_file, error_msg = generator.generate_kingview_files(
-                all_points_data=all_points_list, # 亚控使用合并后的点位列表
+                points_by_sheet=self.loaded_io_data_by_sheet, # 修改：直接传递字典
                 output_dir=output_dir,
                 base_io_filename=base_io_filename
             )
