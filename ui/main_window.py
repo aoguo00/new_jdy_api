@@ -486,7 +486,7 @@ class MainWindow(QMainWindow):
         if hmi_type == "亚控":
             generator = KingViewGenerator()
             success, io_server_file, data_dict_file, error_msg = generator.generate_kingview_files(
-                all_points_data=all_points_list, 
+                all_points_data=all_points_list, # 亚控使用合并后的点位列表
                 output_dir=output_dir,
                 base_io_filename=base_io_filename
             )
@@ -500,6 +500,22 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "生成失败", f"{hmi_type}HMI点表生成失败。错误: {error_msg}")
                 logger.error(f"{hmi_type}HMI点表生成失败。错误: {error_msg}")
         
+        elif hmi_type == "力控": # 新增对力控的处理
+            generator = LikongGenerator()
+            # 力控生成器直接使用 self.loaded_io_data_by_sheet (原始的按sheet组织的数据)
+            # generate_basic_xls 的 output_dir 就是用户选择的文件夹，文件名是固定的 "Basic.xls"
+            success, generated_file_path, error_msg = generator.generate_basic_xls(
+                output_dir=output_dir,
+                points_by_sheet=self.loaded_io_data_by_sheet 
+            )
+            if success and generated_file_path:
+                msg = f"力控HMI点表 (Basic.xls) 已成功生成在: {os.path.dirname(generated_file_path)}"
+                QMessageBox.information(self, "生成成功", msg)
+                logger.info(msg)
+            else:
+                QMessageBox.critical(self, "生成失败", f"力控HMI点表生成失败。错误: {error_msg}")
+                logger.error(f"力控HMI点表生成失败。错误: {error_msg}")
+
         else:
             QMessageBox.information(self, "提示", f"尚未实现对 {hmi_type} 类型的点表生成。")
             logger.info(f"请求生成 {hmi_type} 类型，但尚未实现。")
