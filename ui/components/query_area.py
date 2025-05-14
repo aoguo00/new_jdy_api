@@ -10,9 +10,9 @@ class QueryArea(QGroupBox):
     # 定义信号
     query_requested = Signal(str)  # 项目编号 (移除了场站编号)
     clear_requested = Signal()
-    upload_hmi_requested = Signal(str)  # HMI类型
-    upload_plc_requested = Signal(str)  # PLC类型
-    upload_io_table_requested = Signal() # 新增信号：上传IO点表
+    # upload_hmi_requested = Signal(str)  # HMI类型  -- REMOVED
+    # upload_plc_requested = Signal(str)  # PLC类型  -- REMOVED
+    # upload_io_table_requested = Signal() # 新增信号：上传IO点表 -- REMOVED
 
     def __init__(self, parent=None):
         super().__init__("查询条件", parent)
@@ -65,27 +65,27 @@ class QueryArea(QGroupBox):
         # 创建按钮
         self.query_btn = QPushButton("查询")
         self.clear_btn = QPushButton("清空")
-        self.upload_io_table_btn = QPushButton("上传IO点表") # 新增：上传IO点表按钮
+        # self.upload_io_table_btn = QPushButton("上传IO点表") # 新增：上传IO点表按钮 -- REMOVED
         
         # 创建HMI点表下拉菜单按钮
-        self.upload_hmi_btn = QPushButton("上传HMI点表")
-        hmi_menu = QMenu(self.upload_hmi_btn)
-        hmi_menu.addAction("亚控")
-        hmi_menu.addAction("力控")
-        self.upload_hmi_btn.setMenu(hmi_menu)
+        # self.upload_hmi_btn = QPushButton("上传HMI点表") -- REMOVED
+        # hmi_menu = QMenu(self.upload_hmi_btn) -- REMOVED
+        # hmi_menu.addAction("亚控") -- REMOVED
+        # hmi_menu.addAction("力控") -- REMOVED
+        # self.upload_hmi_btn.setMenu(hmi_menu) -- REMOVED
 
         # 创建PLC点表下拉菜单按钮
-        self.upload_plc_btn = QPushButton("上传PLC点表")
-        plc_menu = QMenu(self.upload_plc_btn)
-        plc_menu.addAction("和利时")
-        plc_menu.addAction("中控PLC")
-        self.upload_plc_btn.setMenu(plc_menu)
+        # self.upload_plc_btn = QPushButton("上传PLC点表") -- REMOVED
+        # plc_menu = QMenu(self.upload_plc_btn) -- REMOVED
+        # plc_menu.addAction("和利时") -- REMOVED
+        # plc_menu.addAction("中控PLC") -- REMOVED
+        # self.upload_plc_btn.setMenu(plc_menu) -- REMOVED
 
         # 统一设置按钮大小
-        buttons = [self.query_btn, self.clear_btn, 
-                   self.upload_io_table_btn, 
-                   self.upload_hmi_btn, self.upload_plc_btn
-                   ]
+        buttons = [self.query_btn, self.clear_btn] # REMOVED upload_io_table_btn, upload_hmi_btn, upload_plc_btn
+                   # self.upload_io_table_btn, 
+                   # self.upload_hmi_btn, self.upload_plc_btn
+                   # ]
         for btn in buttons:
             btn.setFixedWidth(100)
             button_layout.addWidget(btn)
@@ -103,15 +103,15 @@ class QueryArea(QGroupBox):
         """设置信号连接"""
         self.query_btn.clicked.connect(self._on_query_clicked)
         self.clear_btn.clicked.connect(self.clear_requested)
-        self.upload_io_table_btn.clicked.connect(self.upload_io_table_requested.emit) # 新增：连接上传IO点表按钮的信号
+        # self.upload_io_table_btn.clicked.connect(self.upload_io_table_requested.emit) # 新增：连接上传IO点表按钮的信号 -- REMOVED
 
         # 设置HMI菜单动作
-        hmi_menu = self.upload_hmi_btn.menu()
-        hmi_menu.triggered.connect(lambda action: self.upload_hmi_requested.emit(action.text()))
+        # hmi_menu = self.upload_hmi_btn.menu() -- REMOVED
+        # hmi_menu.triggered.connect(lambda action: self.upload_hmi_requested.emit(action.text())) -- REMOVED
 
         # 设置PLC菜单动作
-        plc_menu = self.upload_plc_btn.menu()
-        plc_menu.triggered.connect(lambda action: self.upload_plc_requested.emit(action.text()))
+        # plc_menu = self.upload_plc_btn.menu() -- REMOVED
+        # plc_menu.triggered.connect(lambda action: self.upload_plc_requested.emit(action.text())) -- REMOVED
 
     def _on_query_clicked(self):
         """处理查询按钮点击"""

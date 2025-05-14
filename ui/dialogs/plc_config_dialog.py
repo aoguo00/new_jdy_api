@@ -712,8 +712,8 @@ class PLCConfigEmbeddedWidget(QWidget):
         # 重新连接 rack_tabs 和 rack_combo 的信号 (仅当有tab时)
         if self.view.rack_tabs and self.view.rack_tabs.count() > 0: 
             self.view.rack_tabs.currentChanged.connect(self.on_rack_tab_changed)
-            if self.view.rack_combo: # rack_combo 也只在有 rack 时才有意义
-                self.view.rack_combo.currentIndexChanged.connect(self.on_rack_combo_changed)
+        if self.view.rack_combo: # rack_combo 也只在有 rack 时才有意义
+            self.view.rack_combo.currentIndexChanged.connect(self.on_rack_combo_changed)
             
         logger.info(f"Rack tabs creation/update complete. Total tabs: {self.view.rack_tabs.count() if self.view.rack_tabs else 0}. System: '{self.system_type}'.")
 
@@ -734,11 +734,11 @@ class PLCConfigEmbeddedWidget(QWidget):
             logger.info("_initialize_slot1_for_lk_system_if_needed: rack_count is 0, skipping DP preset.")
             return
 
-        logger.info("LK System: Attempting to preset DP module for slot 1 in all racks if not already set by config.")
-        rack_info = self.io_data_loader.get_rack_info()
-        rack_count = rack_info.get('rack_count', 0)
+            logger.info("LK System: Attempting to preset DP module for slot 1 in all racks if not already set by config.")
+            rack_info = self.io_data_loader.get_rack_info()
+            rack_count = rack_info.get('rack_count', 0)
             
-        for rack_id in range(1, rack_count + 1):
+            for rack_id in range(1, rack_count + 1):
                 dp_modules, _ = self.io_data_loader.load_available_modules('DP') 
                 dp_model_to_set = "PROFIBUS-DP" 
                 all_predefined_modules = self.io_data_loader.module_info_provider.get_all_predefined_modules()
@@ -758,7 +758,7 @@ class PLCConfigEmbeddedWidget(QWidget):
                     m for m in self.current_modules_pool 
                     if not (m.get('model') == dp_model_to_set and m.get('unique_id') == dp_module_obj.get('unique_id'))
                 ]
-                self.load_modules() 
+            self.load_modules() 
 
     def on_rack_tab_changed(self, index):
         if self.view.rack_combo: # 检查UI元素是否存在
@@ -941,8 +941,8 @@ class PLCConfigEmbeddedWidget(QWidget):
                     self.view.type_combo.setCurrentIndex(0) 
                     self.module_type_filter = self.view.type_combo.currentText()
 
-                self.create_rack_tabs()
-                self.update_all_config_tables()
+            self.create_rack_tabs()
+            self.update_all_config_tables()
             
             logger.info("PLCConfigEmbeddedWidget: Successfully reset to initial state.")
 
