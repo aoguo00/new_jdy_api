@@ -10,10 +10,8 @@ class QueryArea(QGroupBox):
     # 定义信号
     query_requested = Signal(str)  # 项目编号 (移除了场站编号)
     clear_requested = Signal()
-    generate_points_requested = Signal(str)  # 修改信号以传递场站编号
     upload_hmi_requested = Signal(str)  # HMI类型
     upload_plc_requested = Signal(str)  # PLC类型
-    plc_config_requested = Signal()  # PLC配置信号
     upload_io_table_requested = Signal() # 新增信号：上传IO点表
 
     def __init__(self, parent=None):
@@ -67,7 +65,6 @@ class QueryArea(QGroupBox):
         # 创建按钮
         self.query_btn = QPushButton("查询")
         self.clear_btn = QPushButton("清空")
-        self.generate_btn = QPushButton("生成IO点表")
         self.upload_io_table_btn = QPushButton("上传IO点表") # 新增：上传IO点表按钮
         
         # 创建HMI点表下拉菜单按钮
@@ -84,14 +81,11 @@ class QueryArea(QGroupBox):
         plc_menu.addAction("中控PLC")
         self.upload_plc_btn.setMenu(plc_menu)
 
-        # 新增PLC配置按钮
-        self.plc_config_button = QPushButton("PLC配置")
-
         # 统一设置按钮大小
-        buttons = [self.query_btn, self.clear_btn, self.generate_btn, 
-                   self.upload_io_table_btn, # 新增：添加到按钮列表，确保在"生成IO点表"右侧
-                   self.upload_hmi_btn, self.upload_plc_btn, 
-                   self.plc_config_button]
+        buttons = [self.query_btn, self.clear_btn, 
+                   self.upload_io_table_btn, 
+                   self.upload_hmi_btn, self.upload_plc_btn
+                   ]
         for btn in buttons:
             btn.setFixedWidth(100)
             button_layout.addWidget(btn)
@@ -109,7 +103,6 @@ class QueryArea(QGroupBox):
         """设置信号连接"""
         self.query_btn.clicked.connect(self._on_query_clicked)
         self.clear_btn.clicked.connect(self.clear_requested)
-        self.generate_btn.clicked.connect(self._on_generate_points_clicked)
         self.upload_io_table_btn.clicked.connect(self.upload_io_table_requested.emit) # 新增：连接上传IO点表按钮的信号
 
         # 设置HMI菜单动作
@@ -120,23 +113,12 @@ class QueryArea(QGroupBox):
         plc_menu = self.upload_plc_btn.menu()
         plc_menu.triggered.connect(lambda action: self.upload_plc_requested.emit(action.text()))
 
-        # PLC配置按钮连接
-        self.plc_config_button.clicked.connect(self.plc_config_requested.emit)
-
     def _on_query_clicked(self):
         """处理查询按钮点击"""
         project_no = self.project_input.text().strip()
         # site_no 不再通过此信号发送，但仍可用于其他目的
         # site_no = self.station_input.text().strip() 
         self.query_requested.emit(project_no)
-
-    def _on_generate_points_clicked(self):
-        """处理生成IO点表按钮点击"""
-        site_no = self.station_input.text().strip()
-        if not site_no:
-            QMessageBox.warning(self, "警告", "场站编号不能为空！")
-            return
-        self.generate_points_requested.emit(site_no)
 
     def clear_inputs(self):
         """清空输入框"""

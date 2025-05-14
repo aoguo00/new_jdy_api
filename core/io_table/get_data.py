@@ -457,6 +457,13 @@ class SystemSetupManager:
             'system_type': self.system_type
         }
 
+    def reset_state(self):
+        """将 SystemSetupManager 的状态重置回其初始默认值。"""
+        self.system_type = "LK"  # 默认系统类型
+        self.rack_count = 0       # 重置机架数量为0
+        self.racks_data = []      # 清空机架数据列表
+        logger.info("SystemSetupManager state has been reset to defaults (0 racks, type LK).")
+
 class PLCConfigurationHandler:
     """
     PLC配置处理器。
@@ -857,6 +864,14 @@ class IODataLoader:
                     f"Found {len(self.HOLLYSYS_PREFIXES)} Hollysys prefixes. "
                     f"{len(self.SPECIAL_ALLOWED_MODULES)} special modules.")
 
+    def get_current_plc_config(self) -> Dict[Tuple[int, int], str]:
+        """
+        返回当前存储的PLC模块配置。
+        格式: {(rack_id, slot_id): model_name}
+        """
+        logger.debug(f"IODataLoader: get_current_plc_config called, returning {len(self.current_plc_config)} configured modules.")
+        return self.current_plc_config.copy() # 返回副本以防外部修改
+
     def set_devices_data(self, devices_data: List[Dict[str, Any]]) -> None:
         """
         设置新的设备数据列表，并触发整个处理流程：
@@ -1040,7 +1055,9 @@ class IODataLoader:
             print(f"错误: 不支持的配置数据格式: {type(config_data_from_ui)}")
             return False
         
+        logger.info(f"IODataLoader.save_configuration: Standardized config_dict to save: {config_dict}") # 新增日志
         current_system_type = self.system_setup_manager.get_system_type()
+        logger.info(f"IODataLoader.save_configuration: Current system type: {current_system_type}") # 新增日志
         
         # 将配置字典和当前系统类型传递给 PLCConfigurationHandler 进行处理
         # 关键：同时传递 self.processed_enriched_devices 作为上下文，
@@ -1051,6 +1068,8 @@ class IODataLoader:
             self.processed_enriched_devices 
         )
         
+        logger.info(f"IODataLoader.save_configuration: Result from config_handler.save_plc_configuration: success={success}, message='{message}'") # 新增日志
+
         if success:
             self.current_plc_config = config_dict.copy() # 存储已验证的配置副本
             # 配置成功保存后，调用自身的 generate_channel_addresses 方法，
@@ -1112,8 +1131,45 @@ class IODataLoader:
         return filtered_addresses
 
     def get_channel_addresses(self) -> List[Dict[str, Any]]:
-        """获取最后一次成功生成的（且已过滤COM/DP模块的）通道地址列表。"""
-        return self.last_generated_addresses
+        """获取上次成功生成的通道地址列表。"""
+        # 修正：确保使用 self.last_generated_addresses
+        return self.last_generated_addresses.copy() if hasattr(self, 'last_generated_addresses') and self.last_generated_addresses else []
+
+    def clear_current_project_configuration(self):
+        """
+        清除当前加载的项目相关的PLC配置、设备数据和系统信息。
+        主要在用户清除项目选择或主界面清空时调用，以重置到初始状态。
+        """
+        logger.info("Clearing current project configuration in IODataLoader.")
+        
+        self.current_plc_config: Dict[Tuple[int, int], str] = {} # PLC模块配置 {(机架号, 槽位号): "模块型号"}
+        
+        # 这个 self.system_info 属性似乎是 IODataLoader 自身维护的一个副本或缓存，
+        # 真正的系统配置（system_type, rack_count, racks_data）由 SystemSetupManager 管理。
+        # 在清空时，SystemSetupManager 会被 reset_state() 方法重置，所以这里的 system_info
+        # 的重置主要是确保 IODataLoader 自身的一个可能的缓存状态也被清空。
+        # 或者，可以考虑移除 IODataLoader.system_info 属性，总是从 SystemSetupManager 获取。
+        # 目前保持现状，但标记其潜在的冗余。
+        self.system_info: Dict[str, Any] = {
+            'system_type': 'LK', 
+            'rack_count': 0, 
+            'slots_per_rack': self.system_setup_manager.DEFAULT_RACK_SLOTS, 
+            'racks': [] 
+        }
+
+        self.processed_enriched_devices: List[Dict[str, Any]] = [] # 已处理并丰富化的设备数据列表
+        self.last_generated_addresses: List[Dict[str, Any]] = [] # 必须重置此属性
+        self.last_generated_io_count: int = 0 # 同时重置IO计数
+
+        # self.original_devices_data 也应该被清空，因为它代表了当前项目的数据
+        self.original_devices_data: List[Dict[str, Any]] = []
+
+
+        # 重置 SystemSetupManager 的状态，以确保 rack_count 等信息也恢复到初始
+        if hasattr(self, 'system_setup_manager') and self.system_setup_manager:
+            self.system_setup_manager.reset_state()
+
+        logger.info("IODataLoader: All project-specific data and configurations have been reset. SystemSetupManager also reset.")
 
 # --- 全局辅助函数 --- 
 

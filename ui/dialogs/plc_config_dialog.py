@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QTableWidgetItem, QHeaderView, QMessageBox, QAbstractItemView,
                            QTabWidget, QWidget, QGridLayout, QGroupBox)
 from PySide6.QtCore import Qt, QTimer
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import logging
 
 # 导入IODataLoader
@@ -17,14 +17,14 @@ class PLCConfigDialogUI:
     负责 PLCConfigDialog 的用户界面 (UI) 的创建、布局和基本更新。
     这个类不包含业务逻辑或复杂的事件处理。
     """
-    def __init__(self, dialog: QDialog):
+    def __init__(self, widget: QWidget):
         """
         构造函数。
 
         Args:
-            dialog (QDialog): 将要承载这些UI元素的主对话框实例。
+            widget (QWidget): 将要承载这些UI元素的主QWidget实例。
         """
-        self.dialog = dialog # 保存对主对话框的引用，以便在其上设置布局
+        self.widget = widget # 保存对主对话框的引用，以便在其上设置布局
 
         # --- UI元素定义 ---
         # 左侧面板元素
@@ -52,7 +52,7 @@ class PLCConfigDialogUI:
         
     def setup_ui(self):
         """创建并布局所有UI元素。"""
-        main_layout = QVBoxLayout(self.dialog) # 在主对话框上设置主布局
+        main_layout = QVBoxLayout(self.widget) # 在主对话框上设置主布局
         main_layout.setSpacing(10)
         
         # 模块配置区域 (上部主水平布局)
@@ -299,116 +299,446 @@ class PLCConfigDialogUI:
         if self.rack_combo and 0 <= index < self.rack_combo.count():
             self.rack_combo.setCurrentIndex(index)
 
-class PLCConfigDialog(QDialog):
-    """PLC配置对话框 - 支持多机架布局及不同系统类型（LK, LE_CPU）"""
+class PLCConfigEmbeddedWidget(QWidget):
+    """PLC配置嵌入式Widget - 支持多机架布局及不同系统类型（LK, LE_CPU）"""
+    # 定义一个信号，当配置应用时发出
+    # configuration_applied = Signal(bool) # True for success, False for failure
+
     def __init__(self, io_data_loader: IODataLoader, devices_data: List[Dict[str, Any]] = None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("PLC配置")
-        self.resize(1200, 700) # 根据需要调整大小
+        self.setMinimumSize(1000, 600)
 
         if not io_data_loader:
-            logger.error("PLCConfigDialog 初始化错误: IODataLoader 实例未提供。")
-            QMessageBox.critical(self, "严重错误", "IO数据服务未加载，对话框无法使用。")
-            # 在这种情况下，最好是禁用UI或立即关闭，但至少要阻止后续使用None对象
-            self.io_data_loader = None # 标记为None，后续逻辑应检查此项
-            # 为了简单起见，我们先假设它总是会被正确提供
-            # raise ValueError("IODataLoader instance is required.") 
-        else:
-            self.io_data_loader = io_data_loader # 使用传入的实例
+            logger.error("PLCConfigEmbeddedWidget 初始化错误: IODataLoader 实例未提供。")
+            # 在UI上显示错误信息
+            error_label = QLabel("错误：IO数据服务不可用，PLC配置功能无法加载。")
+            error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            error_label.setStyleSheet("color: red; font-weight: bold;")
+            main_layout = QVBoxLayout(self)
+            main_layout.addWidget(error_label)
+            self.io_data_loader = None # 标记为None，其他方法需要检查
+            self.view = None # 视图也无法初始化
+            return # 提前返回，不进行后续初始化
+        
+        self.io_data_loader = io_data_loader
+        self.view = PLCConfigDialogUI(self) # UI部分
+        self.view.setup_ui()
 
-        # 初始化UI管理器 (假设 PLCConfigDialogUI 类已正确定义)
-        self.view = PLCConfigDialogUI(self) # PLCConfigDialogUI 需要dialog实例
-        self.view.setup_ui() # 创建UI元素并布局
+        # 修改按钮文本和可见性
+        if self.view.ok_button:
+            self.view.ok_button.setText("应用配置")
+        if self.view.cancel_button:
+            self.view.cancel_button.setVisible(False) # 通常嵌入式Widget不需要取消按钮
 
-        # ... (其他初始化，如 self.current_config, self.all_available_modules 等)
-        self.current_config = {}  # {(rack_id, slot_id): model_name}
-        self.all_available_modules = [] # 用于穿梭框的完整模块池
-        self.current_modules_pool = []  # 当前穿梭框左侧可见的模块
-        self.configured_modules = {}    # {(rack_id, slot_id): module_details_dict}
-        self.module_type_filter = '全部' # 模块类型过滤器
-        self.next_module_id = 1 # 用于生成临时的模块唯一ID（如果需要）
-        # self.system_type 和 self.rack_info 会在 set_devices_data 中根据 io_data_loader 更新
-        self.system_type = "LK" # 默认或从 io_data_loader 初始化获取
-        self.rack_info = {}    # 将由 set_devices_data 或 _initialize_dialog_state 填充
+        # --- 状态变量初始化为默认/空状态 ---
+        self.current_config: Dict[Tuple[int, int], str] = {} 
+        self.all_available_modules: List[Dict[str, Any]] = [] 
+        self.current_modules_pool: List[Dict[str, Any]] = [] 
+        self.configured_modules: Dict[Tuple[int, int], Dict[str, Any]] = {} 
+        
+        self.module_type_filter: str = '全部' 
+        self.next_module_id_counter: int = 1 
+        
+        self.system_type: str = "LK" # 默认系统类型
+        self.rack_info: Dict[str, Any] = {'rack_count': 0, 'slots_per_rack': 0} # 默认空机架信息
 
         self.setup_connections() # 连接信号和槽
 
-        if devices_data is not None: # 如果构造时传入了设备数据
-            logger.info("传入了设备数据，正在处理...")
-            self.set_devices_data(devices_data) # 调用内部方法处理数据并刷新UI
+        if devices_data is not None: 
+            logger.info("PLCConfigEmbeddedWidget __init__: 传入了初始设备数据，将调用 set_devices_data 进行处理...")
+            self.set_devices_data(devices_data) # 这会处理所有数据加载和UI填充
         else:
-            # 如果没有传入初始设备数据，也可能需要初始化一些基于io_data_loader默认状态的UI
-            logger.info("未传入初始设备数据，将基于IODataLoader当前状态初始化对话框。")
-            if self.io_data_loader: # 确保 io_data_loader 有效
-                self._initialize_dialog_state() # 使用当前（可能为空的）io_data_loader状态初始化
-                self.load_modules() # 加载可用模块到穿梭框
-            else:
-                # 如果 io_data_loader 也无效，UI可能需要显示错误或禁用
-                self.view.show_no_data_in_module_table("错误：IO数据服务不可用。")
-                logger.warning("PLCConfigDialog: io_data_loader无效且无初始设备数据，对话框可能无法正常工作。")
+            logger.info("PLCConfigEmbeddedWidget __init__: 未传入初始设备数据。Widget将以空状态初始化。")
+            # 初始化UI到空/默认状态
+            if self.view and self.view.module_table:
+                self.view.show_no_data_in_module_table("请先选择一个项目/场站")
+            
+            # rack_info 当前是空的，create_rack_tabs 会据此创建UI
+            # (通常是1个默认的空机架tab)
+            self.create_rack_tabs() 
+            self.update_all_config_tables() # 更新右侧配置表以反映空状态
+            
+            # 确保 module_type_filter 与UI一致
+            if self.view and self.view.type_combo:
+                 self.module_type_filter = self.view.type_combo.currentText()
 
-    def setup_ui(self):
-        """主对话框的UI设置，现在主要委托给PLCConfigDialogUI实例。"""
-        # self.view.setup_ui() # 已在 __init__ 中调用
-        # 保留此空方法或移除它，取决于是否还有其他dialog级别的UI设置。
-        # 目前看来，所有UI创建都在PLCConfigDialogUI.setup_ui()中。
-        logger.info("PLCConfigDialog: UI setup delegated to PLCConfigDialogUI.")
+    def _ensure_module_unique_id(self, module: Dict[str, Any]) -> None:
+        """确保模块字典有一个 'unique_id'，如果没有则生成一个。"""
+        if 'unique_id' not in module or module['unique_id'] is None:
+            module['unique_id'] = f"mod_{self.next_module_id_counter}"
+            self.next_module_id_counter += 1
+            
+    def _load_all_available_modules_with_unique_ids(self, module_type_filter: str = '全部') -> None:
+        """
+        从 IODataLoader 加载指定类型的可用模块，确保每个模块都有 unique_id，
+        并更新 self.all_available_modules。
+        这个方法现在是填充 self.all_available_modules 的主要途径。
+        """
+        logger.debug(f"_load_all_available_modules_with_unique_ids called with filter: {module_type_filter}")
+        # 注意：io_data_loader.load_available_modules 现在只用于获取原始列表，
+        # unique_id 的赋予和 self.all_available_modules 的填充在此处完成。
+        raw_modules_from_loader, _ = self.io_data_loader.load_available_modules(module_type_filter) # 使用UI的过滤器
+        
+        temp_all_modules = []
+        for module in raw_modules_from_loader:
+            m_copy = module.copy()
+            self._ensure_module_unique_id(m_copy) # 确保 unique_id
+            temp_all_modules.append(m_copy)
+        
+        self.all_available_modules = temp_all_modules
+        logger.info(f"self.all_available_modules re-populated with {len(self.all_available_modules)} modules (filter: {module_type_filter}).")
+
+    def _rebuild_current_modules_pool(self) -> None:
+        """
+        根据 self.all_available_modules 和 self.configured_modules 重新计算
+        self.current_modules_pool (左侧穿梭框应显示的模块)。
+        """
+        configured_unique_ids = {
+            mod.get('unique_id') for mod in self.configured_modules.values() if mod and mod.get('unique_id') is not None
+        }
+        
+        # self.all_available_modules 此刻应该已经根据UI的类型过滤器刷新过了
+        # 如果没有，这里的过滤可能不完整。但 load_modules 方法处理了类型过滤问题。
+        # 实际上，all_available_modules 应该总是包含所有类型的模块（由 _load_all_available_modules_with_unique_ids('全部') 填充）
+        # 而类型过滤是在准备显示给UI时（populate_module_table之前）再应用。
+
+        # 我们假设 self.all_available_modules 是完整的未经过类型过滤的池
+        # 然后，基于当前的 self.module_type_filter，从 self.all_available_modules 构建 current_modules_pool
+
+        filtered_by_type_pool = []
+        if self.module_type_filter == '全部':
+            filtered_by_type_pool = self.all_available_modules[:] # 副本
+        else:
+            for module in self.all_available_modules:
+                # 使用模块字典中已有的 'type' 或 'io_type'
+                module_actual_type = module.get('type', module.get('io_type', ''))
+                if module_actual_type == self.module_type_filter:
+                    filtered_by_type_pool.append(module)
+        
+        self.current_modules_pool = [
+            m for m in filtered_by_type_pool if m.get('unique_id') not in configured_unique_ids
+        ]
+        logger.info(f"_rebuild_current_modules_pool: Rebuilt pool with {len(self.current_modules_pool)} modules for type '{self.module_type_filter}'.")
+
+    def _initialize_dialog_state(self):
+        """根据 io_data_loader 初始化配置状态 (current_config, configured_modules, system_type, rack_info)。"""
+        if not self.io_data_loader:
+            logger.warning("_initialize_dialog_state: io_data_loader is None.")
+            self.system_type = "LK"; self.rack_info = {}; self.current_config = {}; self.configured_modules = {}
+            return
+
+        loaded_plc_config = self.io_data_loader.get_current_plc_config()
+        self.current_config = loaded_plc_config.copy() if loaded_plc_config else {}
+        
+        self.configured_modules = {}
+        for (r_id, s_id), model_name in self.current_config.items():
+            # 从 self.all_available_modules (应已填充并含unique_id) 中查找模块详情
+            # 这是为了确保 configured_modules 中的模块对象与 all_available_modules 中的是"相同"的（具有相同的unique_id和属性）
+            found_module_detail = next((m.copy() for m in self.all_available_modules if m.get('model') == model_name), None)
+            
+            if found_module_detail:
+                # self._ensure_module_unique_id(found_module_detail) # all_available_modules 中的应该已经有了
+                self.configured_modules[(r_id, s_id)] = found_module_detail
+            else:
+                # 如果在 all_available_modules 中找不到 (理论上不应该，除非 all_available_modules 未正确加载所有可能的模块)
+                # 则回退到直接从 io_data_loader 获取，并确保 unique_id
+                logger.warning(f"Module {model_name} for config ({r_id},{s_id}) not found in preloaded all_available_modules. Fetching from loader.")
+                module_detail_from_loader = self.io_data_loader.get_module_by_model(model_name)
+                if module_detail_from_loader:
+                    m_copy = module_detail_from_loader.copy()
+                    self._ensure_module_unique_id(m_copy)
+                    self.configured_modules[(r_id, s_id)] = m_copy
+                else:
+                    logger.error(f"CRITICAL: Cannot find details for configured module {model_name} at ({r_id},{s_id}) from any source.")
+                    # 放入一个占位符，以避免后续代码出错，但标记问题
+                    self.configured_modules[(r_id, s_id)] = {'model': model_name, 'type': '未知_ERROR', 'unique_id': f"error_{r_id}_{s_id}"}
+
+
+        rack_info_from_loader = self.io_data_loader.get_rack_info()
+        self.system_type = rack_info_from_loader.get('system_type', "LK")
+        self.rack_info = rack_info_from_loader
+        logger.info(f"PLCConfigEmbeddedWidget state initialized: System type '{self.system_type}', {len(self.current_config)} configured items.")
+        
+    def set_devices_data(self, devices_data: List[Dict[str, Any]]):
+        if not self.io_data_loader:
+            logger.error("PLCConfigEmbeddedWidget.set_devices_data: IODataLoader is not initialized.")
+            return
+
+        logger.info(f"set_devices_data called with {len(devices_data)} devices.")
+        self.next_module_id_counter = 1 # 重置 unique_id 计数器
+        
+        self.io_data_loader.set_devices_data(devices_data) # Loader 更新其内部状态 (包括 system_type, rack_info)
+        
+        # 1. 基于新的设备数据（可能影响了io_data_loader中可用模块的来源）重新加载完整的模块池
+        self._load_all_available_modules_with_unique_ids('全部') # 总是加载所有类型以填充 all_available_modules
+
+        # 2. 同步配置状态 (current_config, configured_modules)
+        self._initialize_dialog_state() 
+        
+        # 3. 根据当前的UI过滤器和已配置模块，重建左侧穿梭框的内容
+        #    load_modules 方法现在负责这个
+        self.load_modules() # 这会使用当前的 self.module_type_filter
+
+        # 4. 更新UI的静态和动态部分
+        self.create_rack_tabs() 
+        self.update_all_config_tables() 
+
+        logger.info(f"set_devices_data completed. UI refreshed. System type: {self.system_type}, Racks: {self.view.rack_tabs.count() if self.view.rack_tabs else 'N/A'}")
+
+    def load_modules(self):
+        """
+        加载模块到左侧穿梭框。
+        它会读取当前的UI类型过滤器，然后调用 _rebuild_current_modules_pool 来准备数据，
+        最后更新UI表格。
+        前提: 
+        - self.all_available_modules 已被 _load_all_available_modules_with_unique_ids('全部') 正确填充。
+        - self.configured_modules 已被 _initialize_dialog_state 或 add/remove 操作正确更新。
+        """
+        try:
+            if not self.view.module_table or not self.view.type_combo:
+                logger.warning("load_modules: UI elements (module_table or type_combo) not ready.")
+                return
+
+            # 如果没有有效的机架信息（通常意味着没有加载项目数据），则不加载模块
+            if self.rack_info.get('rack_count', 0) == 0 and not self.configured_modules: # 增加条件：也没有已配置模块
+                logger.info("load_modules: No rack data or configured modules, showing 'select project' message.")
+                self.view.show_no_data_in_module_table("请先选择一个项目并加载设备数据")
+                self.current_modules_pool = [] # 确保池是空的
+                return
+
+            # 1. 获取UI当前的类型过滤器，并更新 self.module_type_filter
+            self.module_type_filter = self.view.type_combo.currentText() if self.view.type_combo else '全部'
+            logger.debug(f"load_modules called. Current UI filter: '{self.module_type_filter}'")
+
+            # 步骤1: 确保 self.all_available_modules 是最新的（基于当前 io_data_loader 状态）
+            # 并且包含所有类型的模块，unique_id已处理。
+            # 注意：_load_all_available_modules_with_unique_ids 内部现在也接受一个过滤器，
+            # 但为了保持 all_available_modules 的完整性，我们可能应该总是加载'全部'，
+            # 然后在 _rebuild_current_modules_pool 中应用 self.module_type_filter。
+            # 或者，_load_all_available_modules_with_unique_ids 直接使用 self.module_type_filter。
+            # 为了简化，我们假设 _load_all_available_modules_with_unique_ids 已经填充了基于'全部'类型的模块池。
+            # 如果不是，这里需要先调用 _load_all_available_modules_with_unique_ids('全部')
+            if not self.all_available_modules: # 仅在非常初次或被清空时
+                 self._load_all_available_modules_with_unique_ids('全部')
+
+
+            # 步骤2: 根据已配置模块和当前UI的类型过滤器，重建 current_modules_pool
+            self._rebuild_current_modules_pool()
+            
+            # 步骤3: 更新UI表格
+            if self.current_modules_pool:
+                self.view.populate_module_table(self.current_modules_pool)
+            else:
+                self.view.show_no_data_in_module_table(f"无匹配 '{self.module_type_filter}' 类型模块或已全部配置")
+            
+            logger.info(f"load_modules: Displaying {len(self.current_modules_pool)} modules in UI for filter '{self.module_type_filter}'.")
+            
+        except Exception as e:
+            logger.error(f"加载模块数据失败 (load_modules): {e}", exc_info=True)
+            QMessageBox.critical(self, "错误", f"加载模块数据失败: {str(e)}")
+
+    def add_module(self):
+        if not self.view.module_table or not self.view.rack_tabs: return
+
+        selected_rows = self.view.module_table.selectedIndexes()
+        if not selected_rows:
+            QMessageBox.warning(self, "提示", "请先选择要添加的模块"); return
+        
+        row = selected_rows[0].row()
+        if self.view.module_table.rowSpan(row, 0) > 1: 
+            QMessageBox.warning(self, "提示", "无可用模块数据"); return
+
+        module_unique_id_from_table = self.view.module_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        
+        selected_module_obj = next((m.copy() for m in self.current_modules_pool if m.get('unique_id') == module_unique_id_from_table), None)
+        
+        if not selected_module_obj:
+            model_text = self.view.module_table.item(row, 1).text() if self.view.module_table.item(row, 1) else "N/A"
+            logger.error(f"Cannot find module with unique_id {module_unique_id_from_table} (model: {model_text}) in current_modules_pool.")
+            QMessageBox.warning(self, "错误", "无法找到所选模块的内部数据，请刷新或检查日志。")
+            return
+            
+        model = selected_module_obj['model']
+        module_type = selected_module_obj.get('type', selected_module_obj.get('io_type', '未录入'))
+        
+        current_rack_id = self.view.rack_tabs.currentIndex() + 1
+        # ... (rest of add_module logic for placement validation) ...
+        # ... ensure self.io_data_loader.validate_module_placement is called ...
+        validation_result = self.io_data_loader.validate_module_placement(current_rack_id, -1, model) # Placeholder slot_id for now
+
+        # Simplified placement logic for this example, actual slot finding is complex
+        assigned_slot_id = None
+        slots_per_rack = self.rack_info.get('slots_per_rack', 11)
+        start_slot = 2 if self.system_type == "LK" else 1
+        if self.system_type == "LE_CPU" and module_type == "CPU": start_slot = 1 # CPU must be in slot 1 for LE
+
+        for slot_id_candidate in range(start_slot, slots_per_rack + 1):
+            if self.system_type == "LE_CPU" and module_type == "CPU" and slot_id_candidate != 1: continue # CPU only in slot 1
+            if self.system_type == "LK" and slot_id_candidate == 1 and module_type != "DP": continue # Slot 1 for DP in LK
+            if self.system_type == "LK" and module_type == "DP" and slot_id_candidate != 1: continue # DP only in slot 1 for LK
+
+            temp_validation = self.io_data_loader.validate_module_placement(current_rack_id, slot_id_candidate, model)
+            if temp_validation['valid'] and (current_rack_id, slot_id_candidate) not in self.current_config:
+                assigned_slot_id = slot_id_candidate
+                break
+        
+        if assigned_slot_id is None:
+            QMessageBox.warning(self, "提示", f"机架 {current_rack_id} 没有可用的有效槽位放置模块 {model}")
+            return
+
+        self.current_config[(current_rack_id, assigned_slot_id)] = model
+        self.configured_modules[(current_rack_id, assigned_slot_id)] = selected_module_obj # Store the object with unique_id
+        
+        logger.info(f"Module {model} ({module_unique_id_from_table}) added to rack {current_rack_id}, slot {assigned_slot_id}.")
+
+        # Refresh pools and UI
+        self._rebuild_current_modules_pool()
+        self.view.populate_module_table(self.current_modules_pool)
+        self.update_current_config_table()
+
+    def remove_module(self):
+        if not self.view.rack_tabs: return
+        current_rack_id = self.view.rack_tabs.currentIndex() + 1
+        rack_page_widget = self.view.rack_tabs.currentWidget()
+        if not rack_page_widget: return
+        config_table = rack_page_widget.findChild(QTableWidget, f"rack_table_{current_rack_id}")
+        if not config_table: return
+        
+        selected_rows = config_table.selectedIndexes()
+        if not selected_rows:
+            QMessageBox.warning(self, "提示", "请先选择要移除的模块"); return
+        
+        row = selected_rows[0].row()
+        slot_text_item = config_table.item(row, 0)
+        model_text_item = config_table.item(row, 1) # For logging/finding unique_id
+        if not slot_text_item or not slot_text_item.text().isdigit() or not model_text_item: return
+        
+        slot_id = int(slot_text_item.text())
+        # model_name_in_table = model_text_item.text() # Not directly used to find, use configured_modules
+
+        # ... (LK slot 1 check remains) ...
+        if self.system_type == "LK" and slot_id == 1:
+             QMessageBox.warning(self, "提示", "LK系统槽位1的DP模块是预设的，不能移除。")
+             return
+        
+        module_to_remove_key = (current_rack_id, slot_id)
+        removed_module_obj = self.configured_modules.pop(module_to_remove_key, None)
+        if removed_module_obj:
+            del self.current_config[module_to_remove_key]
+            logger.info(f"Module {removed_module_obj.get('model')} (unique_id: {removed_module_obj.get('unique_id')}) removed from config.")
+            # No need to explicitly add back to self.current_modules_pool here,
+            # _rebuild_current_modules_pool will correctly include it when called.
+        else:
+            logger.warning(f"Attempted to remove module from ({current_rack_id},{slot_id}), but it was not found in configured_modules.")
+            # Fallback: try to remove from current_config if it's somehow there without being in configured_modules
+            if module_to_remove_key in self.current_config:
+                del self.current_config[module_to_remove_key]
+
+
+        # Refresh pools and UI
+        self._rebuild_current_modules_pool()
+        self.view.populate_module_table(self.current_modules_pool)
+        self.update_current_config_table()
 
     def create_rack_tabs(self):
         """创建机架选项卡界面，根据系统类型调整槽位1的说明"""
-        # self.rack_tabs.clear() # 改为 self.view.rack_tabs.clear() 或 self.view.clear_rack_tabs()
-        # self.rack_combo.clear() # 改为 self.view.rack_combo.clear() 或封装方法
-        self.view.clear_rack_tabs()
-        self.view.update_rack_combo(0) # 清空后先用0更新，后续再根据rack_count填充
-        
-        rack_info = self.io_data_loader.get_rack_info()
-        rack_count = rack_info.get('rack_count', 0)
-        
-        logger.info(f"创建机架选项卡: 系统类型={self.system_type}, 检测到 {rack_count} 个机架")
-        
-        actual_rack_count_for_combo = rack_count if rack_count > 0 else 1
-        self.view.update_rack_combo(actual_rack_count_for_combo)
-        
-        if rack_count <= 0: rack_count = 1
-        
-        for rack_id_iter in range(1, rack_count + 1):
-            slots_per_rack_display = rack_info.get('slots_per_rack')
-            if slots_per_rack_display is None:
-                slots_per_rack_display = 11 
-                logger.warning("create_rack_tabs: rack_info did not contain 'slots_per_rack', using fallback 11.")
-            
-            # 创建新的tab页面和表格
-            page_widget = self.view.create_rack_tab_page(rack_id_iter, slots_per_rack_display, self.system_type)
-            self.view.add_rack_tab(page_widget, f"机架 {rack_id_iter}")
-            logger.debug(f"创建机架 {rack_id_iter} 选项卡，槽位数: {slots_per_rack_display}, 系统类型: {self.system_type}")
+        if not self.io_data_loader or not self.view.rack_tabs or not self.view.rack_combo:
+            logger.warning("create_rack_tabs: UI elements or io_data_loader not ready.")
+            return
 
-            # 在这里为新创建的 config_table 连接双击信号
+        self.view.clear_rack_tabs()
+        self.view.update_rack_combo(0) # 先清空并用0更新组合框
+        
+        # self.rack_info 应该在 _initialize_dialog_state 中被填充
+        rack_count = self.rack_info.get('rack_count', 0)
+        slots_per_rack = self.rack_info.get('slots_per_rack', 11) # 默认11
+        
+        logger.info(f"Creating rack tabs: System type='{self.system_type}', Rack count={rack_count}, Slots/Rack={slots_per_rack}")
+        
+        # 先断开旧的信号连接，防止重复连接或连接到旧的tab实例
+        try:
+            self.view.rack_tabs.currentChanged.disconnect(self.on_rack_tab_changed)
+        except RuntimeError: # 'disconnect' may raise RuntimeError if not connected
+            pass
+        try:
+            self.view.rack_combo.currentIndexChanged.disconnect(self.on_rack_combo_changed)
+        except RuntimeError:
+            pass
+
+        actual_rack_count_for_combo = rack_count # 初始化 actual_rack_count_for_combo
+
+        if rack_count == 0:
+            logger.info("create_rack_tabs: rack_count is 0. No rack tabs will be created. Displaying placeholder.")
+            # 可选：在右侧面板显示一个提示，如果PLCConfigDialogUI支持
+            # self.view.show_no_rack_data_message("无PLC机架配置信息，请选择项目。")
+            # 确保 rack_combo 也反映无机架状态
+            self.view.update_rack_combo(0) # 传递0，UI类内部可能显示 "无机架" 或禁用
+            actual_rack_count_for_combo = 0 # 当 rack_count 为 0 时，也更新它
+            # 清除可能存在的旧的右侧表格双击连接 (虽然 clear_rack_tabs 应该处理了tab widget)
+            # _initialize_slot1_for_lk_system_if_needed 不应被调用
+            # update_all_config_tables 也不应尝试更新不存在的表
+        else:
+            # actual_rack_count_for_combo = rack_count # 这行现在移到前面了
+            pass # 如果 rack_count > 0, actual_rack_count_for_combo 已被正确设置为 rack_count
+
+        # 只有当 rack_count 大于 0 时，才用 actual_rack_count_for_combo 更新，因为等于0时上面已经用0更新了
+        if rack_count > 0:
+            self.view.update_rack_combo(actual_rack_count_for_combo)
+        
+        display_rack_count = rack_count
+
+        for i in range(1, display_rack_count + 1):
+            rack_id_iter = i
+            page_widget = self.view.create_rack_tab_page(rack_id_iter, slots_per_rack, self.system_type)
+            self.view.add_rack_tab(page_widget, f"机架 {rack_id_iter}")
+
+            # 查找 config_table_in_page 和连接信号的部分也移到循环内
             config_table_in_page = page_widget.findChild(QTableWidget, f"rack_table_{rack_id_iter}")
             if config_table_in_page:
+                try: # 先尝试断开，以防万一在重建tab时旧连接残留
+                    config_table_in_page.itemDoubleClicked.disconnect(self._handle_right_table_double_click)
+                except RuntimeError: pass # 如果未连接，则忽略错误
                 config_table_in_page.itemDoubleClicked.connect(self._handle_right_table_double_click)
-                logger.debug(f"已为机架 {rack_id_iter} 的配置表连接 itemDoubleClicked 信号")
+                logger.debug(f"Connected itemDoubleClicked for rack {rack_id_iter}'s config table.")
             else:
-                logger.warning(f"在机架 {rack_id_iter} 的tab页中未找到名为 rack_table_{rack_id_iter} 的配置表，无法连接双击信号")
+                logger.warning(f"Config table not found in new tab page for rack {rack_id_iter}.")
+            
+        # LK系统预设DP模块 (这部分逻辑保持在循环外部，因为它会迭代所有已创建的机架)
+        # 但它依赖于 self.rack_info.get('rack_count', 0) > 0
+        # _initialize_slot1_for_lk_system_if_needed 内部有自己的 rack_count 检查，所以这里可以简化
+        if self.system_type == "LK" and rack_count > 0: # 显式检查 rack_count > 0
+            self._initialize_slot1_for_lk_system_if_needed()
         
-        if rack_count > 0:
-            self.initialize_slot1_conditionally()
-            self.update_all_config_tables()
-            
-        # 连接信号，注意 rack_tabs 和 rack_combo 现在是 self.view 的属性
-        if self.view.rack_tabs: 
+        # 重新连接 rack_tabs 和 rack_combo 的信号 (仅当有tab时)
+        if self.view.rack_tabs and self.view.rack_tabs.count() > 0: 
             self.view.rack_tabs.currentChanged.connect(self.on_rack_tab_changed)
-        if self.view.rack_combo:
-            self.view.rack_combo.currentIndexChanged.connect(self.on_rack_combo_changed)
-        logger.info(f"机架选项卡创建完成，共 {self.view.rack_tabs.count() if self.view.rack_tabs else 0} 个选项卡，系统类型 {self.system_type}")
-
-    def initialize_slot1_conditionally(self):
-        """根据系统类型初始化槽位1：LK系统预设DP，LE_CPU系统槽位1由用户配置"""
-        if self.system_type == "LK":
-            logger.info("LK系统：尝试为所有机架的槽位1预设DP模块...")
-            rack_info = self.io_data_loader.get_rack_info()
-            rack_count = rack_info.get('rack_count', 0)
+            if self.view.rack_combo: # rack_combo 也只在有 rack 时才有意义
+                self.view.rack_combo.currentIndexChanged.connect(self.on_rack_combo_changed)
             
-            for rack_id in range(1, rack_count + 1):
+        logger.info(f"Rack tabs creation/update complete. Total tabs: {self.view.rack_tabs.count() if self.view.rack_tabs else 0}. System: '{self.system_type}'.")
+
+    def _initialize_slot1_for_lk_system_if_needed(self):
+        """
+        如果当前是LK系统，则为每个机架的槽位1预设DP模块。
+        这应该在 self.current_config 和 self.configured_modules 初始化之后，
+        但在UI完全刷新之前调用。
+        它会修改 self.current_config 和 self.configured_modules。
+        前提: rack_count > 0 已经在外部检查。
+        """
+        if self.system_type != "LK" or not self.io_data_loader:
+            return
+        
+        # 从 self.rack_info 获取真实的机架数量，如果为0则不应执行
+        rack_count = self.rack_info.get('rack_count', 0)
+        if rack_count == 0:
+            logger.info("_initialize_slot1_for_lk_system_if_needed: rack_count is 0, skipping DP preset.")
+            return
+
+        logger.info("LK System: Attempting to preset DP module for slot 1 in all racks if not already set by config.")
+        rack_info = self.io_data_loader.get_rack_info()
+        rack_count = rack_info.get('rack_count', 0)
+            
+        for rack_id in range(1, rack_count + 1):
                 dp_modules, _ = self.io_data_loader.load_available_modules('DP') 
                 dp_model_to_set = "PROFIBUS-DP" 
                 all_predefined_modules = self.io_data_loader.module_info_provider.get_all_predefined_modules()
@@ -420,19 +750,15 @@ class PLCConfigDialog(QDialog):
                 if not dp_module_obj: 
                     dp_module_obj = {'model': dp_model_to_set, 'type': 'DP', 'channels': 0, 'description': 'DP通讯模块 (自动配置)'}
                 if 'unique_id' not in dp_module_obj:
-                    dp_module_obj['unique_id'] = self.next_module_id
-                    self.next_module_id +=1
+                    dp_module_obj['unique_id'] = self.next_module_id_counter
+                self.next_module_id_counter +=1
                 self.current_config[(rack_id, 1)] = dp_model_to_set
                 self.configured_modules[(rack_id, 1)] = dp_module_obj
                 self.current_modules_pool = [
                     m for m in self.current_modules_pool 
                     if not (m.get('model') == dp_model_to_set and m.get('unique_id') == dp_module_obj.get('unique_id'))
                 ]
-            self.load_modules() 
-
-        elif self.system_type == "LE_CPU":
-            logger.info("LE_CPU系统：槽位1由用户从穿梭框选择LE5118 CPU，不在此处预设。")
-        self.update_all_config_tables()
+                self.load_modules() 
 
     def on_rack_tab_changed(self, index):
         if self.view.rack_combo: # 检查UI元素是否存在
@@ -449,16 +775,15 @@ class PLCConfigDialog(QDialog):
             self.view.add_button.clicked.connect(self.add_module)
         if self.view.remove_button:
             self.view.remove_button.clicked.connect(self.remove_module)
-        if self.view.ok_button:
-            self.view.ok_button.clicked.connect(self.accept)
-        if self.view.cancel_button:
-            self.view.cancel_button.clicked.connect(self.reject)
-        # rack_tabs 和 rack_combo 的 currentChanged 连接已移至 create_rack_tabs 内部，
-        # 因为它们是在那里动态创建的。
+        if self.view.ok_button: # "应用配置" 按钮
+            self.view.ok_button.clicked.connect(self.apply_configuration) # << 连接到新方法
+        if self.view.cancel_button and self.view.cancel_button.isVisible(): # 如果取消按钮可见
+            # self.view.cancel_button.clicked.connect(self.reload_configuration_from_loader) # << 连接到新方法
+            pass # 暂时不连接，因为取消按钮被隐藏了
 
-        # 为左侧可用模块表添加双击事件
         if self.view.module_table:
             self.view.module_table.itemDoubleClicked.connect(self._handle_left_table_double_click)
+        # itemDoubleClicked for right tables is connected within create_rack_tabs
 
     def _handle_left_table_double_click(self, item: QTableWidgetItem):
         """处理左侧可用模块列表双击事件，相当于点击添加按钮。"""
@@ -491,180 +816,6 @@ class PLCConfigDialog(QDialog):
             return
         source_table.setCurrentCell(current_row, 0) 
         self.remove_module() 
-
-    def load_modules(self):
-        try:
-            # self.module_table.setRowCount(0) # 改为 self.view.populate_module_table([]) 或类似操作开始
-            if not self.view.module_table: return # UI未就绪
-            
-            module_type_filter = self.view.type_combo.currentText() if self.view.type_combo else '全部'
-            self.module_type_filter = module_type_filter
-            
-            raw_modules, has_data = self.io_data_loader.load_available_modules(module_type_filter)
-            
-            if not self.all_available_modules: 
-                processed_raw_modules = []
-                for module in raw_modules:
-                    if 'unique_id' not in module: 
-                        module['unique_id'] = self.next_module_id
-                        self.next_module_id += 1
-                    processed_raw_modules.append(module)
-                self.all_available_modules = processed_raw_modules.copy()
-                self.current_modules_pool = processed_raw_modules.copy() 
-            else: 
-                configured_unique_ids = [
-                    mod.get('unique_id') for mod in self.configured_modules.values() if mod.get('unique_id') is not None
-                ]
-                temp_pool = [m for m in self.all_available_modules if m.get('unique_id') not in configured_unique_ids]
-                if module_type_filter != '全部':
-                    self.current_modules_pool = [m for m in temp_pool if m.get('type', m.get('io_type', '')) == module_type_filter]
-                else:
-                    self.current_modules_pool = temp_pool
-
-            available_modules_to_display = self.current_modules_pool
-            if available_modules_to_display:
-                self.view.populate_module_table(available_modules_to_display)
-            else:
-                self.view.show_no_data_in_module_table("无匹配的可用模块或所有模块已配置")
-            
-            logger.info(f"已加载 {len(available_modules_to_display)} 个可用模块（类型：{module_type_filter}，系统：{self.system_type}) 到穿梭框")
-            
-        except Exception as e:
-            logger.error(f"加载模块数据失败: {e}", exc_info=True)
-            QMessageBox.critical(self, "错误", f"加载模块数据失败: {str(e)}")
-
-    def add_module(self):
-        if not self.view.module_table or not self.view.rack_tabs: return
-
-        selected_rows = self.view.module_table.selectedIndexes()
-        if not selected_rows:
-            QMessageBox.warning(self, "提示", "请先选择要添加的模块"); return
-        
-        row = selected_rows[0].row()
-        if self.view.module_table.rowSpan(row, 0) > 1: 
-            QMessageBox.warning(self, "提示", "无可用模块数据"); return
-
-        try:
-            id_item = self.view.module_table.item(row, 0)
-            module_unique_id = id_item.data(Qt.ItemDataRole.UserRole) 
-            selected_module_from_pool = None
-            for module in self.current_modules_pool: 
-                if module.get('unique_id') == module_unique_id:
-                    selected_module_from_pool = module.copy()
-                    break
-            if not selected_module_from_pool:
-                model_text = self.view.module_table.item(row, 1).text()
-                logger.error(f"无法在current_modules_pool中找到unique_id {module_unique_id} (型号: {model_text}) 的模块")
-                QMessageBox.warning(self, "错误", "无法找到所选模块的内部数据，请重试或检查日志。")
-                return
-            model = selected_module_from_pool['model']
-            module_type = selected_module_from_pool.get('type', selected_module_from_pool.get('io_type', '未录入'))
-        except Exception as e:
-            logger.error(f"获取选中模块数据时出错: {e}", exc_info=True)
-            QMessageBox.warning(self, "提示", "无法获取选中模块的数据")
-            return
-        
-        current_rack_id = self.view.rack_tabs.currentIndex() + 1
-        actual_system_type_for_rack = self.system_type
-        rack_info = self.io_data_loader.get_rack_info()
-        slots_per_rack = rack_info.get('slots_per_rack')
-        if slots_per_rack is None:
-            logger.warning(f"In add_module: rack_info did not contain 'slots_per_rack' for rack {current_rack_id}, using a fallback value (11).")
-            slots_per_rack = 11 
-        
-        assigned_slot_id = None
-        is_targeting_slot1 = False
-        if (actual_system_type_for_rack == "LE_CPU" and module_type == "CPU") or \
-           (actual_system_type_for_rack == "LK" and module_type == "DP"):
-            if (current_rack_id, 1) not in self.current_config:
-                is_targeting_slot1 = True
-        
-        if is_targeting_slot1:
-            validation_slot1 = self.io_data_loader.validate_module_placement(current_rack_id, 1, model)
-            if validation_slot1['valid']:
-                assigned_slot_id = 1
-            else:
-                QMessageBox.warning(self, "放置错误", validation_slot1['error'])
-                return
-        else: 
-            start_slot_for_others = 1
-            if actual_system_type_for_rack == "LK": start_slot_for_others = 2
-            # Special handling for LE_CPU if slot 1 is taken by CPU
-            if actual_system_type_for_rack == "LE_CPU" and (current_rack_id,1) in self.current_config and self.current_config[(current_rack_id,1)].startswith("LE5118") : # More robust check for CPU in slot 1
-                 start_slot_for_others = 2
-
-            if actual_system_type_for_rack == "LE_CPU" and module_type == "CPU" and assigned_slot_id != 1: # CPU for LE must be slot 1
-                 QMessageBox.warning(self, "放置错误", f"{model} (CPU) 只能放置在LE系统的槽位1。")
-                 return
-
-            for slot_id_candidate in range(start_slot_for_others, slots_per_rack + 1):
-                if slot_id_candidate == 1 and actual_system_type_for_rack == "LK": continue 
-                if slot_id_candidate == 1 and actual_system_type_for_rack == "LE_CPU" and module_type != "CPU": continue
-                
-                if (current_rack_id, slot_id_candidate) not in self.current_config:
-                    validation_candidate = self.io_data_loader.validate_module_placement(current_rack_id, slot_id_candidate, model)
-                    if validation_candidate['valid']:
-                        assigned_slot_id = slot_id_candidate
-                        break
-                    else: 
-                        logger.debug(f"槽位 {slot_id_candidate} 对模块 {model} 验证失败: {validation_candidate['error']}")
-        
-        if assigned_slot_id is None:
-            QMessageBox.warning(self, "提示", f"机架 {current_rack_id} 没有可用的有效槽位放置模块 {model}")
-            return
-
-        self.current_config[(current_rack_id, assigned_slot_id)] = model
-        self.configured_modules[(current_rack_id, assigned_slot_id)] = selected_module_from_pool
-        logger.info(f"模块 {model} ({module_type}) 已添加到机架 {current_rack_id} 槽位 {assigned_slot_id} (系统: {actual_system_type_for_rack})")
-
-        self.current_modules_pool = [
-            m for m in self.current_modules_pool if m.get('unique_id') != selected_module_from_pool.get('unique_id')
-        ]
-        self.update_current_config_table()
-        self.load_modules()
-
-    def remove_module(self):
-        if not self.view.rack_tabs: return
-        current_rack_id = self.view.rack_tabs.currentIndex() + 1
-        rack_page_widget = self.view.rack_tabs.currentWidget()
-        if not rack_page_widget: return
-        config_table = rack_page_widget.findChild(QTableWidget, f"rack_table_{current_rack_id}")
-        if not config_table: return
-        
-        selected_rows = config_table.selectedIndexes()
-        if not selected_rows:
-            QMessageBox.warning(self, "提示", "请先选择要移除的模块"); return
-        
-        row = selected_rows[0].row()
-        slot_text_item = config_table.item(row, 0)
-        if not slot_text_item or not slot_text_item.text().isdigit(): return
-        slot_id = int(slot_text_item.text())
-
-        actual_system_type_for_rack = self.system_type
-        if slot_id == 1:
-            if actual_system_type_for_rack == "LK":
-                QMessageBox.warning(self, "提示", "LK系统槽位1的DP模块是预设的，不能移除。")
-            return
-        elif actual_system_type_for_rack == "LE_CPU":
-                logger.info(f"允许从LE_CPU系统槽位1移除模块 (后续accept时会校验CPU是否存在)")
-        
-        module_to_remove_key = (current_rack_id, slot_id)
-        if module_to_remove_key in self.current_config:
-            removed_module_obj = self.configured_modules.pop(module_to_remove_key, None)
-            del self.current_config[module_to_remove_key]
-            if removed_module_obj:
-                is_in_pool_already = any(m.get('unique_id') == removed_module_obj.get('unique_id') for m in self.current_modules_pool)
-                if not is_in_pool_already:
-                    if self.module_type_filter == '全部' or \
-                       removed_module_obj.get('type', removed_module_obj.get('io_type', '')) == self.module_type_filter:
-                        self.current_modules_pool.append(removed_module_obj)
-                logger.info(f"模块 {removed_module_obj.get('model')} 已从配置中移除，并尝试返回模块池")
-            else:
-                logger.warning(f"尝试移除的模块 {(current_rack_id, slot_id)} 不在 configured_modules 中")
-            self.update_current_config_table()
-            self.load_modules()
-        else:
-            logger.warning(f"尝试移除的模块 {(current_rack_id, slot_id)} 不在 current_config 中")
 
     def update_all_config_tables(self):
         if not self.view.rack_tabs: return
@@ -738,42 +889,69 @@ class PLCConfigDialog(QDialog):
             })
         return config
     
-    def accept(self):
+    def apply_configuration(self):
         final_config_to_check = self.get_current_configuration()
         config_dict_for_validation = {}
         for item in final_config_to_check:
             config_dict_for_validation[(item["rack_id"], item["slot_id"])] = item["model"]
         try:
             if self.io_data_loader.save_configuration(config_dict_for_validation):
-                logger.info(f"成功保存PLC配置: {len(config_dict_for_validation)} 个模块")
-                super().accept()
+                logger.info(f"成功应用PLC配置: {len(config_dict_for_validation)} 个模块")
+                QMessageBox.information(self, "配置已应用", "PLC模块配置已成功应用到内部数据模型。")
+                # self.configuration_applied.emit(True) # 如果需要信号通知父级
             else:
-                QMessageBox.warning(self, "警告", "保存配置失败，请检查日志或控制台输出获取详细错误信息。配置可能不合法。")
+                QMessageBox.warning(self, "警告", "应用配置失败，请检查日志或控制台输出获取详细错误信息。配置可能不合法。")
+                # self.configuration_applied.emit(False)
         except Exception as e:
-            logger.error(f"保存配置时出错: {e}", exc_info=True)
-            QMessageBox.critical(self, "错误", f"保存配置时出错: {str(e)}")
+            logger.error(f"应用配置时出错: {e}", exc_info=True)
+            QMessageBox.critical(self, "错误", f"应用配置时出错: {str(e)}")
+            # self.configuration_applied.emit(False)
 
-    def set_devices_data(self, devices_data: List[Dict[str, Any]]):
-        if not devices_data:
-            logger.warning("传入的设备数据为空")
-            rack_info_empty = self.io_data_loader.get_rack_info()
-            self.system_type = rack_info_empty.get('system_type', "LK")
-            logger.info(f"设备数据为空时，系统类型: {self.system_type}")
-            self.create_rack_tabs()
-            self.load_modules()
-            return
+    def reset_to_initial_state(self):
+        """将PLC配置区域重置到初始的、未加载项目数据的状态。"""
+        logger.info("PLCConfigEmbeddedWidget: Attempting to reset to initial state.")
+        try:
+            # 1. 清空核心数据结构
+            self.current_config = {}
+            self.all_available_modules = []
+            self.current_modules_pool = []
+            self.configured_modules = {}
+            self.next_module_id_counter = 1 
+
+            # 2. 重置系统和机架信息
+            self.system_type = "LK" 
+            self.rack_info = {'rack_count': 0, 'slots_per_rack': 0}
             
-        logger.info(f"设置设备数据: {len(devices_data)} 个设备")
-        self.all_available_modules = []
-        self.current_modules_pool = []
-        self.configured_modules = {}
-        self.current_config = {} 
-        self.next_module_id = 1
-        self.io_data_loader.set_devices_data(devices_data)
-        rack_info_updated = self.io_data_loader.get_rack_info()
-        self.system_type = rack_info_updated.get('system_type', "LK")
-        logger.info(f"处理设备数据后，系统类型更新为: {self.system_type}")
-        self.create_rack_tabs()
-        self.load_modules()
-        logger.info(f"设备数据设置完成，UI已刷新，当前系统类型: {self.system_type}, 机架数: {self.view.rack_tabs.count() if self.view.rack_tabs else 0}")
+            # 3. 通知 IODataLoader 清除
+            if self.io_data_loader:
+                if hasattr(self.io_data_loader, 'clear_current_project_configuration'):
+                    self.io_data_loader.clear_current_project_configuration()
+                    logger.info("PLCConfigEmbeddedWidget: Called io_data_loader.clear_current_project_configuration()")
+                else:
+                    logger.warning("PLCConfigEmbeddedWidget: IODataLoader lacks 'clear_current_project_configuration' method.")
+                    if hasattr(self.io_data_loader, 'current_plc_config'): self.io_data_loader.current_plc_config = {}
+                    if hasattr(self.io_data_loader, 'system_info'): self.io_data_loader.system_info = {'system_type': 'LK', 'rack_count': 0, 'slots_per_rack': 11}
+
+            # 4. 更新UI显示
+            if self.view:
+                if self.view.module_table:
+                    self.view.show_no_data_in_module_table("请先选择一个项目并加载设备数据")
+                
+                if self.view.type_combo:
+                    self.view.type_combo.setCurrentIndex(0) 
+                    self.module_type_filter = self.view.type_combo.currentText()
+
+                self.create_rack_tabs()
+                self.update_all_config_tables()
+            
+            logger.info("PLCConfigEmbeddedWidget: Successfully reset to initial state.")
+
+        except AttributeError as e_attr:
+            logger.error(f"PLCConfigEmbeddedWidget.reset_to_initial_state: AttributeError occurred INTERNALLY: {e_attr}", exc_info=True)
+            # 重新引发异常，以便外部（如MainWindow）仍然可以按预期捕获它，如果需要的话
+            # 或者在这里处理，例如显示一个特定的错误消息给用户
+            raise # Re-raise the caught AttributeError to see if MainWindow still catches it
+        except Exception as e_general:
+            logger.error(f"PLCConfigEmbeddedWidget.reset_to_initial_state: A general error occurred: {e_general}", exc_info=True)
+            raise # Re-raise for general errors too
 

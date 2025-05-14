@@ -1,7 +1,8 @@
 """主窗口UI模块"""
 
 import logging
-from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QMessageBox, QDialog, QFileDialog, QStatusBar
+from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QMessageBox, QDialog, QFileDialog, QStatusBar, QTabWidget, QPushButton, QLabel
+from PySide6.QtCore import Qt
 from typing import List, Dict, Any, Optional, Tuple
 import pandas as pd # 确保导入 pandas
 import os
@@ -46,7 +47,7 @@ from ui.components.device_list_area import DeviceListArea
 from ui.components.third_party_device_area import ThirdPartyDeviceArea
 
 # Dialogs
-from ui.dialogs.plc_config_dialog import PLCConfigDialog
+from ui.dialogs.plc_config_dialog import PLCConfigEmbeddedWidget
 from ui.dialogs.error_display_dialog import ErrorDisplayDialog
 # 移除模块管理对话框导入
 # from ui.dialogs.module_manager_dialog import ModuleManagerDialog
@@ -127,55 +128,106 @@ class MainWindow(QMainWindow):
 
     def setup_ui(self):
         """设置UI界面"""
-        central_widget = QWidget()
+        central_widget = QWidget() # central_widget 仍然需要，QTabWidget 将设置在其上
         self.setCentralWidget(central_widget)
 
-        # 创建主布局
-        main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(10, 10, 10, 10) # Increased margins a bit
+        # 创建 QTabWidget作为主窗口的主要布局管理器
+        main_tab_widget = QTabWidget(central_widget) # 将 central_widget 作为 QTabWidget 的父对象
 
-        # 左侧区域
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(10) # Added spacing between left widgets
+        # --- 第一个标签页：主功能区 (查询、项目、设备列表) ---
+        main_functional_tab = QWidget()
+        main_functional_layout = QVBoxLayout(main_functional_tab) # 为此标签页创建一个垂直布局
+        main_functional_layout.setContentsMargins(5, 5, 5, 5) # 可以根据需要调整页边距
+        main_functional_layout.setSpacing(10)
 
-        # 创建组件
+        # 创建和添加原左侧区域的组件到第一个标签页
         self.query_area = QueryArea()
         self.project_list_area = ProjectListArea()
         self.device_list_area = DeviceListArea()
-        
-        # Instantiate ThirdPartyDeviceArea with the new services
-        self.third_party_area = ThirdPartyDeviceArea(
-            config_service=self.tp_config_service, # Pass new ConfigService
-            template_service=self.tp_template_service, # Pass new TemplateService
-            parent=self 
-        )
-        
-        # 添加组件到布局
-        left_layout.addWidget(self.query_area)
-        left_layout.addWidget(self.project_list_area, stretch=1)
-        left_layout.addWidget(self.device_list_area, stretch=2)
 
-        main_layout.addWidget(left_widget, stretch=7)
-        main_layout.addWidget(self.third_party_area, stretch=3)
-        main_layout.setSpacing(10) # Added spacing between main areas
+        main_functional_layout.addWidget(self.query_area) # stretch 默认为0，通常查询区不需要拉伸
+        main_functional_layout.addWidget(self.project_list_area, stretch=1) # 项目列表可以拉伸
+        main_functional_layout.addWidget(self.device_list_area, stretch=2) # 设备列表可以拉伸更多
+
+        main_tab_widget.addTab(main_functional_tab, "数据查询")
+
+        # --- 第三个标签页（原第二个）：PLC硬件配置 ---
+        plc_config_tab_container = QWidget() 
+        plc_config_layout = QVBoxLayout(plc_config_tab_container)
+        plc_config_layout.setContentsMargins(5,5,5,5) 
+
+        if self.io_data_loader: 
+            self.embedded_plc_config_widget = PLCConfigEmbeddedWidget(
+                io_data_loader=self.io_data_loader,
+                devices_data=None, 
+                parent=self 
+            )
+            plc_config_layout.addWidget(self.embedded_plc_config_widget)
+        else:
+            error_label_main = QLabel("错误：PLC配置模块因IO数据服务不可用而无法加载。")
+            error_label_main.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            error_label_main.setStyleSheet("color: red; font-size: 14px;")
+            plc_config_layout.addWidget(error_label_main)
+            self.embedded_plc_config_widget = None 
+
+        main_tab_widget.addTab(plc_config_tab_container, "PLC硬件配置") 
+
+        # --- 第三方设备配置标签页 ---
+        self.third_party_area = ThirdPartyDeviceArea(
+            config_service=self.tp_config_service,
+            template_service=self.tp_template_service,
+            parent=self
+        )
+        main_tab_widget.addTab(self.third_party_area, "第三方设备配置") # 第三方移到前面
+
+        # --- IO点表模板生成标签页 (放到最后) ---
+        io_template_tab = QWidget()
+        io_template_layout = QVBoxLayout(io_template_tab)
+        io_template_layout.setContentsMargins(20, 20, 20, 20) 
+        io_template_layout.setAlignment(Qt.AlignmentFlag.AlignCenter) 
+
+        self.generate_io_template_btn = QPushButton("生成当前PLC配置的IO点表模板")
+        self.generate_io_template_btn.setFixedWidth(300) 
+        self.generate_io_template_btn.setFixedHeight(40) 
+        description_label = QLabel("此功能会根据当前在<b>'PLC硬件配置'</b>选项卡中应用的模块配置，<br>生成一个包含对应通道地址的Excel点表模板文件。<br>请确保PLC硬件配置已应用。场站编号将从上方查询区域获取。")
+        description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        description_label.setWordWrap(True)
+        
+        io_template_layout.addStretch(1) 
+        io_template_layout.addWidget(description_label)
+        io_template_layout.addSpacing(20)
+        io_template_layout.addWidget(self.generate_io_template_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        io_template_layout.addStretch(2) 
+
+        main_tab_widget.addTab(io_template_tab, "IO点表模板生成") # IO模板生成在最后
+
+        # --- 将 QTabWidget 设置为 central_widget 的布局 (使其充满central_widget) ---
+        # 为了让 QTabWidget 充满 central_widget，我们需要给 central_widget 也设置一个布局
+        # 并将 main_tab_widget 添加到这个布局中。
+        outer_layout_for_central_widget = QHBoxLayout(central_widget) # 或者 QVBoxLayout
+        outer_layout_for_central_widget.setContentsMargins(0,0,0,0) # 确保 QTabWidget 填满
+        outer_layout_for_central_widget.addWidget(main_tab_widget)
+        # central_widget.setLayout(outer_layout_for_central_widget) # 这一步已在创建布局时通过传递父对象完成
+
+        # 移除旧的主布局设置，因为现在由 QTabWidget 控制顶层内容切换
+        # main_layout = QHBoxLayout(central_widget) # 不再需要这个顶层QHBoxLayout
+        # ... (移除旧的 main_layout.addWidget 调用)
 
     def setup_connections(self):
         """设置信号连接"""
         # 查询区域信号
         self.query_area.query_requested.connect(self._handle_query)
         self.query_area.clear_requested.connect(self._handle_clear)
-        self.query_area.generate_points_requested.connect(self._handle_generate_points)
-        self.query_area.plc_config_requested.connect(self.show_plc_config_dialog)
         self.query_area.upload_io_table_requested.connect(self._handle_upload_io_table)
         self.query_area.upload_hmi_requested.connect(self._handle_hmi_generation_requested)
         self.query_area.upload_plc_requested.connect(self._handle_plc_generation_requested)
-        # 移除模块管理信号连接
-        # self.query_area.module_manage_requested.connect(self.show_module_manager)
 
         # 项目列表信号
         self.project_list_area.project_selected.connect(self._handle_project_selected)
+
+        # IO点表模板生成按钮信号
+        if hasattr(self, 'generate_io_template_btn'):
+            self.generate_io_template_btn.clicked.connect(self._trigger_generate_points)
 
     def _handle_query(self, project_no: str):
         """处理查询请求"""
@@ -191,14 +243,28 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "查询错误", f"查询项目列表失败: {str(e)}")
 
     def _handle_clear(self):
-        """处理清空请求"""
+        """处理清空按钮点击事件。"""
         self.query_area.clear_inputs()
         self.project_list_area.clear_table()
         self.device_list_area.clear_table()
-        # Optionally, also clear third_party_area if desired, 
-        # but it has its own clear button.
-        # self.config_service.clear_all_configurations()
-        # self.third_party_area.update_third_party_table()
+        self.loaded_io_data_by_sheet = {} # 清空已加载的IO点表数据
+        logger.info("查询条件、项目列表、设备列表及已加载IO数据已清空。")
+
+        # 新增：如果PLC配置嵌入式组件存在，则重置其状态
+        if hasattr(self, 'embedded_plc_config_widget') and self.embedded_plc_config_widget:
+            logger.info(f"Attempting to reset PLCConfigEmbeddedWidget. Type: {type(self.embedded_plc_config_widget)}")
+            logger.info(f"Attributes of embedded_plc_config_widget: {dir(self.embedded_plc_config_widget)}")
+            try:
+                self.embedded_plc_config_widget.reset_to_initial_state()
+                logger.info("PLC hardware configuration tab has been reset to its initial state.")
+            except AttributeError: # 防御性编程，以防方法名不匹配或对象状态问题
+                logger.error("PLCConfigEmbeddedWidget might not have 'reset_to_initial_state' or encountered an issue.")
+            except Exception as e:
+                logger.error(f"An unexpected error occurred while resetting PLCConfigEmbeddedWidget: {e}", exc_info=True)
+        else:
+            logger.info("PLCConfigEmbeddedWidget is not available, skipping its reset.")
+            
+        QMessageBox.information(self, "操作完成", "所有相关区域已清空。")
 
     def _handle_generate_points(self, site_no: str):
         """处理生成空的IO点表模板的请求"""
@@ -296,6 +362,11 @@ class MainWindow(QMainWindow):
             
             # 更新第三方设备区域的当前场站信息
             self.third_party_area.set_current_site_name(site_name)
+
+            # 更新内嵌的PLC配置区域的设备数据
+            if hasattr(self, 'embedded_plc_config_widget') and self.embedded_plc_config_widget:
+                current_devices_for_plc_config = self.get_current_devices() # 获取最新的设备数据
+                self.embedded_plc_config_widget.set_devices_data(current_devices_for_plc_config)
             
         except Exception as e:
             logger.error(f"获取场站 '{site_name}' 的设备数据失败: {e}", exc_info=True)
@@ -562,42 +633,6 @@ class MainWindow(QMainWindow):
             logger.error(f"获取设备数据失败: {e}", exc_info=True)
             return []
 
-    def show_plc_config_dialog(self):
-        """显示PLC配置对话框"""
-        try:
-            logger.info("正在打开PLC配置对话框...")
-            
-            if not self.io_data_loader:
-                logger.error("MainWindow: IODataLoader 未初始化，无法打开PLC配置对话框。")
-                QMessageBox.critical(self, "错误", "IO数据加载服务未准备就绪，无法配置PLC。")
-                return
-
-            current_devices = self.get_current_devices()
-            if not current_devices:
-                # logger.warning("没有获取到设备数据，请先查询并选择场站") # 这条日志在get_current_devices内部有了
-                QMessageBox.information(self, "提示", "没有设备数据可用于PLC配置，请先查询并选择场站。")
-                return
-                
-            logger.info(f"成功获取 {len(current_devices)} 个设备数据，准备传递给PLC配置对话框。")
-                
-            # 创建并显示对话框，传递 MainWindow 的 IODataLoader 实例和设备数据
-            dialog = PLCConfigDialog(io_data_loader=self.io_data_loader, 
-                                     devices_data=current_devices, 
-                                     parent=self)
-            
-            result = dialog.exec()
-            
-            if result == QDialog.DialogCode.Accepted: # 检查对话框是否被接受
-                logger.info("PLC配置对话框已确认并关闭。配置已通过共享的IODataLoader保存。")
-                # 此处无需再调用 dialog.get_current_configuration() 或 io_data_loader.save_configuration()
-                # 因为这些操作应该在 PLCConfigDialog.accept() 内部完成，并作用于共享的 io_data_loader 实例
-            else:
-                logger.info("PLC配置对话框已取消或关闭，未保存配置。")
-                
-        except Exception as e:
-            logger.error(f"显示PLC配置对话框时发生错误: {e}", exc_info=True)
-            QMessageBox.critical(self, "错误", f"无法显示PLC配置对话框: {str(e)}")
-
     def _clear_loaded_io_data(self):
         """清除已加载的IO点表数据和相关状态"""
         logger.info("已清空之前加载的IO点表数据和路径。")
@@ -608,4 +643,30 @@ class MainWindow(QMainWindow):
         # 也通知QueryArea更新状态
         if hasattr(self.query_area, 'update_io_table_status'):
             self.query_area.update_io_table_status(None, 0) # 修正：传递 (file_path=None, point_count=0)
+
+    def _trigger_generate_points(self):
+        """触发IO点表模板生成的辅助方法"""
+        if not self.query_area or not hasattr(self.query_area, 'station_input'):
+            QMessageBox.critical(self, "错误", "查询区域未正确初始化，无法获取场站编号。")
+            return
+            
+        site_no = self.query_area.station_input.text().strip()
+        if not site_no:
+            QMessageBox.warning(self, "需要场站编号", "请在查询区域输入有效的场站编号后重试。")
+            return
+
+        # 新增：验证PLC硬件配置是否已完成
+        logger.info(f"_trigger_generate_points: Checking PLC config. IODataLoader instance: {id(self.io_data_loader)}")
+        if self.io_data_loader:
+            logger.info(f"_trigger_generate_points: Current PLC config in IODataLoader: {self.io_data_loader.current_plc_config}")
+        else:
+            logger.warning("_trigger_generate_points: IODataLoader is None!")
+            
+        if not self.io_data_loader or not self.io_data_loader.current_plc_config:
+            logger.warning("Attempted to generate IO template, but PLC configuration is empty or IODataLoader is missing.")
+            QMessageBox.warning(self, "PLC配置缺失", "请先在<b>'PLC硬件配置'</b>选项卡中完成并应用模块配置，然后再生成IO点表模板。")
+            return
+        
+        # 如果场站编号和PLC配置都有效，则继续
+        self._handle_generate_points(site_no)
 
