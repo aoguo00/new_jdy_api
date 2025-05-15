@@ -84,13 +84,13 @@ class MainWindow(QMainWindow):
 
         # 创建上传按钮成员变量 (移到这里，以便 setup_ui 和 setup_connections 都能访问)
         self.upload_io_table_btn = QPushButton("上传IO点表")
-        self.upload_hmi_btn = QPushButton("上传HMI点表")
+        self.upload_hmi_btn = QPushButton("生成HMI点表")
         hmi_menu = QMenu(self.upload_hmi_btn) # QMenu 需要父对象
         hmi_menu.addAction("亚控")
         hmi_menu.addAction("力控")
         self.upload_hmi_btn.setMenu(hmi_menu)
 
-        self.upload_plc_btn = QPushButton("上传PLC点表")
+        self.upload_plc_btn = QPushButton("生成PLC点表")
         plc_menu = QMenu(self.upload_plc_btn) # QMenu 需要父对象
         plc_menu.addAction("和利时")
         plc_menu.addAction("中控PLC")
@@ -312,7 +312,13 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "操作完成", "所有相关区域已清空。")
 
     def _handle_generate_points(self, site_no: str):
-        """处理生成空的IO点表模板的请求"""
+        """
+        处理生成空的IO点表模板的请求。
+        文件将保存到应用程序工作目录下的 "IO点表模板" 子文件夹中。
+
+        Args:
+            site_no (str): 当前操作的场站编号。
+        """
         logger.info(f"Attempting to generate IO table template for site_no: {site_no}")
 
         if not self.io_data_loader or not self.io_data_loader.current_plc_config:
@@ -363,59 +369,69 @@ class MainWindow(QMainWindow):
                 safe_site_name = "".join(c if c.isalnum() or c in ['-', '_', ' '] else '_' for c in self.current_site_name.strip()).replace(' ', '_').strip('_')
                 if safe_site_name: default_filename = f"{safe_site_name}_IO_点表.xlsx"
 
-            file_path, _ = QFileDialog.getSaveFileName(self, "保存IO点表", default_filename, "Excel 文件 (*.xlsx);;所有文件 (*)")
+            output_base_dir = "IO点表模板"
+            output_dir = os.path.join(os.getcwd(), output_base_dir)
+            os.makedirs(output_dir, exist_ok=True) 
+            file_path = os.path.join(output_dir, default_filename)
+            logger.info(f"IO点表模板将保存到: {file_path}")
 
-            if file_path:
-                exporter = IOExcelExporter() # 这个Exporter主要用于生成模板
+            try:
+                exporter = IOExcelExporter() 
                 success = exporter.export_to_excel(plc_io_data=plc_io_points, 
                                                    third_party_data=third_party_points_for_export,
-                                                   filename=file_path,
+                                                   filename=file_path, 
                                                    site_name=self.current_site_name,
-                                                   site_no=site_no) # site_no 从参数传入
+                                                   site_no=site_no) 
                 if success:
-                    QMessageBox.information(self, "成功", f"IO点表模板已成功导出到:\n{file_path}")
+                    QMessageBox.information(self, "成功", f"IO点表模板已成功导出到:\\\\n{file_path}")
                     self.status_bar.showMessage(f"IO点表模板已导出: {file_path}", 7000)
                 else:
-                    QMessageBox.warning(self, "导出失败", "IO点表模板导出失败。\n请检查日志获取详细信息。")
+                    QMessageBox.warning(self, "导出失败", "IO点表模板导出失败。\\\\n请检查日志获取详细信息。")
                     self.status_bar.showMessage("IO点表模板导出失败。")
-            else:
-                logger.info("用户取消了文件保存操作。")
-                self.status_bar.showMessage("已取消导出IO点表模板。")
 
-        except ImportError as e_import:
-            logger.error(f"导出Excel模板所需的库缺失: {e_import}", exc_info=True)
-            QMessageBox.critical(self, "依赖缺失", f"导出Excel功能需要 openpyxl 库。\n请通过 pip install openpyxl 安装它。\n错误详情: {e_import}")
-        except Exception as e:
-            logger.error(f"处理生成IO点表模板请求时出错: {e}", exc_info=True)
-            QMessageBox.critical(self, "错误", f"生成IO点表模板失败: {str(e)}")
-            self.status_bar.showMessage("生成IO点表模板失败。")
+            except ImportError as e_import_inner: 
+                logger.error(f"导出Excel模板所需的库缺失 (openpyxl likely): {e_import_inner}", exc_info=True)
+                QMessageBox.critical(self, "依赖缺失", f"导出Excel功能需要 openpyxl 库。\\\\n请通过 pip install openpyxl 安装它。\\\\n错误详情: {e_import_inner}")
+                self.status_bar.showMessage("导出Excel依赖缺失。")
+            except Exception as e_inner_export: 
+                logger.error(f"生成IO点表模板过程中（导出步骤）出错: {e_inner_export}", exc_info=True)
+                QMessageBox.critical(self, "错误", f"生成IO点表模板的导出步骤失败: {str(e_inner_export)}")
+                self.status_bar.showMessage("IO点表模板导出时出错。")
+
+        except Exception as e_outer_general: 
+            logger.error(f"处理生成IO点表模板请求时发生总体错误: {e_outer_general}", exc_info=True)
+            QMessageBox.critical(self, "错误", f"生成IO点表模板失败: {str(e_outer_general)}")
+            self.status_bar.showMessage("生成IO点表模板失败（常规错误）。")
 
     def _handle_project_selected(self, site_name: str):
-        """处理项目选择"""
+        """处理项目选择事件"""
         try:
-            # 存储当前选择的场站名称
+            # 更新当前场站名称
             self.current_site_name = site_name
-            logger.info(f"当前选定的场站已更新为: {self.current_site_name}")
+            logger.info(f"当前选定的场站已更新为: {self.current_site_name}") # 更新日志信息
 
             # 执行查询 (调用 DeviceService)
             if not self.device_service:
                 raise Exception("设备服务未初始化")
-            all_devices = self.device_service.get_formatted_devices(site_name)
+            all_devices = self.device_service.get_formatted_devices(site_name) # 使用 all_devices
             
             # 更新设备列表
-            self.device_list_area.update_device_list(all_devices)
+            self.device_list_area.update_device_list(all_devices) # 使用 all_devices
             
             # 更新第三方设备区域的当前场站信息
-            self.third_party_area.set_current_site_name(site_name)
+            if hasattr(self, 'third_party_area') and self.third_party_area:
+                self.third_party_area.set_current_site_name(site_name)
 
             # 更新内嵌的PLC配置区域的设备数据
             if hasattr(self, 'embedded_plc_config_widget') and self.embedded_plc_config_widget:
                 current_devices_for_plc_config = self.get_current_devices() # 获取最新的设备数据
                 self.embedded_plc_config_widget.set_devices_data(current_devices_for_plc_config)
             
+            self.status_bar.showMessage(f"已选择场站: {site_name}，设备列表已更新。") # 更新状态栏
+
         except Exception as e:
-            logger.error(f"获取场站 '{site_name}' 的设备数据失败: {e}", exc_info=True)
-            QMessageBox.critical(self, "数据加载错误", f"获取场站设备数据失败: {str(e)}")
+            logger.error(f"处理项目选择时出错: {e}", exc_info=True) # 更新日志信息
+            QMessageBox.critical(self, "项目选择错误", f"处理项目 '{site_name}' 选择失败: {str(e)}")
 
     def _handle_upload_io_table(self):
         """处理 '上传IO点表' 按钮点击或信号。"""
@@ -470,20 +486,14 @@ class MainWindow(QMainWindow):
                 final_load_msg = f"文件 '{file_name}' 加载完成，但未解析到任何工作表的有效数据。"
                 logger.warning(final_load_msg)
                 QMessageBox.warning(self, "数据加载提示", final_load_msg)
-                # 更新QueryArea的状态，即使没有数据
                 if hasattr(self.query_area, 'update_io_table_status'):
-                    self.query_area.update_io_table_status(None, 0) # 修正：传递 (file_path=None, point_count=0)
+                    self.query_area.update_io_table_status(None, 0)
             else:
                 num_sheets = len(self.loaded_io_data_by_sheet)
                 total_points = sum(len(points) for points in self.loaded_io_data_by_sheet.values())
                 final_load_msg = f"文件 '{file_name}' 数据已加载: 从 {num_sheets} 个工作表共解析 {total_points} 个点位。"
                 logger.info(final_load_msg)
-                # 更新QueryArea的状态
                 if hasattr(self.query_area, 'update_io_table_status'):
-                    # 修正：传递 (file_path=self.verified_io_table_path, point_count=total_points)
-                    # 注意：QueryArea 的 update_io_table_status 方法内部会自行处理 num_sheets 的显示逻辑，
-                    # 它可能需要被修改以接受 num_sheets，或者 MainWindow 在这里应格式化一个更完整的字符串给一个更通用的UI更新方法。
-                    # 但基于当前的 QueryArea.update_io_table_status(self, file_path: Optional[str], point_count: int) 签名，我们只传递这两者。
                     self.query_area.update_io_table_status(self.verified_io_table_path, total_points)
 
             self.status_bar.showMessage(final_load_msg + " 等待后续生成操作。", 10000)
@@ -495,7 +505,13 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(f"文件 '{file_name}' 数据加载失败。")
 
     def _handle_plc_generation_requested(self, plc_type: str):
-        """处理用户选择的PLC点表生成请求（例如和利时、中控等）- 使用已加载数据"""
+        """
+        处理用户选择的PLC点表生成请求（例如和利时、中控等）- 使用已加载数据。
+        PLC点表将保存到应用程序工作目录下的 "PLC点表/<PLC类型>" 子文件夹中。
+
+        Args:
+            plc_type (str): 用户选择的PLC类型，如 "和利时", "中控PLC"。
+        """
         logger.info(f"用户选择了PLC类型进行生成: {plc_type}")
 
         if not self.loaded_io_data_by_sheet:
@@ -513,23 +529,27 @@ class MainWindow(QMainWindow):
         if plc_type == "和利时":
             logger.info(f"准备根据已加载数据生成和利时PLC点表。")
             try:
-                output_dir = QFileDialog.getExistingDirectory(self, "选择保存和利时PLC点表的文件夹", ".")
-                if not output_dir:
-                    logger.info("用户取消选择输出目录。"); self.status_bar.showMessage("已取消生成和利时点表。"); return
+                # output_dir = QFileDialog.getExistingDirectory(self, "选择保存和利时PLC点表的文件夹", ".")
+                # if not output_dir:
+                #     logger.info("用户取消选择输出目录。"); self.status_bar.showMessage("已取消生成和利时点表。"); return
                 
-                # 文件名现在只基于原始文件名，不再包含sheet名，因为sheet将在文件内部创建
+                # 新增：定义固定的输出目录结构
+                # 例如 D:\\project\\PLC点表\\和利时
+                base_output_dir = os.path.join(os.getcwd(), "PLC点表")
+                target_plc_dir = os.path.join(base_output_dir, plc_type) # 为特定PLC类型创建子目录
+                os.makedirs(target_plc_dir, exist_ok=True) # 确保目录存在
+
                 output_filename = f"{base_io_filename_cleaned}_和利时点表.xls"
-                save_path = os.path.join(output_dir, output_filename)
+                save_path = os.path.join(target_plc_dir, output_filename) # 构建完整文件路径
+                logger.info(f"和利时PLC点表将保存到: {save_path}")
 
                 generator = HollysysGenerator()
-                # 修改调用以适应 HollysysGenerator 的新接口 (将在阶段三修改生成器本身)
                 success, error_message = generator.generate_hollysys_table(
-                    points_by_sheet=self.loaded_io_data_by_sheet, # 传递字典
-                    output_path=save_path
-                    # output_sheet_name 参数将被移除
+                    points_by_sheet=self.loaded_io_data_by_sheet, 
+                    output_path=save_path # 使用新的固定路径
                 )
                 if success:
-                    QMessageBox.information(self, "成功", f"和利时PLC点表已成功导出到:\n{save_path}")
+                    QMessageBox.information(self, "成功", f"和利时PLC点表已成功导出到:\\n{save_path}")
                     self.status_bar.showMessage(f"和利时点表已生成: {save_path}", 7000)
                 else:
                     detailed_error_msg = error_message if error_message else "生成和利时PLC点表失败。"
@@ -539,19 +559,25 @@ class MainWindow(QMainWindow):
             
             except Exception as e: 
                 logger.error(f"生成和利时PLC点表时发生未知错误: {e}", exc_info=True)
-                QMessageBox.critical(self, "生成错误", f"生成和利时PLC点表时发生未知错误:\n{e}")
+                QMessageBox.critical(self, "生成错误", f"生成和利时PLC点表时发生未知错误:\\n{e}")
                 self.status_bar.showMessage("和利时点表生成失败 (未知错误)。")
 
         elif plc_type == "中控PLC":
             logger.info(f"准备根据已加载数据生成中控PLC点表。")
-            QMessageBox.information(self, "功能待实现", f"已选择根据已加载数据生成 '{plc_type}' PLC点表。\n该功能正在开发中。")
+            QMessageBox.information(self, "功能待实现", f"已选择根据已加载数据生成 '{plc_type}' PLC点表。\\n该功能正在开发中。")
         else:
             QMessageBox.warning(self, "类型不支持", f"目前不支持为PLC类型 '{plc_type}' 生成点表。")
             logger.warning(f"用户尝试为不支持的PLC类型 '{plc_type}' 生成点表。")
             self.status_bar.showMessage(f"不支持的PLC类型: {plc_type}")
 
     def _handle_hmi_generation_requested(self, hmi_type: str):
-        """处理生成特定HMI类型点表的请求。"""
+        """
+        处理生成特定HMI类型点表的请求。
+        HMI点表将保存到应用程序工作目录下的 "HMI点表/<HMI类型>" 子文件夹中。
+
+        Args:
+            hmi_type (str): 用户选择的HMI类型，如 "亚控", "力控"。
+        """
         if not self.loaded_io_data_by_sheet:
             QMessageBox.warning(self, "未加载数据", "请先上传并成功加载IO点表数据，然后再生成HMI点表。")
             return
@@ -567,7 +593,14 @@ class MainWindow(QMainWindow):
 
         # 获取文件名基础 (不含扩展名)
         base_file_name = os.path.splitext(os.path.basename(self.verified_io_table_path))[0] if self.verified_io_table_path else "HMI_Export"
-        default_dir = os.path.expanduser("~/Downloads")
+        # default_dir = os.path.expanduser("~/Downloads") # 不再使用用户下载目录
+
+        # 新增：定义固定的输出目录结构
+        # 例如 D:\\project\\HMI点表\\亚控
+        output_base_dir = os.path.join(os.getcwd(), "HMI点表")
+        hmi_specific_output_dir = os.path.join(output_base_dir, hmi_type) # 特定HMI类型的子目录
+        os.makedirs(hmi_specific_output_dir, exist_ok=True) # 确保目录存在
+        logger.info(f"{hmi_type} HMI点表将保存到目录: {hmi_specific_output_dir}")
 
         logger.info(f"用户选择了HMI类型进行生成: {hmi_type}")
         self.status_bar.showMessage(f"准备生成 {hmi_type} HMI点表...")
@@ -578,19 +611,11 @@ class MainWindow(QMainWindow):
                 logger.info(f"准备根据已加载数据生成亚控HMI点表。")
                 logger.info(f"来自 {len(self.loaded_io_data_by_sheet)} 个工作表的总共 {len(all_points)} 个点位将传递给生成器。")
                 
-                # 默认输出文件名，包含场站名和HMI类型
-                # kingview_output_base = f"{base_file_name}_亚控"
-                # kingview_ioserver_file = os.path.join(default_dir, f"{kingview_output_base}_io_server.xls")
-                # kingview_db_file = os.path.join(default_dir, f"{kingview_output_base}_数据词典.xls")
-
-                # 调用生成器
-                # 修改参数名以匹配 KingViewGenerator.generate_kingview_files 的定义
-                # 它接收 points_by_sheet, output_dir, base_io_filename
-                # 返回值是 Tuple[bool, Optional[str], Optional[str], Optional[str]]
-                # (success, ioserver_path, db_path, error_message)
-                success, ioserver_path, db_path, error_msg = KingViewGenerator().generate_kingview_files( # 实例化 KingViewGenerator
-                    points_by_sheet=self.loaded_io_data_by_sheet, # 使用原始的按sheet分组的数据
-                    output_dir=default_dir,
+                # KingViewGenerator.generate_kingview_files 的 output_dir 参数现在是目标文件夹
+                # 文件名由生成器内部逻辑或 base_io_filename 决定，并会被保存到 output_dir
+                success, ioserver_path, db_path, error_msg = KingViewGenerator().generate_kingview_files(
+                    points_by_sheet=self.loaded_io_data_by_sheet, 
+                    output_dir=hmi_specific_output_dir, # 传递新的固定输出目录
                     base_io_filename=base_file_name
                 )
                 if success and ioserver_path and db_path:
@@ -598,7 +623,7 @@ class MainWindow(QMainWindow):
                                             f"""亚控HMI点表已成功生成:
  - IO Server 点表: {os.path.basename(ioserver_path)}
  - 数据词典点表: {os.path.basename(db_path)}
-文件已保存到下载文件夹。""")
+文件已保存到目录: {hmi_specific_output_dir}""")
                     logger.info(f"""亚控HMI点表已成功生成:
  - IO Server 点表: {ioserver_path}
  - 数据词典点表: {db_path}""")
@@ -612,21 +637,16 @@ class MainWindow(QMainWindow):
             elif hmi_type == "力控":
                 logger.info(f"准备根据已加载数据生成力控HMI点表。")
                 logger.info(f"来自 {len(self.loaded_io_data_by_sheet)} 个工作表的总共 {len(all_points)} 个点位将传递给生成器。")
-                # likong_output_file = os.path.join(default_dir, "Basic.xls") # 力控通常输出为Basic.xls
-                
-                # 调用生成器
-                # 修改方法名和参数名以匹配 LikongGenerator.generate_basic_xls
-                # 它接收 output_dir, points_by_sheet
-                # 返回值是 Tuple[bool, Optional[str], Optional[str]]
-                # (success, file_path, error_message)
-                likong_gen = LikongGenerator() # 实例化 LikongGenerator
+                # LikongGenerator.generate_basic_xls 的 output_dir 参数现在是目标文件夹
+                # 文件名 (通常是 "Basic.xls") 由生成器内部逻辑决定，并会被保存到 output_dir
+                likong_gen = LikongGenerator() 
                 success, generated_file_path, error_msg = likong_gen.generate_basic_xls(
-                    output_dir=default_dir,
-                    points_by_sheet=self.loaded_io_data_by_sheet # 使用原始的按sheet分组的数据
+                    output_dir=hmi_specific_output_dir, # 传递新的固定输出目录
+                    points_by_sheet=self.loaded_io_data_by_sheet
                 )
                 if success and generated_file_path:
-                    QMessageBox.information(self, "生成成功", f"力控HMI点表 ({os.path.basename(generated_file_path)}) 已成功生成在: {default_dir}")
-                    logger.info(f"力控HMI点表 ({os.path.basename(generated_file_path)}) 已成功生成在: {default_dir}")
+                    QMessageBox.information(self, "生成成功", f"力控HMI点表 ({os.path.basename(generated_file_path)}) 已成功生成在: {hmi_specific_output_dir}")
+                    logger.info(f"力控HMI点表 ({os.path.basename(generated_file_path)}) 已成功生成在: {hmi_specific_output_dir}")
                     self.status_bar.showMessage(f"力控HMI点表生成成功。")
                 else:
                     err_to_show = error_msg if error_msg else "力控HMI点表生成失败，未知原因。"
