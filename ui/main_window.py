@@ -33,6 +33,7 @@ from core.post_upload_processor.io_validation.validator import validate_io_table
 
 # 导入点表生成器
 from core.post_upload_processor.plc_generators.hollysys_generator.generator import HollysysGenerator
+from core.post_upload_processor.plc_generators.hollysys_generator.safety_generator import SafetyHollysysGenerator # 新增：导入安全型生成器
 from core.post_upload_processor.hmi_generators.yk_generator.generator import KingViewGenerator, C
 from core.post_upload_processor.hmi_generators.lk_generator.generator import LikongGenerator # 新增：导入力控生成器
 
@@ -92,7 +93,7 @@ class MainWindow(QMainWindow):
 
         self.upload_plc_btn = QPushButton("生成PLC点表")
         plc_menu = QMenu(self.upload_plc_btn) # QMenu 需要父对象
-        plc_menu.addAction("和利时")
+        plc_menu.addAction("和利时PLC") # 恢复为统一的"和利时"选项
         plc_menu.addAction("中控PLC")
         self.upload_plc_btn.setMenu(plc_menu)
 
@@ -203,7 +204,7 @@ class MainWindow(QMainWindow):
         self.generate_io_template_btn = QPushButton("生成当前PLC配置的IO点表模板")
         self.generate_io_template_btn.setFixedWidth(300) 
         self.generate_io_template_btn.setFixedHeight(40) 
-        description_label = QLabel("此功能会根据当前在<b>'PLC硬件配置'</b>选项卡中应用的模块配置，<br>生成一个包含对应通道地址的Excel点表模板文件。<br>请确保PLC硬件配置已应用。场站编号将从上方查询区域获取。")
+        description_label = QLabel("此功能会根据当前在'<b>'PLC硬件配置'</b>'选项卡中应用的模块配置，<br>生成一个包含对应通道地址的Excel点表模板文件。<br>请确保PLC硬件配置已应用。场站编号将从上方查询区域获取。")
         description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         description_label.setWordWrap(True)
         
@@ -497,15 +498,16 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "数据加载错误", f"加载IO点表数据失败: {str(e_load)}")
             self.status_bar.showMessage(f"文件 '{file_name}' 数据加载失败。")
 
-    def _handle_plc_generation_requested(self, plc_type: str):
+    def _handle_plc_generation_requested(self, plc_generation_type: str):
         """
-        处理用户选择的PLC点表生成请求（例如和利时、中控等）- 使用已加载数据。
-        PLC点表将保存到应用程序工作目录下的 "PLC点表/<PLC类型>" 子文件夹中。
+        处理用户选择的PLC点表生成请求。
+        对于和利时，将一次性生成变量表和Modbus点表。
+        点表将保存到应用程序工作目录下的 "PLC点表/<PLC厂家>" 子文件夹中。
 
         Args:
-            plc_type (str): 用户选择的PLC类型，如 "和利时", "中控PLC"。
+            plc_generation_type (str): 用户选择的PLC点表生成类型，如 "和利时PLC", "中控PLC"。
         """
-        logger.info(f"用户选择了PLC类型进行生成: {plc_type}")
+        logger.info(f"用户选择了PLC点表生成类型: {plc_generation_type}")
 
         if not self.loaded_io_data_by_sheet:
             QMessageBox.warning(self, "操作无效", "请先上传、验证并成功加载一个IO点表文件。")
@@ -517,51 +519,132 @@ class MainWindow(QMainWindow):
         base_io_filename, _ = os.path.splitext(file_name_base_with_ext)
         base_io_filename_cleaned = base_io_filename.replace("_(已校验)", "").replace("(已校验)","").replace("_IO_点表","", 1).replace("IO_点表","", 1).replace("_模板", "").replace("模板", "")
 
-        self.status_bar.showMessage(f"准备为已加载数据生成 '{plc_type}' PLC点表...")
+        self.status_bar.showMessage(f"准备为已加载数据生成 '{plc_generation_type}' 相关点表...")
 
-        if plc_type == "和利时":
-            logger.info(f"准备根据已加载数据生成和利时PLC点表。")
-            try:
-                # output_dir = QFileDialog.getExistingDirectory(self, "选择保存和利时PLC点表的文件夹", ".")
-                # if not output_dir:
-                #     logger.info("用户取消选择输出目录。"); self.status_bar.showMessage("已取消生成和利时点表。"); return
-                
-                # 新增：定义固定的输出目录结构
-                # 例如 D:\\project\\PLC点表\\和利时
-                base_output_dir = os.path.join(os.getcwd(), "PLC点表")
-                target_plc_dir = os.path.join(base_output_dir, plc_type) # 为特定PLC类型创建子目录
-                os.makedirs(target_plc_dir, exist_ok=True) # 确保目录存在
-
-                output_filename = f"{base_io_filename_cleaned}_和利时点表.xls"
-                save_path = os.path.join(target_plc_dir, output_filename) # 构建完整文件路径
-                logger.info(f"和利时PLC点表将保存到: {save_path}")
-
-                generator = HollysysGenerator()
-                success, error_message = generator.generate_hollysys_table(
-                    points_by_sheet=self.loaded_io_data_by_sheet, 
-                    output_path=save_path # 使用新的固定路径
-                )
-                if success:
-                    QMessageBox.information(self, "成功", f"和利时PLC点表已成功导出到:\\n{save_path}")
-                    self.status_bar.showMessage(f"和利时点表已生成: {save_path}", 7000)
-                else:
-                    detailed_error_msg = error_message if error_message else "生成和利时PLC点表失败。"
-                    QMessageBox.critical(self, "生成失败", detailed_error_msg)
-                    logger.error(f"HollysysGenerator生成点表失败: {detailed_error_msg}")
-                    self.status_bar.showMessage("和利时点表生成失败。")
-            
-            except Exception as e: 
-                logger.error(f"生成和利时PLC点表时发生未知错误: {e}", exc_info=True)
-                QMessageBox.critical(self, "生成错误", f"生成和利时PLC点表时发生未知错误:\\n{e}")
-                self.status_bar.showMessage("和利时点表生成失败 (未知错误)。")
-
-        elif plc_type == "中控PLC":
+        if plc_generation_type == "和利时PLC": # 统一处理和利时请求
+            self._generate_hollysys_all_tables(base_io_filename_cleaned)
+        elif plc_generation_type == "中控PLC":
             logger.info(f"准备根据已加载数据生成中控PLC点表。")
-            QMessageBox.information(self, "功能待实现", f"已选择根据已加载数据生成 '{plc_type}' PLC点表。\\n该功能正在开发中。")
+            QMessageBox.information(self, "功能待实现", f"已选择根据已加载数据生成 '{plc_generation_type}' PLC点表。\n该功能正在开发中。")
         else:
-            QMessageBox.warning(self, "类型不支持", f"目前不支持为PLC类型 '{plc_type}' 生成点表。")
-            logger.warning(f"用户尝试为不支持的PLC类型 '{plc_type}' 生成点表。")
-            self.status_bar.showMessage(f"不支持的PLC类型: {plc_type}")
+            QMessageBox.warning(self, "类型不支持", f"目前不支持生成PLC点表类型 '{plc_generation_type}'。")
+            logger.warning(f"用户尝试为不支持的PLC点表类型 '{plc_generation_type}' 生成。")
+            self.status_bar.showMessage(f"不支持的PLC点表类型: {plc_generation_type}")
+
+    def _generate_hollysys_all_tables(self, base_io_filename_cleaned: str):
+        """为和利时PLC生成所有相关点表（变量表和Modbus表）。"""
+        plc_manufacturer = "和利时"
+        logger.info(f"准备为和利时PLC生成点表。")        
+        
+        is_safety_system = self._is_safety_plc()
+        generator: Any # Type hint for generator
+
+        if is_safety_system:
+            logger.info("检测到安全PLC模块，将使用 SafetyHollysysGenerator。")
+            # 确保 SafetyHollysysGenerator 初始化时需要 module_info_provider
+            if not self.io_data_loader or not hasattr(self.io_data_loader, 'module_info_provider'):
+                QMessageBox.critical(self, "错误", "无法初始化安全PLC点表生成器：缺少模块信息提供者。")
+                logger.error("无法初始化SafetyHollysysGenerator: io_data_loader或module_info_provider不可用。")
+                self.status_bar.showMessage("安全PLC点表生成失败：初始化错误。")
+                return
+            generator = SafetyHollysysGenerator(module_info_provider=self.io_data_loader.module_info_provider)
+        else:
+            logger.info("未检测到安全PLC模块，将使用 HollysysGenerator。")
+            generator = HollysysGenerator()
+
+        # --- 1. 生成变量表 --- 
+        try:
+            base_output_dir_vars = os.path.join(os.getcwd(), "PLC点表")
+            target_plc_mfg_dir_vars = os.path.join(base_output_dir_vars, plc_manufacturer)
+            os.makedirs(target_plc_mfg_dir_vars, exist_ok=True)
+
+            variable_table_filename_suffix: str
+            if is_safety_system:
+                variable_table_filename_suffix = "安全型变量表"
+            else:
+                # 非安全型，恢复原始文件名后缀 (或您期望的后缀)
+                # 根据日志，非安全型变量表的后缀是 "变量表"
+                variable_table_filename_suffix = "变量表" 
+            
+            output_filename_vars = f"{base_io_filename_cleaned}_和利时{variable_table_filename_suffix}.xls"
+            save_path_vars = os.path.join(target_plc_mfg_dir_vars, output_filename_vars)
+            logger.info(f"和利时PLC{'安全型' if is_safety_system else ''}变量表将保存到: {save_path_vars}")
+
+            success_vars: bool
+            error_message_vars: Optional[str]
+
+            if is_safety_system:
+                # SafetyHollysysGenerator 调用 generate_safety_hollysys_table
+                success_vars, error_message_vars = generator.generate_safety_hollysys_table(
+                    points_by_sheet=self.loaded_io_data_by_sheet, 
+                    output_path=save_path_vars
+                )
+            else:
+                # HollysysGenerator 调用 generate_hollysys_table
+                success_vars, error_message_vars = generator.generate_hollysys_table(
+                    points_by_sheet=self.loaded_io_data_by_sheet, 
+                    output_path=save_path_vars
+                )
+            
+            if success_vars:
+                QMessageBox.information(self, "变量表生成成功", f"和利时PLC{'安全型' if is_safety_system else ''}变量表已成功导出到:\n{save_path_vars}")
+                self.status_bar.showMessage(f"和利时{'安全型' if is_safety_system else ''}变量表已生成: {output_filename_vars}", 7000)
+            else:
+                detailed_error_msg_vars = error_message_vars if error_message_vars else f"生成和利时PLC{'安全型' if is_safety_system else ''}变量表失败。"
+                QMessageBox.critical(self, "变量表生成失败", detailed_error_msg_vars)
+                logger.error(f"和利时{'安全型' if is_safety_system else ''}变量表生成失败: {detailed_error_msg_vars}")
+                self.status_bar.showMessage(f"和利时{'安全型' if is_safety_system else ''}变量表生成失败。")
+        
+        except Exception as e_vars: 
+            logger.error(f"生成和利时PLC{'安全型' if is_safety_system else ''}变量表时发生未知错误: {e_vars}", exc_info=True)
+            QMessageBox.critical(self, "变量表生成错误", f"生成和利时PLC{'安全型' if is_safety_system else ''}变量表时发生未知错误:\n{e_vars}")
+            self.status_bar.showMessage(f"和利时{'安全型' if is_safety_system else ''}变量表生成时发生错误。")
+            # 如果变量表生成失败，对于安全系统，也应考虑是否继续生成Modbus表，目前是继续
+            # 对于非安全系统，到此结束
+
+        # --- 2. 只有安全系统才生成Modbus点表 --- 
+        if is_safety_system:
+            # 确保 generator 是 SafetyHollysysGenerator 的实例，它有 generate_modbus_excel
+            if not isinstance(generator, SafetyHollysysGenerator):
+                 logger.error("逻辑错误: 尝试为安全系统生成Modbus表，但生成器不是SafetyHollysysGenerator实例。")
+                 QMessageBox.critical(self, "内部错误", "尝试为安全系统生成Modbus表时发生配置错误。")
+                 self.status_bar.showMessage("Modbus表生成失败：内部配置错误。")
+                 return # 发生此错误则不继续
+
+            logger.info("安全系统，继续生成Modbus点表...")
+            try:
+                base_output_dir_modbus = os.path.join(os.getcwd(), "PLC点表")
+                target_plc_mfg_dir_modbus = os.path.join(base_output_dir_modbus, plc_manufacturer)
+                os.makedirs(target_plc_mfg_dir_modbus, exist_ok=True)
+
+                output_filename_modbus = f"{base_io_filename_cleaned}_和利时Modbus表.xls"
+                save_path_modbus = os.path.join(target_plc_mfg_dir_modbus, output_filename_modbus)
+                logger.info(f"和利时PLC安全型Modbus点表将保存到: {save_path_modbus}")
+                
+                success_modbus, error_message_modbus = generator.generate_modbus_excel(
+                    points_by_sheet=self.loaded_io_data_by_sheet, 
+                    output_path=save_path_modbus
+                )
+
+                if success_modbus:
+                    QMessageBox.information(self, "Modbus表生成成功", f"和利时PLC安全型Modbus点表已成功导出到:\n{save_path_modbus}")
+                    self.status_bar.showMessage(f"和利时安全型Modbus表已生成: {output_filename_modbus}", 7000)
+                else:
+                    detailed_error_msg_modbus = error_message_modbus if error_message_modbus else "生成和利时PLC安全型Modbus点表失败。"
+                    QMessageBox.critical(self, "Modbus表生成失败", detailed_error_msg_modbus)
+                    logger.error(f"和利时安全型Modbus表生成失败: {detailed_error_msg_modbus}")
+                    self.status_bar.showMessage("和利时安全型Modbus表生成失败。")
+
+            except AttributeError as e_attr_modbus:
+                logger.error(f"生成和利时PLC安全型Modbus点表时发生属性错误 (方法可能不存在): {e_attr_modbus}", exc_info=True)
+                QMessageBox.critical(self, "Modbus表生成错误", f"尝试调用Modbus生成功能时出错 (可能方法未找到):\n{e_attr_modbus}")
+                self.status_bar.showMessage("和利时安全型Modbus表生成时发生属性错误。")
+            except Exception as e_modbus: 
+                logger.error(f"生成和利时PLC安全型Modbus点表时发生未知错误: {e_modbus}", exc_info=True)
+                QMessageBox.critical(self, "Modbus表生成错误", f"生成和利时PLC安全型Modbus点表时发生未知错误:\n{e_modbus}")
+                self.status_bar.showMessage("和利时安全型Modbus表生成时发生错误。")
+        else:
+            logger.info("非安全系统，不生成Modbus点表。和利时点表生成流程结束。")
 
     def _handle_hmi_generation_requested(self, hmi_type: str):
         """
@@ -762,4 +845,34 @@ class MainWindow(QMainWindow):
         
         # 如果场站编号和PLC配置都有效，则继续
         self._handle_generate_points(site_no)
+
+    def _is_safety_plc(self) -> bool:
+        """
+        检查当前加载的IO数据中是否包含安全PLC模块。
+
+        Returns:
+            bool: 如果检测到任何安全模块，则为True，否则为False。
+        """
+        if not self.loaded_io_data_by_sheet:
+            logger.info("_is_safety_plc: No IO data loaded.")
+            return False
+        
+        if not self.io_data_loader or not hasattr(self.io_data_loader, 'module_info_provider') or not self.io_data_loader.module_info_provider:
+            logger.warning("_is_safety_plc: IODataLoader or ModuleInfoProvider is not available. Cannot determine if it's a safety PLC.")
+            return False # 无法判断，按非安全处理
+
+        try:
+            for sheet_name, points_in_sheet in self.loaded_io_data_by_sheet.items():
+                for point in points_in_sheet:
+                    if point.module_name: # module_name 来自Excel的"模块名称"列
+                        # 使用正确的 get_predefined_module_by_model 方法名
+                        module_info = self.io_data_loader.module_info_provider.get_predefined_module_by_model(point.module_name)
+                        if module_info and module_info.get('is_safety_module', False):
+                            logger.info(f"_is_safety_plc: Safety module '{point.module_name}' detected. System is considered a safety PLC system.")
+                            return True
+            logger.info("_is_safety_plc: No safety modules detected.")
+            return False
+        except Exception as e:
+            logger.error(f"_is_safety_plc: Error while checking for safety modules: {e}", exc_info=True)
+            return False # 出错时，按非安全处理
 

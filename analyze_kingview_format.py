@@ -4,7 +4,7 @@ import os
 # --- 用户需要修改的部分 ---
 # 请将下面的路径替换为您本地的亚控示例Excel文件（包含数据词典和IO Server表）的完整路径
 # 例如: r"C:\\Users\\YourUser\\Desktop\\亚控导出示例.xlsx" 或 "/home/user/亚控导出示例.xlsx"
-file_path = "C:\\Users\\DELL\\Downloads\\西部片区调压站_IO_点表_模板.xlsx"
+file_path = "C:\\Users\\DELL\\Downloads\\302——PLC点表和利时点表模板Lks系列_20250415.xls"
 # --- 修改结束 ---
 
 def analyze_excel_structure(filepath):
