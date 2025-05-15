@@ -13,7 +13,156 @@
     { "model": "LK720", "type": "DO", "channels": 8, "description": "8通道10~265VAC/5~125VDC常开继电器输出模块" },
     { "model": "PROFIBUS-DP", "type": "DP", "channels": 0, "description": "PROFIBUS-DP通讯接口模块", "is_master": true, "slot_required": 1 },
     { "model": "LK238", "type": "COM", "channels": 0, "description": "通讯模块" },
-    { "model": "LK117", "type": "RACK", "channels": 0, "description": "11槽扩展背板", "slots": 11 }
+    { "model": "LK117", "type": "RACK", "channels": 0, "description": "11槽扩展背板", "slots": 11 },
+    {
+      "model": "LK220S",
+      "type": "CPU",
+      "channels": 0,
+      "description": "安全型主控模块",
+      "is_safety_module": true,
+      "details": {
+        "nor_flash": "32MB",
+        "ddr_storage": "512MB",
+        "mram_storage": "512KB",
+        "execution_speed": "2.5DMIPS/MHz",
+        "input_voltage": "20.4 ~ 28.8VDC",
+        "power_consumption_max": "300mA @24VDC",
+        "supports_protocols": ["TCP/IP", "Modbus TCP"],
+        "dimensions": "44.7mm*166mm*152mm",
+        "operating_temperature": "0 ~ 60°C",
+        "installation_method": "背板插槽"
+      }
+    },
+    {
+      "model": "LK249S",
+      "type": "DP",
+      "channels": 0,
+      "description": "安全型主站通信模块",
+      "is_master": true,
+      "slot_required": 1,
+      "is_safety_module": true,
+      "details": {
+        "sram_storage": "片外存储器, 512KB, 位宽16bit",
+        "input_voltage": "20.4 ~ 28.8VDC",
+        "power_consumption_max": "200mA @24VDC",
+        "dp_bus_speed": ["187.5Kbps", "500Kbps", "1.5Mbps", "3Mbps", "6Mbps"],
+        "pcie_bus_speed": "2.5G/s",
+        "dimensions": "44.7mm*166mm*152mm",
+        "operating_temperature": "0 ~ 60°C",
+        "installation_method": "背板插槽"
+      }
+    },
+    {
+      "model": "LK610S",
+      "type": "DI",
+      "channels": 8,
+      "description": "安全型8通道数字量输入模块",
+      "is_safety_module": true,
+      "details": {
+        "protocol": "PROFIsafe"
+      }
+    },
+    {
+      "model": "LK611S",
+      "type": "DI",
+      "channels": 8,
+      "description": "安全型8通道数字量输入模块 (带线路故障检测功能)",
+      "is_safety_module": true,
+      "details": {
+        "protocol": "PROFIsafe",
+        "features": ["线路故障检测"]
+      }
+    },
+    {
+      "model": "LK710S",
+      "type": "DO",
+      "channels": 8,
+      "description": "安全型8通道数字量输出模块",
+      "is_safety_module": true,
+      "details": {
+        "protocol": "PROFIsafe"
+      }
+    },
+    {
+      "model": "LK411S",
+      "type": "AI",
+      "channels": 8,
+      "description": "安全型8通道电流型模拟量输入模块",
+      "is_safety_module": true,
+      "details": {
+        "signal_type": "电流型",
+        "protocol": "PROFIsafe"
+      }
+    },
+    {
+      "model": "LK630S",
+      "type": "DI",
+      "channels": 8,
+      "description": "安全型8通道数字量输入模块 (带SOE功能)",
+      "is_safety_module": true,
+      "details": {
+        "protocol": "PROFIsafe",
+        "features": ["SOE功能"]
+      }
+    },
+    {
+      "model": "LK239-Master",
+      "type": "COM",
+      "channels": 0,
+      "description": "Modbus主站通信模块",
+      "details": {
+        "protocol": "Modbus",
+        "role": "Master"
+      }
+    },
+    {
+      "model": "LK239-Slave",
+      "type": "COM",
+      "channels": 0,
+      "description": "Modbus从站通信模块",
+      "details": {
+        "protocol": "Modbus",
+        "role": "Slave"
+      }
+    },
+    {
+      "model": "LK239-Free",
+      "type": "COM",
+      "channels": 0,
+      "description": "自由协议通信模块",
+      "details": {
+        "protocol": "Free Protocol"
+      }
+    },
+    {
+      "model": "LK430",
+      "type": "AI",
+      "channels": 6,
+      "description": "6通道热电阻模拟量输入模块",
+      "details": {
+        "sensor_type": "RTD"
+      }
+    },
+    {
+      "model": "LK441",
+      "type": "AI",
+      "channels": 8,
+      "description": "8通道热电偶(带冷端补偿)模拟量输入模块",
+      "details": {
+        "sensor_type": "TC",
+        "features": ["冷端补偿"]
+      }
+    },
+    {
+      "model": "LK442",
+      "type": "AI",
+      "channels": 6,
+      "description": "6路隔离热电偶模拟量输入模块",
+      "details": {
+        "sensor_type": "TC",
+        "features": ["隔离"]
+      }
+    }
   ],
   "HOLLYSYS_LE_MODULES": [
     { "model": "LE5118", "type": "CPU", "channels": 40, "description": "LE系列CPU模块, DC24V供电, 自带40点I/O (DI24, DO16晶体管)", "sub_channels": {"DI": 24, "DO": 16}, "power_supply": "DC24V" },
