@@ -238,18 +238,11 @@ class MainWindow(QMainWindow):
         # 将包含按钮的QWidget设置为标签栏的角部控件 (例如，右上角)
         main_tab_widget.setCornerWidget(upload_buttons_widget, Qt.Corner.TopRightCorner)
 
-        # 移除旧的主布局设置，因为现在由 QTabWidget 控制顶层内容切换
-        # main_layout = QHBoxLayout(central_widget) # 不再需要这个顶层QHBoxLayout
-        # ... (移除旧的 main_layout.addWidget 调用)
-
     def setup_connections(self):
         """设置信号连接"""
         # 查询区域信号
         self.query_area.query_requested.connect(self._handle_query)
         self.query_area.clear_requested.connect(self._handle_clear)
-        # self.query_area.upload_io_table_requested.connect(self._handle_upload_io_table) # -- 已移除，直接连接按钮
-        # self.query_area.upload_hmi_requested.connect(self._handle_hmi_generation_requested) # -- 已移除，直接连接按钮
-        # self.query_area.upload_plc_requested.connect(self._handle_plc_generation_requested) # -- 已移除，直接连接按钮
 
         # 直接连接在MainWindow中创建的上传按钮的信号
         self.upload_io_table_btn.clicked.connect(self._handle_upload_io_table)
@@ -383,7 +376,7 @@ class MainWindow(QMainWindow):
                                                    site_name=self.current_site_name,
                                                    site_no=site_no) 
                 if success:
-                    QMessageBox.information(self, "成功", f"IO点表模板已成功导出到:\\\\n{file_path}")
+                    QMessageBox.information(self, "成功", f"IO点表模板已成功导出到:\\n{file_path}")
                     self.status_bar.showMessage(f"IO点表模板已导出: {file_path}", 7000)
                 else:
                     QMessageBox.warning(self, "导出失败", "IO点表模板导出失败。\\\\n请检查日志获取详细信息。")
