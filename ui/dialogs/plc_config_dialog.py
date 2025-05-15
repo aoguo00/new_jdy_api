@@ -278,10 +278,15 @@ class PLCConfigDialogUI:
         return rack_page
 
     def clear_rack_tabs(self):
-        """清除所有机架选项卡。"""
+        """清除所有机架选项卡并删除其关联的页面 widget。"""
         if self.rack_tabs:
-            self.rack_tabs.clear()
-            logger.debug("PLCConfigDialogUI: All rack tabs cleared.")
+            while self.rack_tabs.count() > 0:
+                widget = self.rack_tabs.widget(0) # 获取第一个选项卡的 widget
+                self.rack_tabs.removeTab(0)    # 从 QTabWidget 中移除它
+                if widget:
+                    widget.deleteLater()       # 安排 widget 以便稍后安全删除
+            # self.rack_tabs.clear() # 如果我们手动移除并删除，则不再需要此行
+            logger.debug("PLCConfigDialogUI: 所有机架选项卡已清除，并且其页面已安排删除。")
 
     def add_rack_tab(self, page_widget: QWidget, tab_name: str):
         """添加一个新的机架选项卡。"""
@@ -307,6 +312,10 @@ class PLCConfigEmbeddedWidget(QWidget):
     def __init__(self, io_data_loader: IODataLoader, devices_data: List[Dict[str, Any]] = None, parent=None):
         super().__init__(parent)
         self.setMinimumSize(1000, 600)
+
+        # 初始化信号连接状态标志
+        self._rack_tab_signal_connected = False
+        self._rack_combo_signal_connected = False
 
         if not io_data_loader:
             logger.error("PLCConfigEmbeddedWidget 初始化错误: IODataLoader 实例未提供。")
@@ -361,6 +370,19 @@ class PLCConfigEmbeddedWidget(QWidget):
             # 确保 module_type_filter 与UI一致
             if self.view and self.view.type_combo:
                  self.module_type_filter = self.view.type_combo.currentText()
+
+        self._initialize_dialog_state() 
+        
+        # 3. 根据当前的UI过滤器和已配置模块，重建左侧穿梭框的内容
+        #    load_modules 方法现在负责这个
+        self.load_modules() # 这会使用当前的 self.module_type_filter
+
+        # 4. 更新UI的静态和动态部分
+        self.create_rack_tabs() # 这会调用 _initialize_slot1_for_lk_system_if_needed (如果适用)
+        logger.info(f"set_devices_data: self.current_config after create_rack_tabs (and potential DP init): {self.current_config}")
+        self.update_all_config_tables() 
+
+        logger.info(f"set_devices_data completed. UI refreshed. System type: {self.system_type}, Racks: {self.view.rack_tabs.count() if self.view.rack_tabs else 'N/A'}")
 
     def _ensure_module_unique_id(self, module: Dict[str, Any]) -> None:
         """确保模块字典有一个 'unique_id'，如果没有则生成一个。"""
@@ -480,7 +502,8 @@ class PLCConfigEmbeddedWidget(QWidget):
         self.load_modules() # 这会使用当前的 self.module_type_filter
 
         # 4. 更新UI的静态和动态部分
-        self.create_rack_tabs() 
+        self.create_rack_tabs() # 这会调用 _initialize_slot1_for_lk_system_if_needed (如果适用)
+        logger.info(f"set_devices_data: self.current_config after create_rack_tabs (and potential DP init): {self.current_config}")
         self.update_all_config_tables() 
 
         logger.info(f"set_devices_data completed. UI refreshed. System type: {self.system_type}, Racks: {self.view.rack_tabs.count() if self.view.rack_tabs else 'N/A'}")
@@ -642,9 +665,27 @@ class PLCConfigEmbeddedWidget(QWidget):
 
     def create_rack_tabs(self):
         """创建机架选项卡界面，根据系统类型调整槽位1的说明"""
-        if not self.io_data_loader or not self.view.rack_tabs or not self.view.rack_combo:
-            logger.warning("create_rack_tabs: UI elements or io_data_loader not ready.")
+        if not self.io_data_loader or not self.view or not self.view.rack_tabs or not self.view.rack_combo:
+            logger.warning("create_rack_tabs: UI elements (view, rack_tabs, rack_combo) or io_data_loader not ready.")
             return
+
+        # 先断开旧的信号连接，防止重复连接或连接到旧的tab实例
+        # 只有在之前已连接的情况下才尝试断开
+        if self._rack_tab_signal_connected:
+            try:
+                self.view.rack_tabs.currentChanged.disconnect(self.on_rack_tab_changed)
+            except RuntimeError: 
+                logger.warning("RuntimeError during rack_tabs.currentChanged.disconnect, was possibly not connected as expected.")
+            finally:
+                self._rack_tab_signal_connected = False # 无论如何，标记为未连接，因为我们将重新评估连接
+
+        if self._rack_combo_signal_connected:
+            try:
+                self.view.rack_combo.currentIndexChanged.disconnect(self.on_rack_combo_changed)
+            except RuntimeError:
+                logger.warning("RuntimeError during rack_combo.currentIndexChanged.disconnect, was possibly not connected as expected.")
+            finally:
+                self._rack_combo_signal_connected = False # 无论如何，标记为未连接
 
         self.view.clear_rack_tabs()
         self.view.update_rack_combo(0) # 先清空并用0更新组合框
@@ -655,16 +696,6 @@ class PLCConfigEmbeddedWidget(QWidget):
         
         logger.info(f"Creating rack tabs: System type='{self.system_type}', Rack count={rack_count}, Slots/Rack={slots_per_rack}")
         
-        # 先断开旧的信号连接，防止重复连接或连接到旧的tab实例
-        try:
-            self.view.rack_tabs.currentChanged.disconnect(self.on_rack_tab_changed)
-        except RuntimeError: # 'disconnect' may raise RuntimeError if not connected
-            pass
-        try:
-            self.view.rack_combo.currentIndexChanged.disconnect(self.on_rack_combo_changed)
-        except RuntimeError:
-            pass
-
         actual_rack_count_for_combo = rack_count # 初始化 actual_rack_count_for_combo
 
         if rack_count == 0:
@@ -695,9 +726,9 @@ class PLCConfigEmbeddedWidget(QWidget):
             # 查找 config_table_in_page 和连接信号的部分也移到循环内
             config_table_in_page = page_widget.findChild(QTableWidget, f"rack_table_{rack_id_iter}")
             if config_table_in_page:
-                try: # 先尝试断开，以防万一在重建tab时旧连接残留
-                    config_table_in_page.itemDoubleClicked.disconnect(self._handle_right_table_double_click)
-                except RuntimeError: pass # 如果未连接，则忽略错误
+                # 对于新创建的 config_table_in_page，其 itemDoubleClicked 信号尚未连接，
+                # 因此不需要（也不能有效地）预先调用 disconnect。
+                # 旧表格的连接应由其父页面 widget 的 deleteLater() 调用来清理。
                 config_table_in_page.itemDoubleClicked.connect(self._handle_right_table_double_click)
                 logger.debug(f"Connected itemDoubleClicked for rack {rack_id_iter}'s config table.")
             else:
@@ -710,10 +741,27 @@ class PLCConfigEmbeddedWidget(QWidget):
             self._initialize_slot1_for_lk_system_if_needed()
         
         # 重新连接 rack_tabs 和 rack_combo 的信号 (仅当有tab时)
+        # 确保在尝试连接前标志是False (已在disconnect逻辑中处理)
         if self.view.rack_tabs and self.view.rack_tabs.count() > 0: 
-            self.view.rack_tabs.currentChanged.connect(self.on_rack_tab_changed)
-        if self.view.rack_combo: # rack_combo 也只在有 rack 时才有意义
-            self.view.rack_combo.currentIndexChanged.connect(self.on_rack_combo_changed)
+            try:
+                self.view.rack_tabs.currentChanged.connect(self.on_rack_tab_changed)
+                self._rack_tab_signal_connected = True
+            except Exception as e:
+                logger.error(f"Failed to connect rack_tabs.currentChanged: {e}", exc_info=True)
+                self._rack_tab_signal_connected = False # 连接失败，确保标志为False
+        else:
+            self._rack_tab_signal_connected = False # 没有选项卡，无法连接
+
+        if self.view.rack_combo and self.view.rack_tabs and self.view.rack_tabs.count() > 0: # 仅当有选项卡时，组合框同步才有意义
+            try:
+                self.view.rack_combo.currentIndexChanged.connect(self.on_rack_combo_changed)
+                self._rack_combo_signal_connected = True
+            except Exception as e:
+                logger.error(f"Failed to connect rack_combo.currentIndexChanged: {e}", exc_info=True)
+                self._rack_combo_signal_connected = False # 连接失败，确保标志为False
+        else:
+            # 如果没有选项卡或者组合框不存在，则标记为未连接
+            self._rack_combo_signal_connected = False
             
         logger.info(f"Rack tabs creation/update complete. Total tabs: {self.view.rack_tabs.count() if self.view.rack_tabs else 0}. System: '{self.system_type}'.")
 
@@ -725,7 +773,9 @@ class PLCConfigEmbeddedWidget(QWidget):
         它会修改 self.current_config 和 self.configured_modules。
         前提: rack_count > 0 已经在外部检查。
         """
+        logger.info("_initialize_slot1_for_lk_system_if_needed: Method STsabARTED.") # 新增的入口日志
         if self.system_type != "LK" or not self.io_data_loader:
+            logger.warning("_initialize_slot1_for_lk_system_if_needed: Exiting because system is not LK or no io_data_loader.")
             return
         
         # 从 self.rack_info 获取真实的机架数量，如果为0则不应执行
@@ -734,31 +784,36 @@ class PLCConfigEmbeddedWidget(QWidget):
             logger.info("_initialize_slot1_for_lk_system_if_needed: rack_count is 0, skipping DP preset.")
             return
 
-            logger.info("LK System: Attempting to preset DP module for slot 1 in all racks if not already set by config.")
-            rack_info = self.io_data_loader.get_rack_info()
-            rack_count = rack_info.get('rack_count', 0)
+        logger.info("_initialize_slot1_for_lk_system_if_needed: LK System - Attempting to preset DP module for slot 1.") # 确保是 INFO
+        # rack_info = self.io_data_loader.get_rack_info() # 这行是旧代码，确认已移除或注释
+        # rack_count = rack_info.get('rack_count', 0) # rack_count 已从 self.rack_info 获取
             
-            for rack_id in range(1, rack_count + 1):
-                dp_modules, _ = self.io_data_loader.load_available_modules('DP') 
-                dp_model_to_set = "PROFIBUS-DP" 
-                all_predefined_modules = self.io_data_loader.module_info_provider.get_all_predefined_modules()
-                predefined_dp = [m for m in all_predefined_modules if m.get('type') == 'DP']
-                if predefined_dp:
-                    dp_model_to_set = predefined_dp[0]['model']
-                logger.info(f"为LK机架 {rack_id} 槽位1设置DP模块: {dp_model_to_set}")
-                dp_module_obj = self.io_data_loader.get_module_by_model(dp_model_to_set)
-                if not dp_module_obj: 
-                    dp_module_obj = {'model': dp_model_to_set, 'type': 'DP', 'channels': 0, 'description': 'DP通讯模块 (自动配置)'}
-                if 'unique_id' not in dp_module_obj:
-                    dp_module_obj['unique_id'] = self.next_module_id_counter
-                self.next_module_id_counter +=1
-                self.current_config[(rack_id, 1)] = dp_model_to_set
-                self.configured_modules[(rack_id, 1)] = dp_module_obj
-                self.current_modules_pool = [
-                    m for m in self.current_modules_pool 
-                    if not (m.get('model') == dp_model_to_set and m.get('unique_id') == dp_module_obj.get('unique_id'))
-                ]
-            self.load_modules() 
+        for rack_id in range(1, rack_count + 1):
+            dp_modules, _ = self.io_data_loader.load_available_modules('DP') 
+            dp_model_to_set = "PROFIBUS-DP" 
+            all_predefined_modules = self.io_data_loader.module_info_provider.get_all_predefined_modules()
+            predefined_dp = [m for m in all_predefined_modules if m.get('type') == 'DP']
+            if predefined_dp:
+                dp_model_to_set = predefined_dp[0]['model']
+            logger.info(f"为LK机架 {rack_id} 槽位1设置DP模块: {dp_model_to_set}")
+            dp_module_obj = self.io_data_loader.get_module_by_model(dp_model_to_set)
+            if not dp_module_obj: 
+                dp_module_obj = {'model': dp_model_to_set, 'type': 'DP', 'channels': 0, 'description': 'DP通讯模块 (自动配置)'}
+            # 确保 unique_id
+            self._ensure_module_unique_id(dp_module_obj) 
+
+            self.current_config[(rack_id, 1)] = dp_model_to_set
+            self.configured_modules[(rack_id, 1)] = dp_module_obj
+            logger.debug(f"_initialize_slot1_for_lk_system_if_needed: Rack {rack_id} Slot 1 set to {dp_model_to_set}. current_config now: {self.current_config}")
+            
+            # 从 current_modules_pool 移除这个已配置的 DP 模块 (基于 unique_id)
+            # self.current_modules_pool 的更新将在下面的 self.load_modules() 中通过 _rebuild_current_modules_pool() 完成
+            # self.current_modules_pool = [
+            #     m for m in self.current_modules_pool 
+            #     if not (m.get('model') == dp_model_to_set and m.get('unique_id') == dp_module_obj.get('unique_id'))
+            # ]
+        self.load_modules() # 这个调用会触发 _rebuild_current_modules_pool
+        logger.info(f"_initialize_slot1_for_lk_system_if_needed: Finished. self.current_config: {self.current_config}")
 
     def on_rack_tab_changed(self, index):
         if self.view.rack_combo: # 检查UI元素是否存在
