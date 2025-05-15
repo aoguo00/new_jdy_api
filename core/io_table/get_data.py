@@ -1,26 +1,191 @@
 """IO表格数据获取模块"""
 
 import logging
+import json # 新增
+import os   # 新增
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 import re
 
-# 导入模块定义
-from .plc_modules import get_module_info_by_model, get_modules_by_type, get_all_modules, PLC_SERIES, MODULE_TYPE_PREFIXES # 导入PLC_SERIES
+# 移除: from .plc_modules import get_module_info_by_model, get_modules_by_type, get_all_modules, PLC_SERIES, MODULE_TYPE_PREFIXES
 
 logger = logging.getLogger(__name__)
+
+# --- 从原 plc_modules.py 迁移过来的常量和JSON加载逻辑 ---
+_SCRIPT_DIR_GET_DATA = os.path.dirname(os.path.abspath(__file__))
+_JSON_FILE_PATH_GET_DATA = os.path.join(_SCRIPT_DIR_GET_DATA, '..', '..', 'db', 'plc_modules.json')
+
+_cached_modules_data_get_data: Optional[Dict[str, List[Dict[str, Any]]]] = None
+_module_data_load_error_get_data: Optional[Exception] = None
+
+# 模块类型映射 (原 MODULE_TYPE_PREFIXES)
+# 注意：DeviceDataProcessor 中也有一份类似的 IO_TYPE_MAPPINGS，但用途不同，
+# MODULE_TYPE_PREFIXES_DEF 主要用于基于型号前缀严格推断和利时模块类型。
+MODULE_TYPE_PREFIXES_DEF = {
+    "CPU": ["LE5118"],
+    "AI": ["LK41", "LE5611", "LE531", "LE534"],
+    "AO": ["LK51", "LE5621", "LE532"],
+    "AI/AO": ["LE533"],
+    "DI": ["LK61", "LE5610", "LE521"],
+    "DO": ["LK71", "LE5620", "LE522"],
+    "DI/DO": ["LE523"],
+    "DP": ["LK81", "LK82", "PROFIBUS-DP"],
+    "COM": ["LK238", "LE5600", "LE5601", "LE540", "LE5401", "LE5403", "LE5404"],
+    "RACK": ["LK117"]
+}
+
+# 模块系列配置 (原 PLC_SERIES_CONFIG)
+PLC_SERIES_CONFIG_DEF = {
+    "LK": {
+        "name": "和利时LK系列",
+        "prefixes": ["LK"],
+        "modules_key": "HOLLYSYS_LK_MODULES"
+    },
+    "LE": {
+        "name": "和利时LE系列",
+        "prefixes": ["LE"],
+        "modules_key": "HOLLYSYS_LE_MODULES"
+    }
+}
+
+# 模块类型对应的默认通道数 (原 MODULE_TYPE_CHANNELS)
+MODULE_TYPE_CHANNELS_DEF = {
+    "CPU": 0, "AI": 8, "AO": 4, "DI": 16, "DO": 16, "DI/DO": 16,
+    "AI/AO": 6, "DP": 0, "COM": 0, "RACK": 0, "未录入": 0 # 未录入也给0
+}
+
+# 模块类型描述 (原 MODULE_TYPE_DESCRIPTIONS)
+MODULE_TYPE_DESCRIPTIONS_DEF = {
+    "CPU": "中央处理单元", "AI": "模拟量输入", "AO": "模拟量输出",
+    "DI": "数字量输入", "DO": "数字量输出", "DI/DO": "数字量输入/输出",
+    "AI/AO": "模拟量输入/输出", "DP": "PROFIBUS-DP通讯接口",
+    "COM": "通讯模块", "RACK": "扩展背板", "未录入": "未录入模块"
+}
+
+def _internal_load_json_data() -> Optional[Dict[str, List[Dict[str, Any]]]]:
+    """内部函数：从JSON文件加载模块数据或返回缓存的数据。"""
+    global _cached_modules_data_get_data, _module_data_load_error_get_data
+    if _cached_modules_data_get_data is not None:
+        return _cached_modules_data_get_data
+    if _module_data_load_error_get_data is not None:
+        logger.error(f"模块数据JSON加载先前已失败: {_module_data_load_error_get_data}")
+        return None
+    
+    try:
+        logger.info(f"尝试从 {_JSON_FILE_PATH_GET_DATA} 加载PLC模块数据 (内部加载器)...")
+        with open(_JSON_FILE_PATH_GET_DATA, 'r', encoding='utf-8') as f:
+            _cached_modules_data_get_data = json.load(f)
+        logger.info(f"PLC模块数据成功从 {_JSON_FILE_PATH_GET_DATA} 加载并缓存 (内部加载器)。")
+        return _cached_modules_data_get_data
+    except FileNotFoundError:
+        _module_data_load_error_get_data = FileNotFoundError(f"PLC模块JSON文件未找到: {_JSON_FILE_PATH_GET_DATA}")
+        logger.error(str(_module_data_load_error_get_data))
+    except json.JSONDecodeError as e:
+        _module_data_load_error_get_data = e
+        logger.error(f"解析PLC模块JSON文件 {_JSON_FILE_PATH_GET_DATA} 失败: {e}")
+    except Exception as e:
+        _module_data_load_error_get_data = e
+        logger.error(f"加载PLC模块JSON文件 {_JSON_FILE_PATH_GET_DATA} 时发生未知错误: {e}")
+    return None
+
+def _internal_get_all_modules_from_json() -> List[Dict[str, Any]]:
+    """内部函数：从加载的JSON数据获取所有模块列表。"""
+    all_json_data = _internal_load_json_data()
+    if not all_json_data:
+        logger.warning("无法加载模块JSON数据，_internal_get_all_modules_from_json 返回空列表。")
+        return []
+    
+    all_modules_list = []
+    for series_config_info in PLC_SERIES_CONFIG_DEF.values():
+        modules_key = series_config_info.get("modules_key")
+        if modules_key and modules_key in all_json_data:
+            modules_from_key = all_json_data.get(modules_key)
+            if isinstance(modules_from_key, list):
+                all_modules_list.extend(modules_from_key)
+            else:
+                logger.warning(f"在JSON数据中，键 '{modules_key}' 的值不是一个列表。")
+    return [module.copy() for module in all_modules_list]
+
+def _internal_get_module_info_by_model(model: str) -> Dict[str, Any]:
+    """
+    内部函数：通过型号查找模块信息。会先从加载的JSON数据中查找，
+    如果未找到，则尝试根据前缀等规则推断。
+    """
+    model_upper = model.upper()
+    all_json_data = _internal_load_json_data()
+
+    if all_json_data:
+        for series_config_info in PLC_SERIES_CONFIG_DEF.values():
+            modules_key = series_config_info.get("modules_key")
+            if modules_key and modules_key in all_json_data:
+                module_list = all_json_data.get(modules_key, [])
+                for module_def in module_list:
+                    if module_def.get("model", "").upper() == model_upper:
+                        return module_def.copy()
+    else:
+        logger.warning("无法加载模块JSON数据，_internal_get_module_info_by_model 将仅依赖推断逻辑。")
+
+    module_type = "未录入"
+    channels = 0
+    description = f"未知模块 ({model})" # 使用原始 model 字符串
+    sub_channels = None
+    matched_series_name = None
+
+    for series_key, series_info_config in PLC_SERIES_CONFIG_DEF.items():
+        if any(model_upper.startswith(prefix) for prefix in series_info_config["prefixes"]):
+            matched_series_name = series_info_config["name"]
+            for type_name, type_prefixes in MODULE_TYPE_PREFIXES_DEF.items():
+                if any(model_upper.startswith(tp) for tp in type_prefixes):
+                    is_prefix_for_this_series = any(tp.startswith(p) for p in series_info_config["prefixes"])
+                    is_general_prefix = not any(
+                        s_info["name"] != matched_series_name and any(tp.startswith(p_other) for p_other in s_info["prefixes"])
+                        for _, s_info in PLC_SERIES_CONFIG_DEF.items()
+                    )
+                    if is_prefix_for_this_series or is_general_prefix:
+                        module_type = type_name
+                        break
+            if module_type != "未录入":
+                break
+    
+    if module_type == "未录入": # 再次尝试通用匹配
+        for type_name, prefixes_list in MODULE_TYPE_PREFIXES_DEF.items():
+            if any(model_upper.startswith(prefix) for prefix in prefixes_list):
+                module_type = type_name
+                break
+    
+    description_base = MODULE_TYPE_DESCRIPTIONS_DEF.get(module_type, "未知模块")
+    description = f"{description_base} ({model})" # 使用原始 model
+    if module_type in MODULE_TYPE_CHANNELS_DEF:
+        channels = MODULE_TYPE_CHANNELS_DEF[module_type]
+    
+    if matched_series_name and module_type == "未录入": # 完善描述
+        description = f"{matched_series_name} - {description}"
+
+    result = {
+        "model": model, "type": module_type, "channels": channels,
+        "description": description,
+        "is_master": module_type == "DP", # 简化DP主站判断
+        "slot_required": 1 if module_type == "DP" else None
+    }
+    if sub_channels: result["sub_channels"] = sub_channels
+    return result
+# --- 迁移结束 ---
 
 class ModuleInfoProvider:
     """
     模块信息提供者。
-    负责从 plc_modules.py 加载和提供预定义的PLC模块信息。
-    处理所有预定义模块的缓存和按需检索。
+    负责从 db/plc_modules.json 加载和提供预定义的PLC模块信息。
+    处理所有预定义模块的缓存和按需检索，并包含型号推断逻辑。
     """
     def __init__(self):
         """构造函数，初始化时加载所有预定义模块。"""
-        # 从 plc_modules.py 加载所有模块定义
-        self.predefined_modules: List[Dict[str, Any]] = get_all_modules()
-        logger.info(f"ModuleInfoProvider initialized with {len(self.predefined_modules)} predefined modules.")
+        self.predefined_modules: List[Dict[str, Any]] = _internal_get_all_modules_from_json()
+        if not self.predefined_modules and _module_data_load_error_get_data is not None:
+            logger.error(f"ModuleInfoProvider 初始化失败，因为无法从JSON加载模块数据: {_module_data_load_error_get_data}")
+            # 即使加载失败，也初始化为空列表以避免后续AttributeError
+            self.predefined_modules = []
+        else:
+            logger.info(f"ModuleInfoProvider initialized with {len(self.predefined_modules)} predefined modules from JSON.")
 
     def get_all_predefined_modules(self) -> List[Dict[str, Any]]:
         """返回所有预定义模块的深拷贝列表，以防止外部直接修改缓存。"""
@@ -29,36 +194,33 @@ class ModuleInfoProvider:
     def get_predefined_module_by_model(self, model_str: str) -> Optional[Dict[str, Any]]:
         """
         根据精确的模块型号字符串从缓存的预定义模块列表中查找模块。
-
-        Args:
-            model_str (str): 要查找的模块型号。
-
-        Returns:
-            Optional[Dict[str, Any]]: 如果找到，返回模块信息的拷贝；否则返回None。
         """
         model_upper = model_str.upper()
-        for module in self.predefined_modules:
+        for module in self.predefined_modules: # self.predefined_modules 是从JSON加载的
             if module.get("model", "").upper() == model_upper:
-                return module.copy()  # 返回副本以确保缓存安全
+                return module.copy()
         return None
 
     def get_inferred_module_info(self, model_str: str) -> Optional[Dict[str, Any]]:
         """
-        使用 plc_modules.get_module_info_by_model 中可能更复杂的推断逻辑获取模块信息。
-        当精确的预定义匹配未找到，或者 plc_modules 函数执行的不仅仅是列表查找
-        （例如，通过前缀进行类型推断）时，通常使用此方法。
-
-        Args:
-            model_str (str): 用于推断的模块型号字符串。
-
-        Returns:
-            Optional[Dict[str, Any]]: 推断得到的模块信息，可能为None。
+        获取模块信息，首先尝试从预定义（JSON加载）的模块中精确查找，
+        如果未找到，则使用内部的推断逻辑（原 plc_modules.get_module_info_by_model 的功能）。
         """
-        # plc_get_module_info_by_model 理论上应返回新的字典或可安全修改的字典。
-        # 如果它返回 plc_modules 内部字典的引用，这里可能需要深拷贝，
-        # 但通常此信息用于只读。
-        module_info = get_module_info_by_model(model_str)
-        return module_info 
+        # 尝试精确匹配 (已在 get_predefined_module_by_model 中实现，但这里直接用内部缓存)
+        exact_match = self.get_predefined_module_by_model(model_str)
+        if exact_match:
+            return exact_match
+        
+        # 如果精确匹配失败，则使用内部推断逻辑
+        # _internal_get_module_info_by_model 已经包含了先查JSON再推断的逻辑，
+        # 但为了明确区分 ModuleInfoProvider 的职责（提供信息，包括推断），
+        # 理想情况下，推断逻辑本身也应该封装或调用。
+        # 此处直接调用 _internal_get_module_info_by_model，它会先尝试JSON（虽然我们这里已经试过了），
+        # 然后进行推断。
+        # 为避免重复JSON查找，可以考虑_internal_get_module_info_by_model只做推断部分。
+        # 暂定：直接调用，它内部会处理。
+        logger.debug(f"Model '{model_str}' not in predefined JSON list, attempting inference.")
+        return _internal_get_module_info_by_model(model_str)
 
 class DeviceDataProcessor:
     """
@@ -189,10 +351,10 @@ class DeviceDataProcessor:
                                '和利时' in all_text_content or 'HOLLYSYS' in all_text_content
         
         if is_hollysys_by_prefix or is_hollysys_by_keyword:
-            # 如果是和利时产品，尝试更具体的型号前缀匹配（来自 plc_modules.MODULE_TYPE_PREFIXES）
-            for type_key, prefixes_list in MODULE_TYPE_PREFIXES.items():
+            # 如果是和利时产品，尝试更具体的型号前缀匹配 (使用在 get_data.py 中定义的 MODULE_TYPE_PREFIXES_DEF)
+            for type_key, prefixes_list in MODULE_TYPE_PREFIXES_DEF.items(): # 修改这里
                 if any(model_str.startswith(p.upper()) for p in prefixes_list):
-                    if type_key in self.IO_TYPE_MAPPINGS: return type_key # 如果匹配到已知类型，则返回
+                    if type_key in self.IO_TYPE_MAPPINGS: return type_key
         
         # 通用关键字匹配
         for io_type, keywords in self.IO_TYPE_MAPPINGS.items():
@@ -826,7 +988,7 @@ class IODataLoader:
         # 从 plc_modules.PLC_SERIES 动态生成和利时产品型号前缀列表
         # 这里假设 PLC_SERIES 已被正确导入并在类级别或实例级别可用
         self.HOLLYSYS_PREFIXES = [
-            prefix.upper() for series_data in PLC_SERIES.values() 
+            prefix.upper() for series_data in PLC_SERIES_CONFIG_DEF.values() 
             for prefix in series_data.get("prefixes", [])
         ]
         
