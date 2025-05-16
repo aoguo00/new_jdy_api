@@ -732,10 +732,10 @@ class MainWindow(QMainWindow):
             elif hmi_type == "力控":
                 logger.info(f"准备根据已加载数据生成力控HMI点表。")
                 logger.info(f"来自 {len(self.loaded_io_data_by_sheet)} 个工作表的总共 {len(all_points)} 个点位将传递给生成器。")
-                # LikongGenerator.generate_basic_xls 的 output_dir 参数现在是目标文件夹
-                # 文件名 (通常是 "Basic.xls") 由生成器内部逻辑决定，并会被保存到 output_dir
+                # LikongGenerator.generate_basic_csv 的 output_dir 参数现在是目标文件夹
+                # 文件名 (通常是 "Basic.csv") 由生成器内部逻辑决定，并会被保存到 output_dir
                 likong_gen = LikongGenerator() 
-                success, generated_file_path, error_msg = likong_gen.generate_basic_xls(
+                success, generated_file_path, error_msg = likong_gen.generate_basic_csv(
                     output_dir=hmi_specific_output_dir, # 传递新的固定输出目录
                     points_by_sheet=self.loaded_io_data_by_sheet
                 )
