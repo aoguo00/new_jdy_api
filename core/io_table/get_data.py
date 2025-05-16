@@ -558,23 +558,30 @@ class SystemSetupManager:
         
         if le5118_cpus:
             self.system_type = "LE_CPU"
-            self.rack_count = 1 # LE5118 CPU 系统通常只有一个主单元（即一个机架）
+            # LE5118 CPU 系统通常只有一个主单元（即一个机架）。
+            # 如果项目中列出了多个LE5118 CPU，这里仍按1个机架处理，因为它们不能组成多机架。
+            self.rack_count = 1 
             logger.info(f"LE5118 CPU detected. System type set to '{self.system_type}'. Rack count set to {self.rack_count}.")
         else:
             # 对于 LK 或其他非LE_CPU系统，根据 LK117 背板模块的数量来计算实际的机架数量
-            lk117_racks = [m for m in processed_enriched_devices if m.get('model', '').upper() == 'LK117']
-            calculated_rack_count = 0
-            if lk117_racks:
-                for rack_module in lk117_racks:
-                    try:
-                        # LK117模块本身可能在数据中有一个'quantity'字段表示其数量
-                        quantity = int(rack_module.get('quantity', '1'))
-                        calculated_rack_count += quantity if quantity > 0 else 1 # 确保至少加1
-                    except (ValueError, TypeError):
-                        calculated_rack_count += 1 # 如果数量无效，则默认为1个
+            lk117_racks_devices = [m for m in processed_enriched_devices if m.get('model', '').upper() == 'LK117']
+            
+            # 机架数量直接等于LK117模块的实例数量。
+            # 每个LK117对象被视为一个独立的机架。
+            # 忽略LK117内部的 'quantity' 字段来计算总机架数，因为这通常表示该型号有多少个，而不是一个LK117代表多少机架。
+            calculated_rack_count = len(lk117_racks_devices)
+            
             # 系统至少有1个机架，即使没有明确的LK117模块（例如，如果所有模块都直接列出而没有机架信息）
-            self.rack_count = max(1, calculated_rack_count) 
-            logger.info(f"System type is '{self.system_type}'. Rack count calculated from LK117s or default: {self.rack_count}.")
+            # 但如果明确有LK117，则以LK117的数量为准。如果没有LK117但有其他模块，则认为是1个机架。
+            # 如果既没有LK117，也没有其他和利时模块，则机架数为0（由processed_enriched_devices是否为空间接判断）
+            if calculated_rack_count > 0:
+                self.rack_count = calculated_rack_count
+            elif processed_enriched_devices: # 有和利时模块但没有LK117，算作1个机架
+                self.rack_count = 1
+            else: # 没有任何和利时模块
+                self.rack_count = 0
+                
+            logger.info(f"System type is '{self.system_type}'. Rack count based on LK117 instances ({len(lk117_racks_devices)}) or default: {self.rack_count}.")
 
         # 基于计算出的机架数量和系统类型，初始化 self.racks_data 列表
         self.racks_data = []
@@ -979,7 +986,9 @@ class IODataLoader:
     提高了代码的可维护性和扩展性。
     """
     # 允许出现在穿梭框供用户选择的模块类型 (RACK类型已移除，因为它代表机架本身)
-    ALLOWED_MODULE_TYPES = ["CPU", 'AI', 'AO', 'DI', 'DO', 'DI/DO', 'AI/AO', 'DP', 'COM'] 
+    # CPU 和 DP 模块通常不应由用户在穿梭框中手动选择添加，它们有特殊的配置规则。
+    # LK系统的DP模块会自动添加到槽位1。LE系统的CPU模块（如LE5118）也应在槽位1。
+    ALLOWED_MODULE_TYPES = ['AI', 'AO', 'DI', 'DO', 'DI/DO', 'AI/AO', 'COM'] 
     
     def __init__(self):
         """构造函数，初始化所有辅助类和内部状态变量。"""
@@ -1019,7 +1028,7 @@ class IODataLoader:
         all_predefined = self.module_info_provider.get_all_predefined_modules()
         self.SPECIAL_ALLOWED_MODULES = list(set(
             [m["model"].upper() for m in all_predefined if m.get("type") in ["COM", "DI/DO", "AI/AO"]] +
-            [m["model"].upper() for m in all_predefined if m.get("type") == "CPU" and m.get("model","").upper() == "LE5118"] + 
+            # [m["model"].upper() for m in all_predefined if m.get("type") == "CPU" and m.get("model","").upper() == "LE5118"] + # LE5118不应在穿梭框选择
             ["LK238"] 
         ))
         logger.info(f"IODataLoader initialized. System type: {self.system_setup_manager.get_system_type()}. "
@@ -1366,5 +1375,4 @@ def print_generated_channel_addresses_summary(channel_addresses_list: List[Dict[
             print(f"{i}\t{addr_info['model']}\t{addr_info['type']}\t{addr_info['address']}\t{addr_info.get('type','模块')}")
     
     print(f"\n总IO通道数 (来自列表生成): {actual_io_count_from_list}, 非IO通道模块: {len(non_io_channels_from_list)}")
-    print("注意: 配置数据已记录，实际保存功能尚未实现 (此为地址列表打印)。")
-    print("--------------------------------------\n") 
+    print("--------------------------------------")

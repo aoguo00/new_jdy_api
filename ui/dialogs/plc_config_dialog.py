@@ -43,12 +43,8 @@ class PLCConfigDialogUI:
         self.ok_button: Optional[QPushButton] = None
         self.cancel_button: Optional[QPushButton] = None
 
-        # 信息标签 (如果需要从UI类管理)
-        # self.info_label: Optional[QLabel] = None 
-        # 注意: info_label 在原代码中似乎没有被显式创建为self的属性，
-        # 而是在 create_rack_tabs 中作为局部变量创建并添加到布局中。
-        # 如果需要从外部更新，需要将其提升为 self.view.info_label。
-        # 暂时不在这里创建，看主类如何处理。
+        # 信息标签
+        self.system_info_label: Optional[QLabel] = None # 新增: 用于显示CPU/DP等系统级信息
         
     def setup_ui(self):
         """创建并布局所有UI元素。"""
@@ -124,6 +120,13 @@ class PLCConfigDialogUI:
         rack_selection_layout.addStretch()
         right_panel_layout.addLayout(rack_selection_layout)
         
+        # 新增：系统信息标签 (用于CPU/DP提示)
+        self.system_info_label = QLabel("系统信息将会显示在这里")
+        self.system_info_label.setObjectName("systemInfoLabel") # 用于样式表
+        self.system_info_label.setWordWrap(True)
+        self.system_info_label.setStyleSheet("QLabel#systemInfoLabel { color: #555; padding: 3px; background-color: #f0f0f0; border-radius: 3px; }")
+        right_panel_layout.addWidget(self.system_info_label) # 添加到右侧面板顶部，机架tabs之前
+
         self.rack_tabs = QTabWidget()
         self.rack_tabs.setTabPosition(QTabWidget.TabPosition.North)
         right_panel_layout.addWidget(self.rack_tabs)
@@ -381,6 +384,7 @@ class PLCConfigEmbeddedWidget(QWidget):
         self.create_rack_tabs() # 这会调用 _initialize_slot1_for_lk_system_if_needed (如果适用)
         logger.info(f"set_devices_data: self.current_config after create_rack_tabs (and potential DP init): {self.current_config}")
         self.update_all_config_tables() 
+        self._update_system_info_label() # 新增: 调用以更新系统信息标签
 
         logger.info(f"set_devices_data completed. UI refreshed. System type: {self.system_type}, Racks: {self.view.rack_tabs.count() if self.view.rack_tabs else 'N/A'}")
 
@@ -410,6 +414,23 @@ class PLCConfigEmbeddedWidget(QWidget):
         self.all_available_modules = temp_all_modules
         logger.info(f"self.all_available_modules re-populated with {len(self.all_available_modules)} modules (filter: {module_type_filter}).")
 
+        # 新增逻辑：确保LE_CPU系统类型的CPU模块（如LE5118）始终在可用模块池中
+        current_system_type = self.io_data_loader.get_rack_info().get('system_type', self.system_type)
+        if current_system_type == "LE_CPU":
+            le_cpu_model = "LE5118" # 假设LE CPU固定型号为LE5118
+            cpu_already_in_pool = any(m.get('model', '').upper() == le_cpu_model for m in self.all_available_modules)
+            if not cpu_already_in_pool:
+                logger.info(f"LE_CPU system type detected and {le_cpu_model} not in all_available_modules. Attempting to add it.")
+                # 从 io_data_loader 的 get_module_by_model 方法获取
+                cpu_module_details = self.io_data_loader.get_module_by_model(le_cpu_model)
+                if cpu_module_details:
+                    cpu_module_copy = cpu_module_details.copy()
+                    self._ensure_module_unique_id(cpu_module_copy) # 确保有unique_id
+                    self.all_available_modules.append(cpu_module_copy)
+                    logger.info(f"{le_cpu_model} (CPU for LE_CPU) added to all_available_modules. New count: {len(self.all_available_modules)}")
+                else:
+                    logger.warning(f"Could not find predefined details for {le_cpu_model} in ModuleInfoProvider to add to available modules for LE_CPU system.")
+    
     def _rebuild_current_modules_pool(self) -> None:
         """
         根据 self.all_available_modules 和 self.configured_modules 重新计算
@@ -505,6 +526,7 @@ class PLCConfigEmbeddedWidget(QWidget):
         self.create_rack_tabs() # 这会调用 _initialize_slot1_for_lk_system_if_needed (如果适用)
         logger.info(f"set_devices_data: self.current_config after create_rack_tabs (and potential DP init): {self.current_config}")
         self.update_all_config_tables() 
+        self._update_system_info_label() # 新增: 调用以更新系统信息标签
 
         logger.info(f"set_devices_data completed. UI refreshed. System type: {self.system_type}, Racks: {self.view.rack_tabs.count() if self.view.rack_tabs else 'N/A'}")
 
@@ -618,6 +640,7 @@ class PLCConfigEmbeddedWidget(QWidget):
         self._rebuild_current_modules_pool()
         self.view.populate_module_table(self.current_modules_pool)
         self.update_current_config_table()
+        self._update_system_info_label() # 新增：确保系统信息标签在添加后更新
 
     def remove_module(self):
         if not self.view.rack_tabs: return
@@ -662,6 +685,7 @@ class PLCConfigEmbeddedWidget(QWidget):
         self._rebuild_current_modules_pool()
         self.view.populate_module_table(self.current_modules_pool)
         self.update_current_config_table()
+        self._update_system_info_label() # 新增：确保系统信息标签在移除后更新
 
     def create_rack_tabs(self):
         """创建机架选项卡界面，根据系统类型调整槽位1的说明"""
@@ -813,6 +837,7 @@ class PLCConfigEmbeddedWidget(QWidget):
             #     if not (m.get('model') == dp_model_to_set and m.get('unique_id') == dp_module_obj.get('unique_id'))
             # ]
         self.load_modules() # 这个调用会触发 _rebuild_current_modules_pool
+        self._update_system_info_label() # 新增: 更新系统信息标签
         logger.info(f"_initialize_slot1_for_lk_system_if_needed: Finished. self.current_config: {self.current_config}")
 
     def on_rack_tab_changed(self, index):
@@ -962,6 +987,89 @@ class PLCConfigEmbeddedWidget(QWidget):
             QMessageBox.critical(self, "错误", f"应用配置时出错: {str(e)}")
             # self.configuration_applied.emit(False)
 
+    def _update_system_info_label(self):
+        """根据当前系统类型和配置更新右侧的系统信息提示标签。"""
+        if not self.view or not self.view.system_info_label:
+            return
+
+        info_parts = []
+        # system_type = self.config_handler.get_system_type() # 旧的获取方式
+        # 直接从 self.system_type 获取，该属性在 set_devices_data 中由 system_setup_manager 更新, 
+        # 并且在 _initialize_dialog_state 中也从 rack_info 更新
+        current_system_type = self.system_type 
+        info_parts.append(f"<b>当前系统类型:</b> {current_system_type}")
+
+        if current_system_type == "LK":
+            # LK117检测
+            lk117_count = 0 # 默认值
+            if self.io_data_loader and hasattr(self.io_data_loader, 'processed_enriched_devices') and self.io_data_loader.processed_enriched_devices:
+                lk117_devices = [d for d in self.io_data_loader.processed_enriched_devices if d.get('model', '').upper() == 'LK117']
+                lk117_count = len(lk117_devices)
+            
+            if lk117_count > 0:
+                info_parts.append(f"<b>检测到机架模块 (LK117):</b> {lk117_count}个")
+                actual_rack_count_in_info = self.rack_info.get('rack_count', 0)
+                if lk117_count != actual_rack_count_in_info:
+                    logger.warning(f"LK117数量 ({lk117_count}) 与 rack_info中的机架数 ({actual_rack_count_in_info}) 不符")
+                    info_parts.append(f"<font color='orange'>注意: 识别到 {lk117_count} 个LK117，但系统配置显示 {actual_rack_count_in_info} 个机架。</font>")
+            else:
+                # 即使没有LK117, LK系统也可能有默认机架
+                if self.rack_info.get('rack_count', 0) > 0:
+                     info_parts.append(f"在LK系统中未检测到LK117模块 (当前配置 {self.rack_info.get('rack_count', 0)} 个机架)。")
+                else:
+                     info_parts.append("在LK系统中未检测到LK117模块。")
+            
+            # LK系统DP模块信息
+            dp_configs = {} # 从 current_config 获取
+            for (r_id, s_id), model_name in self.current_config.items():
+                if s_id == 1:
+                    module_details = self.io_data_loader.get_module_by_model(model_name)
+                    if module_details and module_details.get('type') == 'DP':
+                        dp_configs[r_id] = model_name
+            
+            if dp_configs:
+                info_parts.append("<b>LK系统DP模块 (自动配置):</b>")
+                for rack_num, dp_model_name in sorted(dp_configs.items()): # 按机架号排序
+                    info_parts.append(f"  机架 {rack_num} 槽位1: {dp_model_name} (DP)")
+            elif lk117_count > 0 or self.rack_info.get('rack_count', 0) > 0: # 如果有LK117或配置了机架
+                info_parts.append("LK系统槽位1将自动配置DP模块。")
+
+        elif current_system_type == "LE_CPU":
+            # LE系统不显示LK117信息
+            # 检查机架配置 (可能是默认的1个)
+            le_rack_count = self.rack_info.get('rack_count', 0)
+            if le_rack_count > 0:
+                info_parts.append(f"系统配置了 {le_rack_count} 个机架 (LE主单元)。")
+            else:
+                info_parts.append("未配置机架 (应至少有1个LE主单元)。")
+
+            # LE系统CPU状态
+            cpu_model_configured = self.current_config.get((1, 1))
+            if cpu_model_configured:
+                logging.getLogger().info(f"ROOT_LE_CPU_Check: Slot (1,1) configured with model '{cpu_model_configured}'. Current self.current_config: {self.current_config}")
+                cpu_details = self.io_data_loader.get_module_by_model(cpu_model_configured)
+                
+                # 确保cpu_details不为None再进行后续判断
+                if cpu_details and cpu_details.get('model', '').upper() == 'LE5118' and cpu_details.get('type', '').upper() == 'CPU':
+                    info_parts.append(f"<b>LE系统CPU状态:</b> <font color='green'>机架1 槽位1已正确配置 {cpu_model_configured}</font>")
+                else:
+                    model_name_for_msg = cpu_details.get('model', cpu_model_configured) if cpu_details else cpu_model_configured
+                    type_for_msg = cpu_details.get('type', '未知类型') if cpu_details else '未知类型'
+                    info_parts.append(f"<font color='red'><b>LE系统CPU错误:</b> 机架1 槽位1应为LE5118 CPU，当前为 {model_name_for_msg} (类型: {type_for_msg})</font>")
+            else:
+                info_parts.append("<font color='red'><b>LE系统CPU缺失:</b> 机架1 槽位1必须配置LE5118 CPU模块。</font>")
+        
+        # 通用CPU模块检测 (如果 config_handler.cpu_module 存在且不是以上两种特定系统处理过的)
+        # 这个逻辑可能需要重新评估其适用性，目前注释掉以避免与系统特定逻辑冲突
+        # if hasattr(self, 'config_handler') and self.config_handler and self.config_handler.cpu_module:
+        #     if current_system_type not in ["LK", "LE_CPU"]: # 或者更复杂的条件
+        #         cpu_model_name = self.config_handler.cpu_module.get(self.config_handler.module_info.model_key, "未知型号")
+        #         info_parts.append(f"<b>检测到CPU模块:</b> {cpu_model_name}")
+
+        final_info_text = "<br>".join(info_parts)
+        self.view.system_info_label.setText(final_info_text if final_info_text else "暂无系统特定信息。")
+        logger.debug(f"System info label updated: {final_info_text}")
+
     def reset_to_initial_state(self):
         """将PLC配置区域重置到初始的、未加载项目数据的状态。"""
         logger.info("PLCConfigEmbeddedWidget: Attempting to reset to initial state.")
@@ -998,6 +1106,7 @@ class PLCConfigEmbeddedWidget(QWidget):
 
             self.create_rack_tabs()
             self.update_all_config_tables()
+            self._update_system_info_label() # 更新标签以反映重置状态
             
             logger.info("PLCConfigEmbeddedWidget: Successfully reset to initial state.")
 

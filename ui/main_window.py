@@ -402,15 +402,27 @@ class MainWindow(QMainWindow):
         try:
             # 更新当前场站名称
             self.current_site_name = site_name
-            logger.info(f"当前选定的场站已更新为: {self.current_site_name}") # 更新日志信息
+            logger.info(f"_handle_project_selected FOR {site_name} CALLED") # 新增日志
+            logger.info(f"当前选定的场站已更新为: {self.current_site_name}") 
 
             # 执行查询 (调用 DeviceService)
             if not self.device_service:
                 raise Exception("设备服务未初始化")
-            all_devices = self.device_service.get_formatted_devices(site_name) # 使用 all_devices
+            all_devices = self.device_service.get_formatted_devices(site_name) 
             
+            logger.info(f"原始 all_devices 列表长度: {len(all_devices) if all_devices else 0}") # 新增日志
+            if all_devices: # 仅当all_devices非空时记录详情
+                raw_lk117_count = sum(1 for d in all_devices if d.get('_widget_1635777115287', '').upper() == 'LK117')
+                # 统计LK610S的条目数及其基于数量的总实例数
+                raw_lk610s_entries = [d for d in all_devices if d.get('_widget_1635777115287', '').upper() == 'LK610S']
+                raw_lk610s_entry_count = len(raw_lk610s_entries)
+                # 安全地将数量字符串转换为整数，如果为空或无效则视为0
+                raw_lk610s_instance_count = sum(int(d.get('_widget_1635777485580', '0') or '0') for d in raw_lk610s_entries)
+                logger.info(f"原始数据中 LK117 条目数: {raw_lk117_count}")
+                logger.info(f"原始数据中 LK610S 条目数: {raw_lk610s_entry_count}, 基于数量的实例总数: {raw_lk610s_instance_count}")
+
             # 更新设备列表
-            self.device_list_area.update_device_list(all_devices) # 使用 all_devices
+            self.device_list_area.update_device_list(all_devices) 
             
             # 更新第三方设备区域的当前场站信息
             if hasattr(self, 'third_party_area') and self.third_party_area:
@@ -418,10 +430,17 @@ class MainWindow(QMainWindow):
 
             # 更新内嵌的PLC配置区域的设备数据
             if hasattr(self, 'embedded_plc_config_widget') and self.embedded_plc_config_widget:
+                logger.info(f"准备调用 get_current_devices，当前 device_table 行数: {self.device_list_area.device_table.rowCount() if self.device_list_area and self.device_list_area.device_table else 'N/A'}") # 新增日志
                 current_devices_for_plc_config = self.get_current_devices() # 获取最新的设备数据
+                logger.info(f"get_current_devices 返回后，列表长度: {len(current_devices_for_plc_config) if current_devices_for_plc_config else 0}") # 新增日志
+                if current_devices_for_plc_config: # 仅当列表非空时记录详情
+                    processed_lk117_count = sum(1 for d in current_devices_for_plc_config if d.get('_widget_1635777115287', '').upper() == 'LK117')
+                    processed_lk610s_count = sum(1 for d in current_devices_for_plc_config if d.get('_widget_1635777115287', '').upper() == 'LK610S')
+                    logger.info(f"get_current_devices 返回的列表中 LK117 实例数: {processed_lk117_count}")
+                    logger.info(f"get_current_devices 返回的列表中 LK610S 实例数: {processed_lk610s_count}")
                 self.embedded_plc_config_widget.set_devices_data(current_devices_for_plc_config)
             
-            self.status_bar.showMessage(f"已选择场站: {site_name}，设备列表已更新。") # 更新状态栏
+            self.status_bar.showMessage(f"已选择场站: {site_name}，设备列表已更新。") 
 
         except Exception as e:
             logger.error(f"处理项目选择时出错: {e}", exc_info=True) # 更新日志信息
@@ -773,27 +792,34 @@ class MainWindow(QMainWindow):
                             
                             # 根据数量创建多个设备实例
                             try:
-                                quantity = int(device['_widget_1635777485580'])
+                                quantity_str = device['_widget_1635777485580']
+                                # 如果数量为空字符串或仅含空白，则默认为1；否则尝试转换为整数
+                                quantity = int(quantity_str) if quantity_str and quantity_str.strip() else 1 
                                 
-                                # 检查是否是LK117背板（机架）
-                                model = device['_widget_1635777115287'].upper()
-                                if "LK117" in model:
-                                    # 对于LK117背板，不创建多个实例，而是保留数量信息
-                                    logger.info(f"检测到LK117背板，数量为{quantity}，作为机架信息保留")
-                                    device['instance_index'] = 1
-                                    devices_data.append(device)
-                                else:
-                                    # 为非背板设备创建多个实例
-                                    for i in range(quantity):
-                                        device_copy = device.copy()
-                                        device_copy['instance_index'] = i + 1  # 实例索引，用于区分相同设备的不同实例
-                                        devices_data.append(device_copy)
-                                    logger.debug(f"  已为设备 #{row+1} 创建 {quantity} 个实例")
-                            except (ValueError, TypeError):
-                                # 数量解析失败，默认添加一个
-                                logger.warning(f"设备 #{row+1} 数量无法解析: {device['_widget_1635777485580']}，默认为1")
-                                device['instance_index'] = 1
-                                devices_data.append(device)
+                                if quantity <= 0: # 处理数量为0或负数的情况
+                                    logger.warning(f"设备 #{row+1} 型号 {device['_widget_1635777115287']} 原始数量为 '{quantity_str}'，被修正为1个实例")
+                                    quantity = 1
+                                
+                                # 为所有设备（包括LK117）都根据其数量创建实例
+                                for i in range(quantity):
+                                    device_copy = device.copy()
+                                    device_copy['instance_index'] = i + 1  # 实例索引
+                                    # 特殊记录LK117或LK610S的创建，便于追踪
+                                    model_upper = device_copy['_widget_1635777115287'].upper()
+                                    if "LK117" in model_upper:
+                                        logger.info(f"创建LK117实例 (源行: {row+1}, 型号: {device_copy['_widget_1635777115287']}, 解析数量: {quantity}, 当前实例号: {i+1}), devices_data已有 {len(devices_data)} 条")
+                                    elif "LK610S" in model_upper:
+                                        logger.info(f"创建LK610S实例 (源行: {row+1}, 型号: {device_copy['_widget_1635777115287']}, 解析数量: {quantity}, 当前实例号: {i+1}), devices_data已有 {len(devices_data)} 条")
+                                    devices_data.append(device_copy)
+                                
+                                # 避免为单个非LK117/非LK610S设备或数量为1的设备重复记录下面的debug日志
+                                if not ("LK117" in device['_widget_1635777115287'].upper() or "LK610S" in device['_widget_1635777115287'].upper()) and quantity > 1:
+                                    logger.debug(f"  已为设备 #{row+1} 型号 {device['_widget_1635777115287']} (原始数量: {quantity_str}) 创建 {quantity} 个实例")
+
+                            except (ValueError, TypeError) as e_qty:
+                                logger.warning(f"设备 #{row+1} 型号 {device['_widget_1635777115287']} 数量 '{device['_widget_1635777485580']}' 解析失败 ({e_qty})，默认为1个实例. devices_data已有 {len(devices_data)} 条")
+                                device['instance_index'] = 1 # 确保原始device也有instance_index
+                                devices_data.append(device) # 添加原始device作为单个实例
                                 
                         except Exception as row_e:
                             logger.warning(f"处理设备表格第 {row+1} 行数据时出错: {row_e}")

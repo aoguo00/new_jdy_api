@@ -2,6 +2,9 @@
 from PySide6.QtWidgets import (QGroupBox, QVBoxLayout, QTableWidget,
                              QTableWidgetItem, QHeaderView, QMessageBox)
 from PySide6.QtCore import Signal
+import logging # 新增：导入logging
+
+logger = logging.getLogger(__name__) # 新增：获取logger实例
 
 class DeviceListArea(QGroupBox):
     """设备清单区域"""
@@ -56,7 +59,20 @@ class DeviceListArea(QGroupBox):
         try:
             # 更新表格数据
             self.device_table.setRowCount(0)
-            for device_info in devices:
+            logger.info(f"[DeviceListArea] update_device_list CALLED with {len(devices) if devices else 0} devices.") # 修改日志，处理devices为None的情况
+            if not devices: # 如果传入的devices是None或空列表，则不进行后续操作
+                self.update_finished.emit(0)
+                return
+
+            for i, device_info in enumerate(devices):
+                model_no = device_info.get('_widget_1635777115287', '')
+                qty = device_info.get('_widget_1635777485580', '')
+                # 筛选我们关心的模块进行日志记录
+                if 'LK117' in model_no.upper():
+                    logger.info(f"[DeviceListArea] Populating UI Table row {i+1}: Model={model_no}, Qty={qty}")
+                elif 'LK610S' in model_no.upper():
+                    logger.info(f"[DeviceListArea] Populating UI Table row {i+1}: Model={model_no}, Qty={qty}")
+
                 row = self.device_table.rowCount()
                 self.device_table.insertRow(row)
                 self.device_table.setItem(row, 0, QTableWidgetItem(str(device_info.get('_widget_1635777115211', ''))))

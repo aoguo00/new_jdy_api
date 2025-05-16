@@ -94,25 +94,39 @@ def setup_logging():
 
 def main():
     """主函数"""
+    setup_logging() 
+    logger = logging.getLogger(__name__)
+
     try:
-        # 设置日志
-        setup_logging()
-        logger = logging.getLogger(__name__)
         logger.info("应用程序启动")
 
-
-        # 启动应用
         app = QApplication(sys.argv)
-
-        # 创建主窗口
         window = MainWindow()
         window.show()
         logger.info("主窗口已显示")
 
-        sys.exit(app.exec())
+        # 考虑在这里连接 aboutToQuit 信号来关闭日志，这是更Qt友好的方式
+        # def on_about_to_quit():
+        #     logger.info("QApplication aboutToQuit: 正在关闭日志...")
+        #     logging.shutdown()
+        # app.aboutToQuit.connect(on_about_to_quit)
+
+        exit_code = app.exec()
+        logger.info(f"应用程序事件循环结束，退出代码: {exit_code}")
+        # 在这里关闭日志，覆盖正常退出路径
+        logging.shutdown()
+        sys.exit(exit_code)
+
+    except SystemExit as se: 
+        logger.info(f"应用程序通过 SystemExit 退出，代码: {se.code if se.code is not None else 'N/A'}")
+        # 确保日志在退出前关闭
+        logging.shutdown()
+        raise 
     except Exception as e:
-        logger.error(f"程序启动失败: {e}")
-        sys.exit(1)
+        logger.error(f"主函数中发生未捕获的顶层异常: {e}", exc_info=True)
+        # 确保日志在退出前关闭
+        logging.shutdown()
+        sys.exit(1) 
 
 if __name__ == '__main__':
     main()
