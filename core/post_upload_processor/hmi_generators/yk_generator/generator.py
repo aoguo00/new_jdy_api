@@ -160,7 +160,7 @@ class KingViewGenerator:
             'ExtentField4': None, 'ExtentField5': None, 'ExtentField6': None,
             'ExtentField7': None, 'ExtentField8': None,
             'AlarmGroup': site_name_from_file or "", 'IOConfigControl': True, 
-            'IOAccess': f'Server1.{point_name_part_for_ioaccess}.Value',
+            'IOAccess': f'Server1.{tag_name}.Value',
             'IOEnable': True, 'ForceRead': False, 'ForceWrite': False, 
             'StateEnumTable': None, 
         }
@@ -233,7 +233,7 @@ class KingViewGenerator:
                          data_row.extend([''] * (len(headers) - len(data_row)))
                     for col_idx, cell_value in enumerate(data_row):
                         if isinstance(cell_value, bool):
-                            cell_value_to_write = str(cell_value).upper()
+                            cell_value_to_write = str(cell_value).lower()
                         elif cell_value is None:
                              cell_value_to_write = ''
                         elif pd.isna(cell_value):
