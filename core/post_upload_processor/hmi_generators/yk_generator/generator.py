@@ -187,23 +187,50 @@ class KingViewGenerator:
             logger.debug(f"  => IO Server (IO_FLOAT) data for '{tag_name}': {io_server_float_row_list}")
             self._io_server_data['IO_FLOAT'].append(io_server_float_row_list)
             
-            sll_val = str(sll_val_raw or '').strip()
-            sl_val = str(sl_val_raw or '').strip()
-            sh_val = str(sh_val_raw or '').strip()
-            shh_val = str(shh_val_raw or '').strip()
+            # 辅助函数或内联逻辑来转换报警限值
+            # 返回值: (converted_value_or_None, is_enabled_bool)
+            def _get_numeric_limit(raw_val_str: Optional[str]) -> Tuple[Optional[float], bool]:
+                """
+                尝试将原始字符串限值转换为浮点数。
+                如果原始值为空或无效，则报警不启用，限值为None。
+                """
+                if raw_val_str is None or str(raw_val_str).strip() == "":
+                    return None, False # 如果原始值为空或仅含空格，则限值视为None，且报警不启用
+                try:
+                    return float(raw_val_str), True # 尝试转换为float，转换成功则报警启用
+                except ValueError:
+                    # 如果原始值非空但无法转换为float，记录警告，限值视为None，且报警不启用
+                    logger.warning(f"报警限值 '{raw_val_str}' 无法转换为数字，将视为无效并不启用该报警。")
+                    return None, False 
 
-            sll_enabled = bool(sll_val)
-            sl_enabled = bool(sl_val)
-            sh_enabled = bool(sh_val)
-            shh_enabled = bool(shh_val)
+            shh_limit_value, shh_enabled = _get_numeric_limit(shh_val_raw)
+            sh_limit_value, sh_enabled = _get_numeric_limit(sh_val_raw)
+            sl_limit_value, sl_enabled = _get_numeric_limit(sl_val_raw)
+            sll_limit_value, sll_enabled = _get_numeric_limit(sll_val_raw)
 
-            data_dict_float_row_dict = {**data_dict_common, 'TagID': current_data_dict_tag_id, 'MaxValue': 1000000000, 'MinValue': -1000000000, 'InitialValue': 0, 'Sensitivity': 0, 'EngineerUnits': None, 'HisRecMode': 2, 'HisRecChangeDeadband': 0, 'HisRecInterval': 60,
-                                 'HiHiEnabled': shh_enabled, 'HiHiLimit': shh_val if shh_enabled else '', 'HiHiText': "高高", 'HiHiPriority': 1, 'HiHiInhibitor': None,
-                                 'HiEnabled': sh_enabled, 'HiLimit': sh_val if sh_enabled else '', 'HiText': "高", 'HiPriority': 1, 'HiInhibitor': None,
-                                 'LoEnabled': sl_enabled, 'LoLimit': sl_val if sl_enabled else '', 'LoText': "低", 'LoPriority': 1, 'LoInhibitor': None,
-                                 'LoLoEnabled': sll_enabled, 'LoLoLimit': sll_val if sll_enabled else '', 'LoLoText': "低低", 'LoLoPriority': 1, 'LoLoInhibitor': None,
-                                 'LimitDeadband': 0, 'LimitDelay': 0, 'DevMajorEnabled': False, 'DevMajorLimit': 80, 'DevMajorText': "主要", 'DevMajorPriority': 1, 'MajorInhibitor': None, 'DevMinorEnabled': False, 'DevMinorLimit': 20, 'DevMinorText': "次要", 'DevMinorPriority': 1, 'MinorInhibitor': None, 'DevDeadband': 0, 'DevTargetValue': 100, 'DevDelay': 0, 'RocEnabled': False, 'RocPercent': 20, 'RocTimeUnit': 0, 'RocText': "变化率", 'RocDelay': 0, 'RocPriority': 1, 'RocInhibitor': None, 'StatusAlarmTableID': 0, 'StatusAlarmEnabled': False, 'StatusAlarmTableName': None, 'StatusInhibitor': None, 'MaxRaw': 1000000000, 'MinRaw': -1000000000, 'DataConvertMode': 1, 'NlnTableID': 0, 'AddupMaxVal': 0, 'AddupMinVal': 0}
-            data_dict_float_row_list = [data_dict_float_row_dict.get(h, '') for h in DATA_DICTIONARY_SHEETS['IO_FLOAT']]
+            data_dict_float_row_dict = {**data_dict_common, 
+                                 'TagID': current_data_dict_tag_id, 
+                                 'MaxValue': 1000000000, 'MinValue': -1000000000, 
+                                 'InitialValue': 0, 'Sensitivity': 0, 'EngineerUnits': None, 
+                                 'HisRecMode': 2, 'HisRecChangeDeadband': 0, 'HisRecInterval': 60,
+                                 'HiHiEnabled': shh_enabled, 'HiHiLimit': shh_limit_value, # 使用转换后的数字或None
+                                 'HiHiText': "高高", 'HiHiPriority': 1, 'HiHiInhibitor': None,
+                                 'HiEnabled': sh_enabled, 'HiLimit': sh_limit_value,   # 使用转换后的数字或None
+                                 'HiText': "高", 'HiPriority': 1, 'HiInhibitor': None,
+                                 'LoEnabled': sl_enabled, 'LoLimit': sl_limit_value,   # 使用转换后的数字或None
+                                 'LoText': "低", 'LoPriority': 1, 'LoInhibitor': None,
+                                 'LoLoEnabled': sll_enabled, 'LoLoLimit': sll_limit_value, # 使用转换后的数字或None
+                                 'LoLoText': "低低", 'LoLoPriority': 1, 'LoLoInhibitor': None,
+                                 'LimitDeadband': 0, 'LimitDelay': 0, 
+                                 'DevMajorEnabled': False, 'DevMajorLimit': 80, 'DevMajorText': "主要", 'DevMajorPriority': 1, 'MajorInhibitor': None, 
+                                 'DevMinorEnabled': False, 'DevMinorLimit': 20, 'DevMinorText': "次要", 'DevMinorPriority': 1, 'MinorInhibitor': None, 
+                                 'DevDeadband': 0, 'DevTargetValue': 100, 'DevDelay': 0, 
+                                 'RocEnabled': False, 'RocPercent': 20, 'RocTimeUnit': 0, 'RocText': "变化率", 'RocDelay': 0, 'RocPriority': 1, 'RocInhibitor': None, 
+                                 'StatusAlarmTableID': 0, 'StatusAlarmEnabled': False, 'StatusAlarmTableName': None, 'StatusInhibitor': None, 
+                                 'MaxRaw': 1000000000, 'MinRaw': -1000000000, 
+                                 'DataConvertMode': 1, 'NlnTableID': 0, 'AddupMaxVal': 0, 'AddupMinVal': 0
+            }
+            data_dict_float_row_list = [data_dict_float_row_dict.get(h) for h in DATA_DICTIONARY_SHEETS['IO_FLOAT']] # 确保None值能正确传递
             logger.debug(f"  => Data Dictionary (IO_FLOAT) data for '{tag_name}': {data_dict_float_row_list}")
             self._data_dict_data['IO_FLOAT'].append(data_dict_float_row_list)
             
@@ -230,20 +257,22 @@ class KingViewGenerator:
                          logger.warning(f"Sheet '{safe_sheet_name}' 行 {row_idx + 2} 数据列数 ({len(data_row)}) 超过表头列数 ({len(headers)})，将截断数据。")
                          data_row = data_row[:len(headers)]
                     elif len(data_row) < len(headers):
-                         data_row.extend([''] * (len(headers) - len(data_row)))
+                         data_row.extend([None] * (len(headers) - len(data_row))) # 用None填充而不是空字符串
                     for col_idx, cell_value in enumerate(data_row):
-                        if isinstance(cell_value, bool):
-                            cell_value_to_write = str(cell_value).lower()
-                        elif cell_value is None:
-                             cell_value_to_write = ''
-                        elif pd.isna(cell_value):
-                            cell_value_to_write = ''
-                        else:
-                             cell_value_to_write = cell_value
+                        value_to_write = cell_value # 默认使用原始值
+
+                        if isinstance(value_to_write, bool):
+                            value_to_write = str(value_to_write).lower()
+                        elif pd.isna(value_to_write): # 首先处理Pandas的NA/NaN
+                            value_to_write = None     # 将Pandas的NA视为空白单元格 (写入None)
+                        # 如果原始 cell_value 就是 None (例如从_get_numeric_limit返回的)，
+                        # 那么 value_to_write 此时仍然是 None。
+                        # xlwt会将None写入为空白单元格，float写入为数字，字符串按字符串处理。
+                        
                         try:
-                            sheet.write(row_idx + 1, col_idx, cell_value_to_write, self.default_style)
+                            sheet.write(row_idx + 1, col_idx, value_to_write, self.default_style)
                         except Exception as e_write_cell:
-                            logger.error(f"写入单元格失败 (Sheet: '{safe_sheet_name}', Row: {row_idx+2}, Col: {col_idx+1}, Value: '{str(cell_value_to_write)[:50]}...'): {e_write_cell}")
+                            logger.error(f"写入单元格失败 (Sheet: '{safe_sheet_name}', Row: {row_idx+2}, Col: {col_idx+1}, Value: '{str(value_to_write)[:50]}...'): {e_write_cell}")
                 logger.info(f"  Sheet '{safe_sheet_name}' (共 {len(headers)} 列，{len(data_rows_for_sheet)} 行数据) 创建、写入表头和数据成功。")
             workbook.save(filepath)
             logger.info(f"成功创建并填充文件: {filepath}")
