@@ -307,6 +307,10 @@ class SafetyHollysysGenerator:
                 sheet.col(1).width = 256 * 40 # 变量名
                 sheet.col(2).width = 256 * 15 # 区内偏移
 
+            # 新增：在末尾添加一个名为 "Sheet1" 的空工作表
+            workbook.add_sheet("Sheet1")
+            logger.info("已在Modbus安全型点表末尾添加一个空的 'Sheet1' 工作表。")
+
             workbook.save(output_path)
             logger.info(f"安全型和利时Modbus点表已成功生成并保存到: {output_path}")
             logger.info(f"--- SafetyHollysysGenerator: generate_modbus_excel 方法结束 ---")

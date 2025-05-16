@@ -80,7 +80,7 @@ class HollysysGenerator:
                     # 如果HMI名为空但PLC地址存在，用PLC地址作为HMI名
                     logger.warning(f"工作表 '{sheet_title}', 点位PLC地址 '{plc_address}' (来源: {source_sheet_from_point}/{source_type}) HMI名为空。将用PLC地址作名称。")
                     hmi_name = plc_address
-                
+
                 # 初始值逻辑 (非安全型)
                 initial_value_to_write: Any
                 if data_type == "REAL": initial_value_to_write = "0" # 非安全型REAL初始值为字符串"0"

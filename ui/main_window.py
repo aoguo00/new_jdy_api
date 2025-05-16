@@ -622,7 +622,7 @@ class MainWindow(QMainWindow):
                 logger.info(f"和利时PLC安全型Modbus点表将保存到: {save_path_modbus}")
                 
                 success_modbus, error_message_modbus = generator.generate_modbus_excel(
-                    points_by_sheet=self.loaded_io_data_by_sheet, 
+                    points_by_sheet_dict=self.loaded_io_data_by_sheet, # 修改参数名
                     output_path=save_path_modbus
                 )
 
