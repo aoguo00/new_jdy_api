@@ -732,22 +732,46 @@ class MainWindow(QMainWindow):
             elif hmi_type == "力控":
                 logger.info(f"准备根据已加载数据生成力控HMI点表。")
                 logger.info(f"来自 {len(self.loaded_io_data_by_sheet)} 个工作表的总共 {len(all_points)} 个点位将传递给生成器。")
-                # LikongGenerator.generate_basic_csv 的 output_dir 参数现在是目标文件夹
-                # 文件名 (通常是 "Basic.csv") 由生成器内部逻辑决定，并会被保存到 output_dir
-                likong_gen = LikongGenerator() 
-                success, generated_file_path, error_msg = likong_gen.generate_basic_csv(
-                    output_dir=hmi_specific_output_dir, # 传递新的固定输出目录
+                
+                likong_gen = LikongGenerator()
+                # 调用新的 generate_all_csvs 方法
+                all_results = likong_gen.generate_all_csvs(
+                    output_dir=hmi_specific_output_dir,
                     points_by_sheet=self.loaded_io_data_by_sheet
                 )
-                if success and generated_file_path:
-                    QMessageBox.information(self, "生成成功", f"力控HMI点表 ({os.path.basename(generated_file_path)}) 已成功生成在: {hmi_specific_output_dir}")
-                    logger.info(f"力控HMI点表 ({os.path.basename(generated_file_path)}) 已成功生成在: {hmi_specific_output_dir}")
+
+                files_generated_successfully = []
+                errors_occurred = []
+                any_success = False
+
+                for file_name, success, file_path, err_msg in all_results:
+                    if success and file_path:
+                        files_generated_successfully.append(f"{os.path.basename(file_path)}")
+                        logger.info(f"力控HMI文件 '{os.path.basename(file_path)}' 已成功生成在: {hmi_specific_output_dir}")
+                        any_success = True
+                    else:
+                        errors_occurred.append(f"生成 '{file_name}' 失败: {err_msg if err_msg else '未知错误'}")
+                        logger.error(f"生成力控HMI文件 '{file_name}' 失败: {err_msg if err_msg else '未知错误'}")
+                
+                if any_success and not errors_occurred:
+                    QMessageBox.information(self, "生成成功", 
+                                            f"""所有力控HMI相关文件已成功生成:
+{', '.join(files_generated_successfully)}
+已保存到目录: {hmi_specific_output_dir}""")
                     self.status_bar.showMessage(f"力控HMI点表生成成功。")
-                else:
-                    err_to_show = error_msg if error_msg else "力控HMI点表生成失败，未知原因。"
-                    QMessageBox.critical(self, "生成失败", f"生成力控HMI点表失败: {err_to_show}")
-                    logger.error(f"力控HMI点表生成失败: {err_to_show}")
+                elif any_success and errors_occurred:
+                    QMessageBox.warning(self, "部分成功", 
+                                        f"""力控HMI点表生成部分成功:
+成功: {', '.join(files_generated_successfully)}
+失败: {'; '.join(errors_occurred)}
+文件保存在: {hmi_specific_output_dir}""")
+                    self.status_bar.showMessage(f"力控HMI点表部分生成成功。")
+                else: # 全都失败
+                    error_summary = "; ".join(errors_occurred) if errors_occurred else "未知原因导致所有文件生成失败。"
+                    QMessageBox.critical(self, "生成失败", f"生成所有力控HMI点表文件失败: {error_summary}")
+                    logger.error(f"生成所有力控HMI点表文件失败: {error_summary}")
                     self.status_bar.showMessage(f"力控HMI点表生成失败。")
+
             else:
                 QMessageBox.warning(self, "类型不支持", f"暂不支持生成 {hmi_type} 类型的HMI点表。")
                 logger.warning(f"请求生成不受支持的HMI类型: {hmi_type}")

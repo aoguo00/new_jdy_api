@@ -64,19 +64,9 @@ class LikongGenerator:
         """初始化力控生成器"""
         pass
 
-    def generate_basic_csv(self,
-                           output_dir: str,
-                           points_by_sheet: Dict[str, List[UploadedIOPoint]]
-                           ) -> Tuple[bool, Optional[str], Optional[str]]:
-        """
-        生成力控点表的CSV文件: Basic.csv
-        该文件包含预定义的TagType结构、表头，并根据输入数据填充点位信息。
-        文件编码为 GBK。
-        """
+    def _get_site_defaults(self, points_by_sheet: Dict[str, List[UploadedIOPoint]]) -> Tuple[str, str]:
+        """辅助方法：从主IO表获取默认场站名和场站编号"""
         main_io_sheet_key = MAIN_IO_SHEET_NAME_DEFAULT
-        file_name = "Basic.csv"
-        file_path = os.path.join(output_dir, file_name)
-
         default_site_name = ""
         default_site_number = ""
 
@@ -93,9 +83,58 @@ class LikongGenerator:
                     default_site_number = first_valid_main_point_for_site_info.site_number.strip()
         
         if not default_site_name and not default_site_number:
-            logger.warning(f"力控 Basic.csv: 未能在主IO表 '{main_io_sheet_key}' 中找到有效的全局默认场站名或场站编号。")
+            logger.warning(f"力控CSV生成器: 未能在主IO表 '{main_io_sheet_key}' 中找到有效的全局默认场站名或场站编号。")
         else:
-            logger.info(f"力控 Basic.csv: 使用全局默认场站名='{default_site_name}', 场站编号='{default_site_number}' (如果点位自身无特定信息)")
+            logger.info(f"力控CSV生成器: 使用全局默认场站名='{default_site_name}', 场站编号='{default_site_number}' (如果点位自身无特定信息)")
+        return default_site_name, default_site_number
+
+    def _clamp_alarm_value(self, 
+                           value_str: Optional[str], 
+                           default_value_str: str, 
+                           eulo_float: Optional[float], 
+                           euhi_float: Optional[float],
+                           alarm_type_name: str,
+                           point_hmi_name: str) -> str:
+        """辅助方法：检查、转换并钳位单个报警值到工程单位范围内。"""
+        if value_str is None or value_str.strip() == "":
+            return default_value_str # 用户未设置，使用硬编码默认值
+
+        try:
+            value_float = float(value_str.strip())
+        except ValueError:
+            logger.warning(f"点 '{point_hmi_name}' 的报警值 '{alarm_type_name}' ('{value_str}') 不是有效数字，将使用默认值 '{default_value_str}'。")
+            return default_value_str
+
+        # 仅当工程范围有效时才进行钳位
+        final_value_str = value_str.strip() # 默认为用户提供的有效数字字符串
+        clamped = False
+        if eulo_float is not None and euhi_float is not None and eulo_float <= euhi_float:
+            if value_float < eulo_float:
+                final_value_str = str(eulo_float) # 使用 EULO 的字符串形式，确保格式
+                clamped = True
+            elif value_float > euhi_float:
+                final_value_str = str(euhi_float) # 使用 EUHI 的字符串形式
+                clamped = True
+            
+            if clamped:
+                logger.warning(f"点 '{point_hmi_name}' 的报警值 '{alarm_type_name}' ('{value_str}') 超出工程范围 [{eulo_float}, {euhi_float}]，已被钳位到 '{final_value_str}'。")
+        
+        return final_value_str
+
+    def generate_basic_csv(self,
+                           output_dir: str,
+                           points_by_sheet: Dict[str, List[UploadedIOPoint]]
+                           ) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        生成力控点表的CSV文件: Basic.csv
+        该文件包含预定义的TagType结构、表头，并根据输入数据填充点位信息。
+        文件编码为 GBK。
+        """
+        # 1. 获取全局默认场站信息
+        default_site_name, default_site_number = self._get_site_defaults(points_by_sheet)
+        
+        file_name = "Basic.csv"
+        file_path = os.path.join(output_dir, file_name)
 
         real_points: List[UploadedIOPoint] = []
         bool_points: List[UploadedIOPoint] = []
@@ -145,7 +184,7 @@ class LikongGenerator:
                         current_point_site_name = (point.site_name if point.site_name and point.site_name.strip() else default_site_name).strip()
                         current_point_site_number = (point.site_number if point.site_number and point.site_number.strip() else default_site_number).strip()
                         
-                        row_data['NodePath'] = f"{current_point_site_name}\\\\" if current_point_site_name else ""
+                        row_data['NodePath'] = f"{current_point_site_name}\\" if current_point_site_name else ""
                         row_data['NAME'] = f"{current_point_site_number}{point.hmi_variable_name.strip()}"
                         row_data['DESC'] = point.variable_description or ""
                         row_data['FORMAT'] = "3" 
@@ -154,8 +193,22 @@ class LikongGenerator:
                         row_data['EU'] = "" 
                         logger.debug(f"点 '{row_data['NAME']}' 的 EU (工程单位) 因 UploadedIOPoint 中无对应属性而置空。")
                         
-                        row_data['EULO'] = str(point.range_low_limit) if point.range_low_limit is not None and point.range_low_limit.strip() else "0.000" 
-                        row_data['EUHI'] = str(point.range_high_limit) if point.range_high_limit is not None and point.range_high_limit.strip() else "100.000"
+                        # 获取工程单位低限和高限的字符串及浮点数值，用于钳位
+                        eulo_str = str(point.range_low_limit) if point.range_low_limit is not None and point.range_low_limit.strip() else "0.000"
+                        euhi_str = str(point.range_high_limit) if point.range_high_limit is not None and point.range_high_limit.strip() else "100.000"
+                        row_data['EULO'] = eulo_str
+                        row_data['EUHI'] = euhi_str
+
+                        eulo_float: Optional[float] = None
+                        euhi_float: Optional[float] = None
+                        try:
+                            eulo_float = float(eulo_str)
+                            euhi_float = float(euhi_str)
+                            if eulo_float > euhi_float:
+                                logger.error(f"点 '{row_data['NAME']}' 的工程单位范围无效 (EULO: {eulo_float} > EUHI: {euhi_float})，报警值钳位可能不准确。")
+                        except ValueError:
+                            logger.error(f"点 '{row_data['NAME']}' 的 EULO ('{eulo_str}') 或 EUHI ('{euhi_str}') 不是有效数字，无法进行报警值钳位。")
+                        
                         row_data['PVRAW'] = "0.000"
                         row_data['SCALEFL'] = "0" 
                         row_data['PVRAWLO'] = "0.000" 
@@ -169,16 +222,17 @@ class LikongGenerator:
                         has_shh = point.shh_set_value is not None and point.shh_set_value.strip() != ""
                         
                         if has_sll or has_sl or has_sh or has_shh:
-                            row_data['ALMENAB'] = "1" # 只要有一个报警值，就使能报警
+                            row_data['ALMENAB'] = "1"
                         else:
-                            row_data['ALMENAB'] = "0" # 所有报警值都为空，则禁止报警
+                            row_data['ALMENAB'] = "0"
                             
                         row_data['DEADBAND'] = "0.000" 
                         
-                        row_data['LL'] = str(point.sll_set_value) if has_sll else "8.000" 
-                        row_data['LO'] = str(point.sl_set_value) if has_sl else "10.000"
-                        row_data['HI'] = str(point.sh_set_value) if has_sh else "92.000"
-                        row_data['HH'] = str(point.shh_set_value) if has_shh else "94.000"
+                        # 应用钳位逻辑到报警值
+                        row_data['LL'] = self._clamp_alarm_value(point.sll_set_value, "8.000", eulo_float, euhi_float, "LL", row_data['NAME'])
+                        row_data['LO'] = self._clamp_alarm_value(point.sl_set_value, "10.000", eulo_float, euhi_float, "LO", row_data['NAME'])
+                        row_data['HI'] = self._clamp_alarm_value(point.sh_set_value, "92.000", eulo_float, euhi_float, "HI", row_data['NAME'])
+                        row_data['HH'] = self._clamp_alarm_value(point.shh_set_value, "94.000", eulo_float, euhi_float, "HH", row_data['NAME'])
                         row_data['RATE'] = "0.000" 
                         row_data['DEV'] = "0.000"  
                         
@@ -252,7 +306,7 @@ class LikongGenerator:
                         current_point_site_name = (point.site_name if point.site_name and point.site_name.strip() else default_site_name).strip()
                         current_point_site_number = (point.site_number if point.site_number and point.site_number.strip() else default_site_number).strip()
 
-                        row_data['NodePath'] = f"{current_point_site_name}\\\\" if current_point_site_name else ""
+                        row_data['NodePath'] = f"{current_point_site_name}\\" if current_point_site_name else ""
                         hmi_name = point.hmi_variable_name.strip() if point.hmi_variable_name else ""
                         row_data['NAME'] = f"{current_point_site_number}{hmi_name}"
                         row_data['DESC'] = point.variable_description or ""
@@ -356,6 +410,111 @@ class LikongGenerator:
             logger.error(error_msg, exc_info=True)
             return False, None, error_msg
 
+    def generate_his_csv(self, 
+                         output_dir: str, 
+                         points_by_sheet: Dict[str, List[UploadedIOPoint]]
+                         ) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        生成力控历史记录配置文件: His.csv
+        为所有在 Basic.csv 中生成的模拟量和数字量点记录其 PV 值。
+        文件编码为 GBK。
+        """
+        file_name = "His.csv"
+        file_path = os.path.join(output_dir, file_name)
+        
+        # 1. 获取全局默认场站信息 (与Basic.csv生成时一致)
+        default_site_name, default_site_number = self._get_site_defaults(points_by_sheet)
+
+        history_entries = []
+
+        if points_by_sheet:
+            for _, points_list in points_by_sheet.items():
+                for point in points_list:
+                    point_data_type_upper = str(point.data_type or "").upper().strip()
+                    hmi_name_from_point = str(point.hmi_variable_name or "").strip()
+
+                    if _is_value_empty_for_hmi(hmi_name_from_point):
+                        continue # 跳过HMI名称无效的点
+
+                    if point_data_type_upper == "REAL" or point_data_type_upper == "FLOAT" or point_data_type_upper == "BOOL":
+                        current_point_site_name = (point.site_name if point.site_name and point.site_name.strip() else default_site_name).strip()
+                        current_point_site_number = (point.site_number if point.site_number and point.site_number.strip() else default_site_number).strip()
+                        
+                        nodepath = f"{current_point_site_name}\\" if current_point_site_name else ""
+                        tagname = f"{current_point_site_number}{hmi_name_from_point}"
+                        
+                        history_entries.append([
+                            nodepath,
+                            tagname,
+                            "PV",       # ParName
+                            "0",        # SaveType (变化存储)
+                            "0.000000", # SaveCfg (死区)
+                            "",         # SaveScript
+                            "",         # StatTime
+                            ""          # StatUnit
+                        ])
+        
+        try:
+            with open(file_path, 'w', newline='', encoding='gbk') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(["Ver", "9"])
+                writer.writerow(["Count", len(history_entries)])
+                writer.writerow([
+                    "NodePath", "TagName", "ParName", 
+                    "SaveType", "SaveCfg", "SaveScript", 
+                    "StatTime", "StatUnit"
+                ])
+                writer.writerow([
+                    "点所在的节点路径", "点名", "参数名", 
+                    "历史存储方式:0-变化存储;1-定时存储;2-按键或脚本存储", 
+                    "历史参数配置", "历史参数脚本", 
+                    "统计时间长度", "统计时间单位"
+                ])
+                
+                # 写入所有数据行
+                for entry in history_entries:
+                    writer.writerow(entry)
+
+                # 新增：写入文件末尾的固定内容
+                writer.writerow([]) # 写入一个空行
+                writer.writerow(['ExitSave', 'Count', '0', '', '', '', '', '']) # 修正：ExitSave, Count, 0 分别在三列
+                writer.writerow(['NodePath', 'TagName', 'ParName', '', '', '', '', '']) # 写入 NodePath,TagName,ParName, 和后续空列
+
+            logger.info(f"成功生成力控历史配置文件 (His.csv): {file_path}")
+            return True, file_path, None
+
+        except Exception as e:
+            error_msg = f"生成 His.csv 文件失败: {e}"
+            logger.error(error_msg, exc_info=True)
+            return False, None, error_msg
+
+    def generate_all_csvs(self, 
+                            output_dir: str, 
+                            points_by_sheet: Dict[str, List[UploadedIOPoint]]
+                            ) -> List[Tuple[str, bool, Optional[str], Optional[str]]]:
+        """
+        生成所有力控相关的CSV文件 (Basic.csv, His.csv)。
+        返回每个文件生成结果的列表。
+        """
+        results = []
+        
+        # 生成 Basic.csv
+        logger.info("开始生成 Basic.csv...")
+        basic_success, basic_file_path, basic_err_msg = self.generate_basic_csv(output_dir, points_by_sheet)
+        results.append(("Basic.csv", basic_success, basic_file_path, basic_err_msg))
+        if not basic_success:
+            logger.error(f"由于 Basic.csv 生成失败，可能影响其他依赖文件的生成。错误: {basic_err_msg}")
+            # 根据需求，可以选择是否在Basic.csv失败时也终止其他文件生成，或继续尝试
+
+        # 生成 His.csv (可以考虑是否依赖 Basic.csv 的成功)
+        logger.info("开始生成 His.csv...")
+        his_success, his_file_path, his_err_msg = self.generate_his_csv(output_dir, points_by_sheet)
+        results.append(("His.csv", his_success, his_file_path, his_err_msg))
+
+        # 未来可以扩展以生成其他CSV文件，例如 Alm.csv
+        
+        return results
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
     
@@ -364,110 +523,56 @@ if __name__ == '__main__':
     if not os.path.exists(test_output_dir):
         os.makedirs(test_output_dir)
 
-    # --- 构建测试数据 ---
-    # 场景1: 包含主IO点 (常规点、预留点、AI派生点) 和第三方点
-    points_data_s1: Dict[str, List[UploadedIOPoint]] = {
-        "IO点表": [ # 主IO表
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_01", data_type="REAL", source_type="main_io", module_type="AI", channel_tag="CH_AI01", variable_description="模拟量输入1"),
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_01_HiLimit", data_type="REAL", source_type="intermediate_from_main", module_type="AI", channel_tag="CH_AI01", variable_description="模拟量输入1_SH设定"), # 假设这是excel_reader派生的
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_01_H", data_type="BOOL", source_type="intermediate_from_main", module_type="AI", channel_tag="CH_AI01", variable_description="模拟量输入1_H报警"), # 假设这是excel_reader派生的
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="DI_Status_01", data_type="BOOL", source_type="main_io", module_type="DI", channel_tag="CH_DI01", variable_description="数字量状态1"),
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="YLDW_CH_AI02", data_type="REAL", source_type="main_io", module_type="AI", channel_tag="CH_AI02", variable_description="预留模拟量2"), # 预留点 (假设excel_reader生成了这个名字)
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="YLDW_CH_DI02", data_type="BOOL", source_type="main_io", module_type="DI", channel_tag="CH_DI02", variable_description="预留数字量2"),
-            UploadedIOPoint(data_type="FLOAT", hmi_variable_name="NoSiteInfoPoint", source_type="main_io", variable_description="无信息模拟量") # 无场站信息的点, 添加描述
-        ],
-        "第三方设备A": [
-            UploadedIOPoint(site_name="TP_设备A", site_number="TPA01", hmi_variable_name="TP_REAL_1", data_type="REAL", source_type="third_party", variable_description="第三方实数点1"),
-            UploadedIOPoint(site_name="TP_设备A", site_number="TPA01", hmi_variable_name="TP_BOOL_1", data_type="BOOL", source_type="third_party", variable_description="第三方布尔点1"),
-            UploadedIOPoint(hmi_variable_name="TP_NoSite_REAL", data_type="REAL", source_type="third_party", variable_description="第三方无场站模拟量") # 第三方无场站信息, 添加描述
-        ],
-        "空Sheet": [],
-        "只有无效类型的Sheet": [
-            UploadedIOPoint(hmi_variable_name="BadTypePoint", data_type="STRING", source_type="main_io", variable_description="无效类型点")
-        ]
-    }
-
-    logger.info("--- 测试场景1: 完整数据 ---")
-    success1, file_path1, err_msg1 = generator.generate_basic_csv( # 修改调用
-        output_dir=test_output_dir,
-        points_by_sheet=points_data_s1
-    )
-    if success1: print(f"场景1成功: {file_path1}")
-    else: print(f"场景1失败: {err_msg1}")
-
-    # --- 场景2: 只有主IO点 ---
-    points_data_s2: Dict[str, List[UploadedIOPoint]] = {
-        "IO点表": points_data_s1["IO点表"]
-    }
-    logger.info("--- 测试场景2: 只有主IO点 ---")
-    success2, file_path2, err_msg2 = generator.generate_basic_csv( # 修改调用
-        output_dir=test_output_dir,
-        points_by_sheet=points_data_s2
-    )
-    if success2: print(f"场景2成功: {file_path2}")
-    else: print(f"场景2失败: {err_msg2}")
-
-    # --- 场景3: 只有第三方点 (无主IO表，全局场站信息应为空) ---
-    points_data_s3: Dict[str, List[UploadedIOPoint]] = {
-        "第三方设备A": points_data_s1["第三方设备A"]
-    }
-    logger.info("--- 测试场景3: 只有第三方点 ---")
-    success3, file_path3, err_msg3 = generator.generate_basic_csv( # 修改调用
-        output_dir=test_output_dir,
-        points_by_sheet=points_data_s3
-    )
-    if success3: print(f"场景3成功: {file_path3}")
-    else: print(f"场景3失败: {err_msg3}")
-    
-    # --- 场景4: 输入数据为空字典 ---
-    points_data_s4: Dict[str, List[UploadedIOPoint]] = {}
-    logger.info("--- 测试场景4: 输入数据为空字典 ---")
-    success4, file_path4, err_msg4 = generator.generate_basic_csv( # 修改调用
-        output_dir=test_output_dir,
-        points_by_sheet=points_data_s4
-    )
-    if success4: print(f"场景4成功: {file_path4}")
-    else: print(f"场景4失败: {err_msg4}")
-
-    # --- 场景5: 主IO表存在但为空列表，有第三方数据 ---
-    points_data_s5: Dict[str, List[UploadedIOPoint]] = {
-        "IO点表": [],
-        "第三方设备A": points_data_s1["第三方设备A"]
-    }
-    logger.info("--- 测试场景5: 主IO表为空列表，有第三方 ---")
-    success5, file_path5, err_msg5 = generator.generate_basic_csv( # 修改调用
-        output_dir=test_output_dir,
-        points_by_sheet=points_data_s5
-    )
-    if success5: print(f"场景5成功: {file_path5}")
-    else: print(f"场景5失败: {err_msg5}")
-    
-    # --- 场景6: 点位数据类型不匹配 (REAL/BOOL之外) ---
-    points_data_s6: Dict[str, List[UploadedIOPoint]] = {
+    # 示例：构建一些包含量程和报警设定的测试点
+    points_data_s1_extended: Dict[str, List[UploadedIOPoint]] = {
         "IO点表": [
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="INT_Value_01", data_type="INT", source_type="main_io", variable_description="整型点"),
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="STR_Value_01", data_type="STRING", source_type="main_io", variable_description="字符串点")
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_01", data_type="REAL", 
+                            variable_description="模拟量输入1-正常范围", 
+                            range_low_limit="0", range_high_limit="100", 
+                            sll_set_value="5", sl_set_value="10", sh_set_value="90", shh_set_value="95"),
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_02", data_type="REAL", 
+                            variable_description="模拟量输入2-低值超范围", 
+                            range_low_limit="10", range_high_limit="50", 
+                            sll_set_value="5", sl_set_value="8"), # LL, LO会钳位到10
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_03", data_type="REAL", 
+                            variable_description="模拟量输入3-高值超范围",
+                            range_low_limit="0", range_high_limit="200", 
+                            sh_set_value="210", shh_set_value="220"), # HI, HH会钳位到200
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_04", data_type="REAL", 
+                            variable_description="模拟量输入4-量程无效", 
+                            range_low_limit="TEXT", range_high_limit="100", 
+                            sll_set_value="5"), # 报警不钳位，用默认值
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_05", data_type="REAL", 
+                            variable_description="模拟量输入5-报警值无效", 
+                            range_low_limit="0", range_high_limit="100", 
+                            sl_set_value="TEXT"), # LO用默认值10.000
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="DI_Status_01", data_type="BOOL", variable_description="数字量状态1")
+        ],
+         "第三方设备A": [
+            UploadedIOPoint(site_name="TP_设备A", site_number="TPA01", hmi_variable_name="TP_REAL_1", data_type="REAL", variable_description="第三方实数点1", range_low_limit="-10", range_high_limit="10", sh_set_value="12") # HI 会被钳位到10
         ]
     }
-    logger.info("--- 测试场景6: 数据类型不匹配 ---")
-    success6, file_path6, err_msg6 = generator.generate_basic_csv( # 修改调用
-        output_dir=test_output_dir,
-        points_by_sheet=points_data_s6
-    )
-    if success6: print(f"场景6成功 (预期不写入点): {file_path6}") # 应该生成空文件但操作成功
-    else: print(f"场景6失败: {err_msg6}")
 
-    # --- 场景7: HMI名称为空的点 ---
-    points_data_s7: Dict[str, List[UploadedIOPoint]] = {
-        "IO点表": [
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name=None, data_type="REAL", source_type="main_io", variable_description="HMI名为空模拟量"),
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="  ", data_type="BOOL", source_type="main_io", variable_description="HMI名为空格布尔量")
-        ]
-    }
-    logger.info("--- 测试场景7: HMI名称为空 ---")
-    success7, file_path7, err_msg7 = generator.generate_basic_csv( # 修改调用
+    logger.info("--- 测试钳位和His.csv生成 --- ")
+    # 调用新的总入口
+    all_results = generator.generate_all_csvs(
         output_dir=test_output_dir,
-        points_by_sheet=points_data_s7
+        points_by_sheet=points_data_s1_extended
     )
-    if success7: print(f"场景7成功 (预期不写入点): {file_path7}")
-    else: print(f"场景7失败: {err_msg7}")
+
+    for file_name, success, file_path, err_msg in all_results:
+        if success:
+            print(f"文件 '{file_name}' 生成成功: {file_path}")
+        else:
+            print(f"文件 '{file_name}' 生成失败: {err_msg}")
+
+    # 可以保留旧的单个测试调用，但建议通过 generate_all_csvs 测试整体流程
+    # logger.info("--- 测试场景1: 完整数据 --- ")
+    # success1, file_path1, err_msg1 = generator.generate_basic_csv(
+    #     output_dir=test_output_dir,
+    #     points_by_sheet=points_data_s1
+    # )
+    # if success1: print(f"场景1成功: {file_path1}")
+    # else: print(f"场景1失败: {err_msg1}")
+    
+    # ... 其他旧的测试场景可以类似地适配或移除 ... 
