@@ -15,37 +15,74 @@ class DatabaseService:
     """
     _instance = None
     
-    def __new__(cls, *args, **kwargs): # 修改为接受 *args, **kwargs 以增加灵活性
+    def __new__(cls, *args, **kwargs):
         if cls._instance is None:
+            # 关键：在 __new__ 中处理 db_path，确保单例初始化时路径被设置
+            # 或者，更好的方式是，如果 db_path 是必需的，则在 __init__ 中强制要求
+            # 并在 __new__ 中仅创建实例，让 __init__ 处理初始化逻辑
             cls._instance = super().__new__(cls)
-            cls._instance.initialized = False # 实例是否已初始化标志，确保 __init__ 只执行一次
+            cls._instance.initialized = False 
         return cls._instance
 
-    def __init__(self, db_name: str = "data.db", db_subfolder: str = "db"):
+    def __init__(self, db_path: Optional[str] = None): # 修改：接收可选的 db_path
         """
         初始化数据库服务。
-        :param db_name: 数据库文件名。
-        :param db_subfolder: 存放数据库文件的子目录名（相对于项目根目录）。
+        :param db_path: 数据库文件的绝对路径。
+                         如果为 None，并且服务尚未初始化，则会引发错误。
         """
-        if not self.initialized: # 防止重复初始化
+        # 单例模式下，如果实例已完全初始化，则直接返回，防止重复初始化
+        if hasattr(self, 'fully_initialized') and self.fully_initialized:
+            if db_path is not None and Path(db_path).resolve() != self.db_path:
+                logger.warning(f"DatabaseService 已使用路径 '{self.db_path}' 完全初始化。忽略新的路径 '{db_path}'。")
+            return
+
+        # 如果是首次尝试初始化 (instance.initialized 为 False)
+        if not hasattr(self, 'initialized') or not self.initialized:
+            if db_path is None:
+                logger.error("DatabaseService 必须使用有效的 'db_path' 进行首次初始化。")
+                raise ValueError("DatabaseService 首次初始化时 'db_path' 不能为空。")
+
             try:
-                # 项目根目录定位：当前文件 -> parent (database) -> parent (third_party_config_area) -> parent (core) -> parent (project_root)
-                project_root = Path(__file__).resolve().parent.parent.parent.parent
-                self.db_dir = project_root / db_subfolder
-                self.db_dir.mkdir(parents=True, exist_ok=True) # parents=True 表示如果父目录不存在则一并创建，exist_ok=True 表示如果目录已存在则不抛出异常
-                self.db_path = self.db_dir / db_name
-                
+                self.db_path = Path(db_path).resolve()
+                db_dir = self.db_path.parent
+                db_dir.mkdir(parents=True, exist_ok=True)
                 logger.info(f"数据库文件路径设置为: {self.db_path}")
-                
+
+                # 在尝试进行数据库操作（如 init_databases）之前，标记为部分初始化成功（路径已设置）
+                # 或者我们可以认为，一旦 db_path 设置成功，连接就可以尝试建立
+                # 关键：在调用 init_databases 之前设置 initialized 为 True
+                self.initialized = True 
+
                 self.init_databases() # 初始化所有表结构
-                self.initialized = True
+                
+                # 所有步骤成功后，标记为完全初始化
+                self.fully_initialized = True # 新增一个更明确的最终成功标志
                 logger.info("DatabaseService 初始化完成。")
+
             except Exception as e:
                 logger.error(f"DatabaseService 初始化失败: {e}", exc_info=True)
+                # 如果初始化过程中（包括 init_databases）失败，重置 initialized 状态
+                self.initialized = False
+                self.fully_initialized = False # 确保最终状态也是失败
                 raise
+        elif db_path is not None and Path(db_path).resolve() != self.db_path:
+            # 如果已设置过 self.initialized=True (例如在之前的尝试中)，但 fully_initialized 未成功
+            # 并且传入了不同的 db_path，这可能是一个需要警告或处理的情况。
+            # 目前行为是：如果 fully_initialized 不是 True，则允许用新的 db_path 重试初始化。
+            # 这里逻辑可能需要根据单例的具体期望行为调整。
+            # 为了简单起见，如果 initialized 是 True 但 fully_initialized 不是 True，
+            # 且收到了新的 db_path，我们允许它重新尝试上面的 try 块。
+            # 但这需要重置 self.initialized=False 以便上面的 if not self.initialized 块能进入
+            # 或者修改上面的条件。
+            # 一个更简单的处理：如果已有一个 self.db_path，并且新的 db_path 不同，则警告。
+             logger.warning(f"DatabaseService 正在使用路径 '{self.db_path}' 进行初始化或已部分初始化。忽略新的路径 '{db_path}'。")
 
     def get_connection(self) -> sqlite3.Connection:
         """获取数据库连接。"""
+        # 这里的检查现在依赖于 self.initialized being True 和 self.db_path 的存在
+        if not hasattr(self, 'initialized') or not self.initialized or not hasattr(self, 'db_path') or not self.db_path:
+            logger.error("DatabaseService 尚未成功初始化或db_path未设置。无法获取数据库连接。")
+            raise RuntimeError("DatabaseService 尚未成功初始化或db_path未设置。")
         conn = sqlite3.connect(str(self.db_path))
         conn.execute('PRAGMA foreign_keys = ON') # 启用外键约束
         return conn

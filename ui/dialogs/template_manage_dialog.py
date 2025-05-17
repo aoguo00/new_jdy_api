@@ -46,7 +46,8 @@ class TemplateManageDialogUI:
         self.template_list.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         header = self.template_list.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        template_list_layout.addWidget(self.template_list)
+        self.template_list.resizeColumnsToContents()
+        template_list_layout.addWidget(self.template_list, 1)
         template_btn_layout = QHBoxLayout()
         self.new_template_btn = QPushButton("新建模板")
         self.delete_template_btn = QPushButton("删除模板")
@@ -73,8 +74,24 @@ class TemplateManageDialogUI:
             "SLL设定值", "SL设定值", "SH设定值", "SHH设定值"
         ])
         header_points = self.point_table.horizontalHeader()
-        for i in range(7):
-            header_points.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+        # 列索引:
+        # 0: 变量名后缀
+        # 1: 描述后缀
+        # 2: 类型
+        # 3: SLL设定值
+        # 4: SL设定值
+        # 5: SH设定值
+        # 6: SHH设定值
+
+        # 将"描述后缀"列 (索引1) 设置为 Stretch 以填充额外空间
+        header_points.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+
+        # 其他列设置为 Interactive，允许用户调整，并先根据内容调整大小
+        for i in [0, 2, 3, 4, 5, 6]: 
+            header_points.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+        
+        self.point_table.resizeColumnsToContents() # 让 Interactive 的列初始适应内容
+        self.point_table.setColumnWidth(2, 45)
         point_list_layout.addWidget(self.point_table)
 
         point_btn_layout = QHBoxLayout()

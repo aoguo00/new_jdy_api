@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 
 class MainWindow(QMainWindow):
     """主窗口类"""
-    def __init__(self):
+    def __init__(self, db_path: str):
         super().__init__()
         self.setWindowTitle("深化设计数据查询工具")
         
@@ -85,13 +85,20 @@ class MainWindow(QMainWindow):
 
         # 创建上传按钮成员变量 (移到这里，以便 setup_ui 和 setup_connections 都能访问)
         self.upload_io_table_btn = QPushButton("上传IO点表")
+        self.upload_io_table_btn.setMinimumHeight(28) 
+        self.upload_io_table_btn.setStyleSheet("QPushButton { padding-bottom: 2px; }")
+
         self.upload_hmi_btn = QPushButton("生成HMI点表")
+        self.upload_hmi_btn.setMinimumHeight(28) 
+        self.upload_hmi_btn.setStyleSheet("QPushButton { padding-bottom: 2px; }")
         hmi_menu = QMenu(self.upload_hmi_btn) # QMenu 需要父对象
         hmi_menu.addAction("亚控")
         hmi_menu.addAction("力控")
         self.upload_hmi_btn.setMenu(hmi_menu)
 
         self.upload_plc_btn = QPushButton("生成PLC点表")
+        self.upload_plc_btn.setMinimumHeight(28) 
+        self.upload_plc_btn.setStyleSheet("QPushButton { padding-bottom: 2px; }")
         plc_menu = QMenu(self.upload_plc_btn) # QMenu 需要父对象
         plc_menu.addAction("和利时PLC") # 恢复为统一的"和利时"选项
         plc_menu.addAction("中控PLC")
@@ -106,8 +113,8 @@ class MainWindow(QMainWindow):
             self.project_service = ProjectService(self.jdy_api)
             self.device_service = DeviceService(self.jdy_api)
             
-            # Instantiate new DatabaseService (singleton)
-            self.db_service = DatabaseService() 
+            # Instantiate new DatabaseService (singleton) with the provided db_path
+            self.db_service = DatabaseService(db_path=db_path)
             
             # Instantiate DAOs for third_party_config_area with the DatabaseService
             self.template_dao = TemplateDAO(self.db_service)
@@ -227,7 +234,7 @@ class MainWindow(QMainWindow):
         # 创建包含上传按钮的角部控件
         upload_buttons_widget = QWidget(main_tab_widget) # 父对象设为 main_tab_widget 或 self
         upload_buttons_layout = QHBoxLayout(upload_buttons_widget)
-        upload_buttons_layout.setContentsMargins(5, 2, 5, 2) # 调整边距使其看起来舒适
+        upload_buttons_layout.setContentsMargins(5, 0, 5, 0) # 修改后：上下边距为0
         upload_buttons_layout.setSpacing(5) # 按钮之间的间距
 
         # 此处直接使用已在 __init__ 中创建的按钮实例

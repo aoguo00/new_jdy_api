@@ -44,8 +44,20 @@ class DevicePointDialog(QDialog):
         table_widget.setColumnCount(len(column_headers))
         table_widget.setHorizontalHeaderLabels(column_headers)
         header = table_widget.horizontalHeader()
+
+        # 假设列的顺序，第二列 (索引1) 是描述列 (例如 "描述后缀" 或 "完整描述")
+        # 我们希望描述列能拉伸以填充空间，其他列可交互并初始适应内容。
+        if len(column_headers) > 1: # 确保至少有两列，索引1才有效
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch) # 描述列 (索引1) 拉伸
+
         for i in range(len(column_headers)):
-            header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+            if i != 1: # 对于非描述列 (即非索引1的列)
+                header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+        
+        # 让所有被设置为 Interactive 的列先根据其内容调整初始宽度
+        # Stretch 列会自动处理剩余空间，所以 resizeColumnsToContents() 对它的影响不大，
+        # 但对 Interactive 列是有效的。
+        table_widget.resizeColumnsToContents() 
 
     def setup_ui(self):
         """设置UI界面"""
