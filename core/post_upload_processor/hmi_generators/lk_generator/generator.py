@@ -4,6 +4,16 @@ import logging
 import os
 from typing import Tuple, Optional, List, Dict, Any
 
+# 尝试导入pypinyin，并设置一个标志
+try:
+    from pypinyin import pinyin, Style # 移除了 load_phrases_dict
+    PYPINYIN_AVAILABLE = True
+    # logger.info("pypinyin 自定义词组（如 '调压'）已成功加载，有助于提高DevName准确性。") # 移除相关日志
+    # logger.error(f"pypinyin 自定义词组加载失败: {e_load_dict}。DevName生成可能受影响。") # 移除相关日志
+except ImportError:
+    PYPINYIN_AVAILABLE = False
+    # 如果导入失败，在首次尝试使用时会记录日志
+
 # 从 Shared Models 导入 UploadedIOPoint
 from core.post_upload_processor.uploaded_file_processor.io_data_model import UploadedIOPoint
 # 导入用于获取主IO表名的常量 (如果 excel_reader 定义了这样一个可导出的常量)
@@ -60,6 +70,26 @@ def _is_value_empty_for_hmi(value: Optional[str]) -> bool:
 class LikongGenerator:
     """力控点表生成器 (CSV格式)"""
 
+    # Link.csv 文件列定义 (基于提供的 Link.csv 示例)
+    # 行3: 实际数据列的英文/拼音标识 (部分在示例文件中因编码问题显示为乱码, 此处尽量还原)
+    LK_LINK_COLUMNS_LINE3 = [
+        'NodePath', 'TagName', 'TagDesc', 'ParName', 'LinkDesc', '驱动标志',
+        'modbus驱动标志', '位起始位', '扫描周期', '使能位', '数据类型',
+        'I/O数据地址', '是否位访问', '表示读取数据时需要获取的数据长度',
+        '高字节在前0低字节在前1高位在前', '读写标志', '取反(读出时)',
+        '文件号', '显示数据的格式',
+        '显示小数位的个数(若为一位 则 表示字节内部的高低字节 0 低字节 1 高字节)'
+    ]
+    # 行4: 中文描述性表头
+    LK_LINK_COLUMNS_DESC_LINE4 = [
+        "点所在的节点路径", "点名", "点描述", "参数名", "链接描述", "驱动标志",
+        "modbus驱动标志", "位起始位", "扫描周期", "使能位", "数据类型",
+        "I/O数据地址", "是否按位访问", "表示读取数据时需要获取的数据长度",
+        "高字节在前0低字节在前1高位在前", "读写标志", "取反(读出时)",
+        "文件号", "显示数据的格式",
+        "显示小数位的个数(若为一位 则 表示字节内部的高低字节 0 低字节 1 高字节)"
+    ]
+
     def __init__(self):
         """初始化力控生成器"""
         pass
@@ -82,11 +112,45 @@ class LikongGenerator:
                 if first_valid_main_point_for_site_info.site_number and first_valid_main_point_for_site_info.site_number.strip():
                     default_site_number = first_valid_main_point_for_site_info.site_number.strip()
         
-        if not default_site_name and not default_site_number:
-            logger.warning(f"力控CSV生成器: 未能在主IO表 '{main_io_sheet_key}' 中找到有效的全局默认场站名或场站编号。")
+        if not default_site_name and not default_site_number: # DevName 主要依赖场站名，场站编号更多用于点名
+            logger.warning(f"力控CSV生成器: 未能在主IO表 '{main_io_sheet_key}' 中找到有效的全局默认场站名。DevName可能无法正确生成。")
         else:
             logger.info(f"力控CSV生成器: 使用全局默认场站名='{default_site_name}', 场站编号='{default_site_number}' (如果点位自身无特定信息)")
         return default_site_name, default_site_number
+
+    def _get_dev_name_from_site_name(self, site_name_chinese: Optional[str]) -> str:
+        """
+        从中文场站名获取拼音首字母大写缩写作为DevName。
+        如果pypinyin库不可用或发生错误，则返回空字符串。
+        """
+        if not PYPINYIN_AVAILABLE:
+            # 这个错误只在第一次尝试使用时记录，避免重复日志
+            if not hasattr(self, '_pypinyin_error_logged'):
+                logger.error("pypinyin库未安装或无法导入。无法动态生成DevName。请运行 'pip install pypinyin' 安装。")
+                self._pypinyin_error_logged = True # 标记已记录错误
+            return ""
+
+        if not site_name_chinese or not site_name_chinese.strip():
+            logger.debug("场站名为空，无法从中生成DevName。")
+            return ""
+        
+        try:
+            first_letters = []
+            # strict=False 更健壮; errors='ignore' 会忽略无法转换的字符
+            pinyin_list_of_lists = pinyin(site_name_chinese, style=Style.FIRST_LETTER, strict=False, errors='ignore') 
+            
+            for char_pinyins in pinyin_list_of_lists:
+                # char_pinyins 是一个列表, e.g., ['x'] for '西'
+                if char_pinyins and char_pinyins[0]: 
+                    first_letters.append(char_pinyins[0][0].upper()) # 取首字母列表的第一个元素 (字符串), 再取其第一个字符并大写
+            
+            generated_name = "".join(first_letters)
+            if not generated_name:
+                 logger.warning(f"从场站名 '{site_name_chinese}' 生成的DevName为空字符串（可能包含非中文字符或pypinyin处理结果为空）。")
+            return generated_name
+        except Exception as e:
+            logger.error(f"使用pypinyin从场站名 '{site_name_chinese}' 生成DevName时发生意外错误: {e}")
+            return "" # 发生转换错误也返回空
 
     def _clamp_alarm_value(self, 
                            value_str: Optional[str], 
@@ -146,7 +210,7 @@ class LikongGenerator:
                     hmi_name_from_point = str(point.hmi_variable_name or "").strip()
 
                     if _is_value_empty_for_hmi(hmi_name_from_point):
-                        logger.warning(f"点 (类型:'{point_data_type_upper}', 通道:'{point.channel_tag}') HMI名称为空或无效，跳过。")
+                        logger.warning(f"Basic.csv: 点 (类型:'{point_data_type_upper}', 通道:'{point.channel_tag}') HMI名称为空或无效，跳过。")
                         continue
 
                     if point_data_type_upper == "REAL" or point_data_type_upper == "FLOAT":
@@ -191,7 +255,7 @@ class LikongGenerator:
                         row_data['LASTPV'] = "0.000"
                         row_data['PV'] = "0.000"
                         row_data['EU'] = "" 
-                        logger.debug(f"点 '{row_data['NAME']}' 的 EU (工程单位) 因 UploadedIOPoint 中无对应属性而置空。")
+                        # logger.debug(f"点 '{row_data['NAME']}' 的 EU (工程单位) 因 UploadedIOPoint 中无对应属性而置空。") # 注释掉原debug信息
                         
                         # 获取工程单位低限和高限的字符串及浮点数值，用于钳位
                         eulo_str = str(point.range_low_limit) if point.range_low_limit is not None and point.range_low_limit.strip() else "0.000"
@@ -205,9 +269,9 @@ class LikongGenerator:
                             eulo_float = float(eulo_str)
                             euhi_float = float(euhi_str)
                             if eulo_float > euhi_float:
-                                logger.error(f"点 '{row_data['NAME']}' 的工程单位范围无效 (EULO: {eulo_float} > EUHI: {euhi_float})，报警值钳位可能不准确。")
+                                logger.warning(f"点 '{row_data['NAME']}' 的工程单位范围无效 (EULO: {eulo_float} > EUHI: {euhi_float})，报警值钳位可能不准确。") # error -> warning
                         except ValueError:
-                            logger.error(f"点 '{row_data['NAME']}' 的 EULO ('{eulo_str}') 或 EUHI ('{euhi_str}') 不是有效数字，无法进行报警值钳位。")
+                            logger.warning(f"点 '{row_data['NAME']}' 的 EULO ('{eulo_str}') 或 EUHI ('{euhi_str}') 不是有效数字，无法进行报警值钳位。") # error -> warning
                         
                         row_data['PVRAW'] = "0.000"
                         row_data['SCALEFL'] = "0" 
@@ -317,7 +381,7 @@ class LikongGenerator:
                             row_data['PV'] = "0"
                             row_data['ALMENAB'] = "0"
                             row_data['ALARMPR'] = "0"
-                            logger.debug(f"数字点 '{hmi_name}' 是维护值开关 (_whzzt)，PV设为0, ALMENAB设为0, ALARMPR设为0。")
+                            # logger.debug(f"数字点 '{hmi_name}' 是维护值开关 (_whzzt)，PV设为0, ALMENAB设为0, ALARMPR设为0。")
                         else:
                             row_data['PV'] = "0" # 普通数字量PV默认也为0
                             # 数字量 ALMENAB 逻辑 (非维护值开关时)
@@ -338,13 +402,15 @@ class LikongGenerator:
                                             if raw_alarm_value_from_excel_str is not None and raw_alarm_value_from_excel_str.strip() != "":
                                                 if raw_alarm_value_from_excel_str.strip() == default_alarm_values_map[suffix]:
                                                     # current_digital_almenab 保持 "0"
-                                                    logger.debug(f"数字报警点 '{hmi_name}' 的父模拟量点 '{parent_hmi_name}' 的 '{raw_value_attr_name}' ('{raw_alarm_value_from_excel_str}') 与通用默认值相同，ALMENAB保持为0。")
+                                                    # logger.debug(f"数字报警点 '{hmi_name}' 的父模拟量点 '{parent_hmi_name}' 的 '{raw_value_attr_name}' ('{raw_alarm_value_from_excel_str}') 与通用默认值相同，ALMENAB保持为0。")
+                                                    pass # 保持为0
                                                 else:
                                                     current_digital_almenab = "1" # 只有这种情况才使能
-                                                    logger.debug(f"数字报警点 '{hmi_name}' 的父模拟量点 '{parent_hmi_name}' 的 '{raw_value_attr_name}' ('{raw_alarm_value_from_excel_str}') 已设定且非默认，ALMENAB设为1。")
+                                                    # logger.debug(f"数字报警点 '{hmi_name}' 的父模拟量点 '{parent_hmi_name}' 的 '{raw_value_attr_name}' ('{raw_alarm_value_from_excel_str}') 已设定且非默认，ALMENAB设为1。")
                                             else:
                                                 # current_digital_almenab 保持 "0"
-                                                logger.debug(f"数字报警点 '{hmi_name}' 的父模拟量点 '{parent_hmi_name}' 未设定 '{raw_value_attr_name}'，ALMENAB保持为0。")
+                                                # logger.debug(f"数字报警点 '{hmi_name}' 的父模拟量点 '{parent_hmi_name}' 未设定 '{raw_value_attr_name}'，ALMENAB保持为0。")
+                                                pass # 保持为0
                                         else:
                                             # current_digital_almenab 保持 "0"
                                             logger.warning(f"派生数字报警点 '{hmi_name}' 未能找到父模拟量点 '{parent_hmi_name}'，ALMENAB保持为0。")
@@ -352,8 +418,8 @@ class LikongGenerator:
                             
                             # 如果不是已识别并成功处理的派生报警类型，ALMENAB 会是初始的 "0"
                             if not is_derived_analog_alarm_point and not is_maintenance_switch: #确保维护开关的逻辑不被覆盖
-                                 logger.debug(f"数字点 '{hmi_name}' 非特定派生报警类型或未成功关联，ALMENAB设为0。")
-                                 # current_digital_almenab 已经是 "0"
+                                 # logger.debug(f"数字点 '{hmi_name}' 非特定派生报警类型或未成功关联，ALMENAB设为0。")
+                                 pass # current_digital_almenab 已经是 "0"
 
                             row_data['ALMENAB'] = current_digital_almenab
                             if current_digital_almenab == "0":
@@ -434,6 +500,7 @@ class LikongGenerator:
                     hmi_name_from_point = str(point.hmi_variable_name or "").strip()
 
                     if _is_value_empty_for_hmi(hmi_name_from_point):
+                        # logger.warning(f"His.csv: 点 (类型:'{point_data_type_upper}', 通道:'{point.channel_tag}') HMI名称为空或无效，跳过。")
                         continue # 跳过HMI名称无效的点
 
                     if point_data_type_upper == "REAL" or point_data_type_upper == "FLOAT" or point_data_type_upper == "BOOL":
@@ -446,12 +513,12 @@ class LikongGenerator:
                         history_entries.append([
                             nodepath,
                             tagname,
-                            "PV",       # ParName
-                            "0",        # SaveType (变化存储)
-                            "0.000000", # SaveCfg (死区)
-                            "",         # SaveScript
-                            "",         # StatTime
-                            ""          # StatUnit
+                            "PV",       # ParName: 参数名
+                            "0",        # SaveType (变化存储): 历史存储方式:0-变化存储;1-定时存储;2-按键或脚本存储
+                            "0.000000", # SaveCfg (死区): 历史参数配置
+                            "",         # SaveScript: 历史参数脚本
+                            "",         # StatTime: 统计时间长度
+                            ""          # StatUnit: 统计时间单位
                         ])
         
         try:
@@ -477,8 +544,8 @@ class LikongGenerator:
 
                 # 新增：写入文件末尾的固定内容
                 writer.writerow([]) # 写入一个空行
-                writer.writerow(['ExitSave', 'Count', '0', '', '', '', '', '']) # 修正：ExitSave, Count, 0 分别在三列
-                writer.writerow(['NodePath', 'TagName', 'ParName', '', '', '', '', '']) # 写入 NodePath,TagName,ParName, 和后续空列
+                writer.writerow(['ExitSave', 'Count', '0', '', '', '', '', '']) 
+                writer.writerow(['NodePath', 'TagName', 'ParName', '', '', '', '', '']) 
 
             logger.info(f"成功生成力控历史配置文件 (His.csv): {file_path}")
             return True, file_path, None
@@ -488,12 +555,181 @@ class LikongGenerator:
             logger.error(error_msg, exc_info=True)
             return False, None, error_msg
 
+    def generate_link_csv(self,
+                          output_dir: str,
+                          points_by_sheet: Dict[str, List[UploadedIOPoint]]
+                          ) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        生成力控链接配置文件: Link.csv
+        文件编码为 GBK。
+        根据用户规则填充通讯地址等信息。
+        """
+        file_name = "Link.csv"
+        file_path = os.path.join(output_dir, file_name)
+
+        default_site_name, default_site_number = self._get_site_defaults(points_by_sheet)
+        
+        # 动态生成DevName
+        dev_name_for_csv = self._get_dev_name_from_site_name(default_site_name)
+        if not dev_name_for_csv: # 如果生成失败或为空
+            dev_name_for_csv = "XBPQTYZ" # 回退到原始硬编码值或新的默认值
+            logger.warning(f"无法从场站名 '{default_site_name}' 动态生成DevName，将使用默认值 '{dev_name_for_csv}'。请确保pypinyin已安装且场站名有效。")
+
+        link_data_rows: List[List[str]] = [] 
+
+        all_points: List[UploadedIOPoint] = []
+        if points_by_sheet:
+            for _, points_list_val in points_by_sheet.items():
+                all_points.extend(points_list_val)
+
+        for point in all_points:
+            point_data_type_upper = str(point.data_type or "").upper().strip()
+            hmi_name_from_point = str(point.hmi_variable_name or "").strip()
+            communication_address_str = str(point.hmi_communication_address or "").strip()
+
+            if _is_value_empty_for_hmi(hmi_name_from_point):
+                logger.debug(f"Link.csv: 点 (类型:'{point_data_type_upper}', 上位机通讯地址:'{communication_address_str}') HMI名称为空或无效，跳过。")
+                continue
+            
+            if not communication_address_str:
+                logger.warning(f"Link.csv: 点 (HMI:'{hmi_name_from_point}', 类型:'{point_data_type_upper}') 上位机通讯地址 (hmi_communication_address) 为空，跳过生成Link.csv条目。")
+                continue
+
+            # 提取核心数字地址部分
+            address_to_process = None
+            parts = communication_address_str.split('_')
+            if parts and parts[-1].isdigit(): # 检查最后一部分是否为数字
+                address_to_process = parts[-1]
+            elif communication_address_str.isdigit(): # 检查整个上位机通讯地址是否为数字
+                address_to_process = communication_address_str
+            
+            if address_to_process is None:
+                logger.warning(f"Link.csv: 点 (HMI:'{hmi_name_from_point}') 的上位机通讯地址 '{communication_address_str}' 无法解析出有效的数字部分，跳过。")
+                continue
+
+            row_dict: Dict[str, str] = {} 
+            current_point_site_name = (point.site_name if point.site_name and point.site_name.strip() else default_site_name).strip()
+            current_point_site_number = (point.site_number if point.site_number and point.site_number.strip() else default_site_number).strip()
+
+            row_dict['NodePath'] = f"{current_point_site_name}\\" if current_point_site_name else ""
+            row_dict['TagName'] = f"{current_point_site_number}{hmi_name_from_point}" # 注意：示例文件中的TagName似乎不含场站编号，这里暂按原逻辑
+            row_dict['TagDesc'] = point.variable_description or ""
+            row_dict['ParName'] = "PV"
+
+            row_dict['modbus驱动标志'] = "-9999"
+            row_dict['位起始位'] = "0"
+            row_dict['扫描周期'] = "0"
+            row_dict['使能位'] = "0"
+            row_dict['是否位访问'] = "0"
+            row_dict['高字节在前0低字节在前1高位在前'] = "0"
+            row_dict['读写标志'] = "0"
+            row_dict['取反(读出时)'] = "1"
+            row_dict[self.LK_LINK_COLUMNS_LINE3[-1]] = "0" # '显示小数位的个数(...)'
+
+            io_address_calc_success = False
+
+            if point_data_type_upper == "BOOL":
+                row_dict['LinkDesc'] = f"DO{address_to_process}"
+                row_dict['驱动标志'] = row_dict['LinkDesc']
+                row_dict['数据类型'] = "1"
+                row_dict['I/O数据地址'] = str(int(address_to_process) - 1)
+                row_dict['表示读取数据时需要获取的数据长度'] = "1"
+                row_dict['文件号'] = "2"
+                row_dict['显示数据的格式'] = "0"
+                io_address_calc_success = True
+
+            elif point_data_type_upper == "REAL" or point_data_type_upper == "FLOAT":
+                final_numeric_address_for_real = address_to_process
+                if address_to_process.startswith('4') and len(address_to_process) > 1:
+                    processed_val = address_to_process[1:]
+                    if processed_val: 
+                       final_numeric_address_for_real = processed_val
+                    else: 
+                        logger.warning(f"Link.csv: REAL点 '{hmi_name_from_point}' 的地址部分 '{address_to_process}' (来自 '{communication_address_str}') 在移除'4'后为空，跳过。")
+                        continue
+                
+                row_dict['LinkDesc'] = f"HR Float:{final_numeric_address_for_real}"
+                row_dict['驱动标志'] = row_dict['LinkDesc']
+                row_dict['数据类型'] = "2"
+                row_dict['I/O数据地址'] = str(int(final_numeric_address_for_real) - 1)
+                row_dict['表示读取数据时需要获取的数据长度'] = "4" 
+                row_dict['文件号'] = "7" 
+                row_dict['显示数据的格式'] = "0"
+                io_address_calc_success = True
+            else:
+                logger.info(f"Link.csv: 点 '{hmi_name_from_point}' 的数据类型 '{point_data_type_upper}' 非 BOOL 或 REAL，跳过生成Link.csv条目。")
+                continue
+
+            if io_address_calc_success:
+                current_row_values = [row_dict.get(col_name, "") for col_name in self.LK_LINK_COLUMNS_LINE3]
+                link_data_rows.append(current_row_values)
+        
+        # 新增：收集内部链接条目
+        inter_link_entries: List[List[str]] = []
+        for point in all_points:
+            point_data_type_upper = str(point.data_type or "").upper().strip()
+            if point_data_type_upper == "REAL" or point_data_type_upper == "FLOAT":
+                current_point_site_name = (point.site_name if point.site_name and point.site_name.strip() else default_site_name).strip()
+                current_point_site_number = (point.site_number if point.site_number and point.site_number.strip() else default_site_number).strip()
+                
+                source_np = f"{current_point_site_name}\\" if current_point_site_name else ""
+                # 确保 HMI 名称不为空才继续，因为它是源标签名的一部分
+                if not point.hmi_variable_name or not point.hmi_variable_name.strip():
+                    continue
+                source_tn = f"{current_point_site_number}{point.hmi_variable_name.strip()}"
+
+                alarm_link_configs = [
+                    ("LL", point.sll_set_point),
+                    ("LO", point.sl_set_point),
+                    ("HI", point.sh_set_point),
+                    ("HH", point.shh_set_point)
+                ]
+
+                for par_name, target_hmi_name_attr in alarm_link_configs:
+                    target_hmi_name_val = str(target_hmi_name_attr or "").strip()
+                    if target_hmi_name_val:
+                        # LinkLongTagName 结构: SourceNodePath + SiteNumber + TargetHMIVariableName
+                        # (假设目标点与源点在同一NodePath下，使用相同的SiteNumber前缀)
+                        link_long_tag_name = f"{source_np}{current_point_site_number}{target_hmi_name_val}"
+                        inter_link_entries.append([source_np, source_tn, par_name, link_long_tag_name, "PV"])
+                        logger.debug(f"Link.csv: 为点 '{source_tn}' 的参数 '{par_name}' 生成内部链接到 '{link_long_tag_name}'")
+
+        try:
+            with open(file_path, 'w', newline='', encoding='gbk') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(["Ver", "11"])
+                writer.writerow(["DevCount", "1", "TextFormat", "1"])
+                writer.writerow(["DevName", dev_name_for_csv, "LinkCount", str(len(link_data_rows))])
+                writer.writerow(self.LK_LINK_COLUMNS_LINE3)
+                for data_row_list_val in link_data_rows:
+                    writer.writerow(data_row_list_val)
+                
+                writer.writerow([]) # 空行
+                writer.writerow(["NetSourceCount", "0"])
+                
+                writer.writerow([]) # 空行
+                writer.writerow(["InterLinkCount", str(len(inter_link_entries))])
+                if inter_link_entries:
+                    lk_interlink_headers = ["SourceNodePath", "SourceTagName", "SourceParName", "LinkLongTagName", "LinkParName"]
+                    writer.writerow(lk_interlink_headers)
+                    for inter_link_row in inter_link_entries:
+                        writer.writerow(inter_link_row)
+                
+                writer.writerow([]) # 空行
+                writer.writerow(["DataServerDriverCount", "0"])
+            logger.info(f"成功生成力控链接配置文件 (Link.csv): {file_path}，包含 {len(link_data_rows)} 个主链接和 {len(inter_link_entries)} 个内部链接。")
+            return True, file_path, None
+        except Exception as e:
+            error_msg = f"生成 Link.csv 文件失败: {e}"
+            logger.error(error_msg, exc_info=True)
+            return False, None, error_msg
+
     def generate_all_csvs(self, 
                             output_dir: str, 
                             points_by_sheet: Dict[str, List[UploadedIOPoint]]
                             ) -> List[Tuple[str, bool, Optional[str], Optional[str]]]:
         """
-        生成所有力控相关的CSV文件 (Basic.csv, His.csv)。
+        生成所有力控相关的CSV文件 (Basic.csv, His.csv, Link.csv)。
         返回每个文件生成结果的列表。
         """
         results = []
@@ -502,15 +738,18 @@ class LikongGenerator:
         logger.info("开始生成 Basic.csv...")
         basic_success, basic_file_path, basic_err_msg = self.generate_basic_csv(output_dir, points_by_sheet)
         results.append(("Basic.csv", basic_success, basic_file_path, basic_err_msg))
-        if not basic_success:
-            logger.error(f"由于 Basic.csv 生成失败，可能影响其他依赖文件的生成。错误: {basic_err_msg}")
-            # 根据需求，可以选择是否在Basic.csv失败时也终止其他文件生成，或继续尝试
+        # Basic.csv 失败可能影响其他文件，但此处按顺序继续尝试生成其他文件
 
-        # 生成 His.csv (可以考虑是否依赖 Basic.csv 的成功)
+        # 生成 His.csv
         logger.info("开始生成 His.csv...")
         his_success, his_file_path, his_err_msg = self.generate_his_csv(output_dir, points_by_sheet)
         results.append(("His.csv", his_success, his_file_path, his_err_msg))
 
+        # 生成 Link.csv
+        logger.info("开始生成 Link.csv...")
+        link_success, link_file_path, link_err_msg = self.generate_link_csv(output_dir, points_by_sheet)
+        results.append(("Link.csv", link_success, link_file_path, link_err_msg))
+        
         # 未来可以扩展以生成其他CSV文件，例如 Alm.csv
         
         return results
@@ -523,56 +762,54 @@ if __name__ == '__main__':
     if not os.path.exists(test_output_dir):
         os.makedirs(test_output_dir)
 
-    # 示例：构建一些包含量程和报警设定的测试点
+    # 示例：构建一些包含量程、报警设定和通讯地址的测试点
+    # 注意: UploadedIOPoint 需要有 channel_tag 属性才能正确生成 Link.csv
     points_data_s1_extended: Dict[str, List[UploadedIOPoint]] = {
         "IO点表": [
             UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_01", data_type="REAL", 
-                            variable_description="模拟量输入1-正常范围", 
+                            variable_description="模拟量输入1-正常范围", channel_tag="CH01", hmi_communication_address="40001", # channel_tag 修改为示例，hmi_communication_address 为实际通讯地址
                             range_low_limit="0", range_high_limit="100", 
                             sll_set_value="5", sl_set_value="10", sh_set_value="90", shh_set_value="95"),
             UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_02", data_type="REAL", 
-                            variable_description="模拟量输入2-低值超范围", 
+                            variable_description="模拟量输入2-低值超范围", channel_tag="CH02", hmi_communication_address="40002",
                             range_low_limit="10", range_high_limit="50", 
                             sll_set_value="5", sl_set_value="8"), # LL, LO会钳位到10
             UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_03", data_type="REAL", 
-                            variable_description="模拟量输入3-高值超范围",
+                            variable_description="模拟量输入3-高值超范围", channel_tag="CH03", hmi_communication_address="43210",
                             range_low_limit="0", range_high_limit="200", 
                             sh_set_value="210", shh_set_value="220"), # HI, HH会钳位到200
             UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_04", data_type="REAL", 
-                            variable_description="模拟量输入4-量程无效", 
+                            variable_description="模拟量输入4-量程无效", channel_tag="CH04", hmi_communication_address="40004",
                             range_low_limit="TEXT", range_high_limit="100", 
                             sll_set_value="5"), # 报警不钳位，用默认值
             UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_05", data_type="REAL", 
-                            variable_description="模拟量输入5-报警值无效", 
+                            variable_description="模拟量输入5-报警值无效", channel_tag="CH05", hmi_communication_address="4000A", # 无效数字地址测试
                             range_low_limit="0", range_high_limit="100", 
                             sl_set_value="TEXT"), # LO用默认值10.000
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="DI_Status_01", data_type="BOOL", variable_description="数字量状态1")
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="DI_Status_01", data_type="BOOL", 
+                            variable_description="数字量状态1", channel_tag="CH06", hmi_communication_address="1001"),
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="DI_NoCommAddr", data_type="BOOL",  # Renamed for clarity
+                            variable_description="数字量状态2-无通讯地址", channel_tag="CH07", hmi_communication_address=None), # 测试无通讯地址
+            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="", data_type="BOOL", 
+                            variable_description="数字量状态3-无HMI名称", channel_tag="CH08", hmi_communication_address="1003"), # 测试无HMI名称
+
         ],
          "第三方设备A": [
-            UploadedIOPoint(site_name="TP_设备A", site_number="TPA01", hmi_variable_name="TP_REAL_1", data_type="REAL", variable_description="第三方实数点1", range_low_limit="-10", range_high_limit="10", sh_set_value="12") # HI 会被钳位到10
+            UploadedIOPoint(site_name="TP_设备A", site_number="TPA01", hmi_variable_name="TP_REAL_1", data_type="REAL", 
+                            variable_description="第三方实数点1", channel_tag="TP_CH01", hmi_communication_address="40101",
+                            range_low_limit="-10", range_high_limit="10", sh_set_value="12") # HI 会被钳位到10
         ]
     }
 
-    logger.info("--- 测试钳位和His.csv生成 --- ")
+    logger.info("--- 测试生成所有CSV文件 (Basic, His, Link) --- ")
     # 调用新的总入口
     all_results = generator.generate_all_csvs(
         output_dir=test_output_dir,
         points_by_sheet=points_data_s1_extended
     )
 
-    for file_name, success, file_path, err_msg in all_results:
+    for file_gen_name, success, file_gen_path, err_msg in all_results: # 变量名修改
         if success:
-            print(f"文件 '{file_name}' 生成成功: {file_path}")
+            print(f"文件 '{file_gen_name}' 生成成功: {file_gen_path}")
         else:
-            print(f"文件 '{file_name}' 生成失败: {err_msg}")
-
-    # 可以保留旧的单个测试调用，但建议通过 generate_all_csvs 测试整体流程
-    # logger.info("--- 测试场景1: 完整数据 --- ")
-    # success1, file_path1, err_msg1 = generator.generate_basic_csv(
-    #     output_dir=test_output_dir,
-    #     points_by_sheet=points_data_s1
-    # )
-    # if success1: print(f"场景1成功: {file_path1}")
-    # else: print(f"场景1失败: {err_msg1}")
-    
-    # ... 其他旧的测试场景可以类似地适配或移除 ... 
+            print(f"文件 '{file_gen_name}' 生成失败: {err_msg}")
