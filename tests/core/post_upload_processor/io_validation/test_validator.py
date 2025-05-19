@@ -25,7 +25,8 @@ from core.post_upload_processor.io_validation.validator import (
     _validate_main_io_sheet,
     _validate_third_party_sheet,
     validate_io_table,
-    BoolSetpointEmptyRule
+    BoolSetpointEmptyRule,
+    AlwaysRequiredRule
 )
 
 # 全局常量定义，方便测试用例使用
@@ -607,9 +608,10 @@ class TestValidateIoTableIntegration(unittest.TestCase):
             C.TP_INPUT_SH_SET_COL, C.TP_INPUT_SHH_SET_COL
         ]
         invalid_main_data = [
-             { # 无效行 1 (预留点位，但线制非空)
+             { # 无效行 1: 预留点位，POWER_SUPPLY_TYPE_COL 为空 (np.nan 默认)
                 C.HMI_NAME_COL: np.nan, C.DESCRIPTION_COL: None,
-                C.WIRING_SYSTEM_COL: "InvalidReserved", # 错误
+                # POWER_SUPPLY_TYPE_COL 将默认为 np.nan
+                C.WIRING_SYSTEM_COL: C.ALLOWED_WIRING_SYSTEM_VALUES_AI_AO[0], # 给线制一个有效值，避免它也报错
                 C.MODULE_TYPE_COL: C.MODULE_TYPE_AI,
             },
         ]
@@ -631,13 +633,15 @@ class TestValidateIoTableIntegration(unittest.TestCase):
         file_path = self._create_excel_file("errors.xlsx", sheet_data)
         is_valid, message = validate_io_table(file_path)
         self.assertFalse(is_valid, "包含错误的文件应校验失败")
-        self.assertIn("预留点位的此列必须为空", message) # 来自主表第1个错误
-        self.assertIn(f'"{C.WIRING_SYSTEM_COL}"' , message)
-        self.assertIn("存在多个有效值", message) # 来自第三方表第1个错误
-        self.assertIn("TP_Invalid", message)
-        # 可以根据需要检查特定行号
+        
+        # 验证主表错误：POWER_SUPPLY_TYPE_COL 因 AlwaysRequiredRule 而报错
+        self.assertIn(f'列 "{C.POWER_SUPPLY_TYPE_COL}" 是必填项，不能为空。', message)
         self.assertIn(f'工作表:"{C.PLC_IO_SHEET_NAME}", Excel行号:2', message) # 预留错误行号 index 0 + 2
-        self.assertIn(f'工作表:"ThirdPartyErrors", Excel行号:2', message) # 第三方错误行号 index 0 + 2
+        
+        # 验证第三方表错误
+        self.assertIn("存在多个有效值", message) 
+        self.assertIn("TP_Invalid", message)
+        self.assertIn(f'工作表:"ThirdPartyErrors", Excel行号:2', message)
 
     def test_missing_main_sheet(self):
         """测试缺少主 IO 点表的情况。"""
@@ -691,6 +695,129 @@ class TestValidateIoTableIntegration(unittest.TestCase):
         self.assertFalse(is_valid, "包含空Sheet且无主Sheet的文件应校验失败")
         self.assertIn(f'未找到强制要求的主工作表"{C.PLC_IO_SHEET_NAME}"' , message)
         self.assertNotIn("不包含任何工作表", message, "不应报告'不包含任何工作表'")
+
+class TestAlwaysRequiredRule(unittest.TestCase):
+    """测试 AlwaysRequiredRule 的行为"""
+
+    def _create_context(self, data: dict, sheet_name=TEST_SHEET_NAME, row_num=TEST_EXCEL_ROW_NUM) -> ValidationContext:
+        """辅助函数：根据字典创建测试用的 ValidationContext。"""
+        # 确保所有可能的列都存在，即使值为 None 或 NaN
+        all_cols = [
+            C.HMI_NAME_COL, C.DESCRIPTION_COL, C.POWER_SUPPLY_TYPE_COL,
+            C.WIRING_SYSTEM_COL, C.MODULE_TYPE_COL
+        ]
+        full_data = {col: data.get(col, np.nan) for col in all_cols}
+        row = pd.Series(full_data)
+        return ValidationContext(row, row_num, sheet_name)
+
+    def assertHasError(self, errors: list, substring: str):
+        """断言错误列表中包含特定子字符串。"""
+        self.assertTrue(any(substring in error for error in errors),
+                        f"错误列表中未找到包含 '{substring}' 的错误。错误列表: {errors}")
+
+    def test_power_supply_type_required(self):
+        """测试供电类型列必填规则"""
+        rule = AlwaysRequiredRule(C.POWER_SUPPLY_TYPE_COL, "供电类型（有源/无源）")
+
+        # 1. 供电类型为空（无效）
+        context_empty = self._create_context({
+            C.HMI_NAME_COL: "Tag1",
+            C.POWER_SUPPLY_TYPE_COL: None
+        })
+        errors = rule.validate(context_empty)
+        self.assertEqual(len(errors), 1, "供电类型为空时应有1个错误")
+        self.assertHasError(errors, "是必填项，不能为空")
+        self.assertHasError(errors, f'"{C.POWER_SUPPLY_TYPE_COL}"')
+
+        # 2. 供电类型填写正确（有效）
+        context_valid = self._create_context({
+            C.HMI_NAME_COL: "Tag1",
+            C.POWER_SUPPLY_TYPE_COL: C.ALLOWED_POWER_SUPPLY_VALUES[0]
+        })
+        self.assertEqual(rule.validate(context_valid), [], "供电类型填写正确时应无错误")
+
+        # 3. 供电类型填写错误（有效 - 值有效性由 PowerSupplyValueRule 处理）
+        context_invalid_value = self._create_context({
+            C.HMI_NAME_COL: "Tag1",
+            C.POWER_SUPPLY_TYPE_COL: "无效值"
+        })
+        self.assertEqual(rule.validate(context_invalid_value), [], "供电类型填写错误时，此规则不报错")
+
+    def test_wiring_system_required(self):
+        """测试线制列必填规则"""
+        rule = AlwaysRequiredRule(C.WIRING_SYSTEM_COL, "线制")
+
+        # 1. 线制为空（无效）
+        context_empty = self._create_context({
+            C.HMI_NAME_COL: "Tag1",
+            C.WIRING_SYSTEM_COL: None,
+            C.MODULE_TYPE_COL: C.MODULE_TYPE_AI
+        })
+        errors = rule.validate(context_empty)
+        self.assertEqual(len(errors), 1, "线制为空时应有1个错误")
+        self.assertHasError(errors, "是必填项，不能为空")
+        self.assertHasError(errors, f'"{C.WIRING_SYSTEM_COL}"')
+
+        # 2. 线制填写正确（有效）
+        context_valid = self._create_context({
+            C.HMI_NAME_COL: "Tag1",
+            C.WIRING_SYSTEM_COL: C.ALLOWED_WIRING_SYSTEM_VALUES_AI_AO[0],
+            C.MODULE_TYPE_COL: C.MODULE_TYPE_AI
+        })
+        self.assertEqual(rule.validate(context_valid), [], "线制填写正确时应无错误")
+
+        # 3. 线制填写错误（有效 - 值有效性由 WiringSystemValueRule 处理）
+        context_invalid_value = self._create_context({
+            C.HMI_NAME_COL: "Tag1",
+            C.WIRING_SYSTEM_COL: "无效值",
+            C.MODULE_TYPE_COL: C.MODULE_TYPE_AI
+        })
+        self.assertEqual(rule.validate(context_invalid_value), [], "线制填写错误时，此规则不报错")
+
+    def test_both_columns_required(self):
+        """测试供电类型和线制两列同时必填的情况"""
+        power_supply_rule = AlwaysRequiredRule(C.POWER_SUPPLY_TYPE_COL, "供电类型（有源/无源）")
+        wiring_system_rule = AlwaysRequiredRule(C.WIRING_SYSTEM_COL, "线制")
+
+        # 1. 两列都为空（无效）
+        context_both_empty = self._create_context({
+            C.HMI_NAME_COL: "Tag1",
+            C.POWER_SUPPLY_TYPE_COL: None,
+            C.WIRING_SYSTEM_COL: None,
+            C.MODULE_TYPE_COL: C.MODULE_TYPE_AI
+        })
+        errors_power = power_supply_rule.validate(context_both_empty)
+        errors_wiring = wiring_system_rule.validate(context_both_empty)
+        self.assertEqual(len(errors_power), 1, "供电类型为空时应有1个错误")
+        self.assertEqual(len(errors_wiring), 1, "线制为空时应有1个错误")
+        self.assertHasError(errors_power, "是必填项，不能为空")
+        self.assertHasError(errors_wiring, "是必填项，不能为空")
+        self.assertHasError(errors_power, f'"{C.POWER_SUPPLY_TYPE_COL}"')
+        self.assertHasError(errors_wiring, f'"{C.WIRING_SYSTEM_COL}"')
+
+        # 2. 两列都填写正确（有效）
+        context_both_valid = self._create_context({
+            C.HMI_NAME_COL: "Tag1",
+            C.POWER_SUPPLY_TYPE_COL: C.ALLOWED_POWER_SUPPLY_VALUES[0],
+            C.WIRING_SYSTEM_COL: C.ALLOWED_WIRING_SYSTEM_VALUES_AI_AO[0],
+            C.MODULE_TYPE_COL: C.MODULE_TYPE_AI
+        })
+        self.assertEqual(power_supply_rule.validate(context_both_valid), [], "供电类型填写正确时应无错误")
+        self.assertEqual(wiring_system_rule.validate(context_both_valid), [], "线制填写正确时应无错误")
+
+        # 3. 一列填写正确，一列为空（部分无效）
+        context_mixed = self._create_context({
+            C.HMI_NAME_COL: "Tag1",
+            C.POWER_SUPPLY_TYPE_COL: C.ALLOWED_POWER_SUPPLY_VALUES[0],
+            C.WIRING_SYSTEM_COL: None,
+            C.MODULE_TYPE_COL: C.MODULE_TYPE_AI
+        })
+        errors_power = power_supply_rule.validate(context_mixed)
+        errors_wiring = wiring_system_rule.validate(context_mixed)
+        self.assertEqual(errors_power, [], "供电类型填写正确时应无错误")
+        self.assertEqual(len(errors_wiring), 1, "线制为空时应有1个错误")
+        self.assertHasError(errors_wiring, "是必填项，不能为空")
+        self.assertHasError(errors_wiring, f'"{C.WIRING_SYSTEM_COL}"')
 
 if __name__ == '__main__':
     unittest.main()

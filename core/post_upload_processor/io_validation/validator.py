@@ -313,28 +313,51 @@ class ReservedAiSpecificEmptyRule(ValidationRule):
 # --- 第三方表规则实现 --- #
 
 class RealSetpointUniquenessRule(ValidationRule):
-    """规则：数据类型为 REAL 的点，其 SLL, SL, SH, SHH 中最多只能有一个有效值。"""
+    """规则：数据类型为 REAL 的点，其指定的设定值列中最多只能有一个有效值。"""
+    def __init__(self, setpoint_col_consts: Optional[List[str]] = None):
+        """
+        初始化规则。
+        Args:
+            setpoint_col_consts: 一个包含设定值列常量名的列表。
+                                 如果为None，则使用默认的第三方表列名。
+        """
+        self.setpoint_col_consts = setpoint_col_consts
+
     def validate(self, context: ValidationContext) -> List[str]:
         errors = []
         if context.data_type == C.DATA_TYPE_REAL:
-            setpoint_cols = {
-                C.TP_INPUT_SLL_SET_COL: context.row.get(C.TP_INPUT_SLL_SET_COL),
-                C.TP_INPUT_SL_SET_COL: context.row.get(C.TP_INPUT_SL_SET_COL),
-                C.TP_INPUT_SH_SET_COL: context.row.get(C.TP_INPUT_SH_SET_COL),
-                C.TP_INPUT_SHH_SET_COL: context.row.get(C.TP_INPUT_SHH_SET_COL),
-            }
+            setpoint_cols_to_check = {}
+            if self.setpoint_col_consts:
+                # 使用传入的列常量
+                for col_const in self.setpoint_col_consts:
+                    setpoint_cols_to_check[col_const] = context.row.get(col_const)
+            else:
+                # 默认使用第三方表的列常量
+                setpoint_cols_to_check = {
+                    C.TP_INPUT_SLL_SET_COL: context.row.get(C.TP_INPUT_SLL_SET_COL),
+                    C.TP_INPUT_SL_SET_COL: context.row.get(C.TP_INPUT_SL_SET_COL),
+                    C.TP_INPUT_SH_SET_COL: context.row.get(C.TP_INPUT_SH_SET_COL),
+                    C.TP_INPUT_SHH_SET_COL: context.row.get(C.TP_INPUT_SHH_SET_COL),
+                }
+            
             present_settings_count = 0
             settings_values = []
-            for col_name, val in setpoint_cols.items():
+            # 这里的 col_name 实际上是列常量，为了清晰可以调整变量名，但保持逻辑
+            for col_const, val in setpoint_cols_to_check.items(): 
                 if _is_value_present(val):
                     present_settings_count += 1
-                    settings_values.append(f"{col_name}='{val}'")
+                    # 在错误消息中，我们可能希望显示列的友好名称而不是常量本身
+                    # 但当前 col_const 就是列的实际标识，用于定位数据
+                    settings_values.append(f"{str(col_const)}='{val}'")
 
             if present_settings_count > 1:
-                var_name_value = str(context.row.get(C.TP_INPUT_VAR_NAME_COL, f"行 {context.excel_row_number} 未命名点位"))
+                var_name_value = str(context.row.get(C.TP_INPUT_VAR_NAME_COL, # 优先用第三方表的变量名列
+                                   context.row.get(C.HMI_NAME_COL,  # 否则尝试主IO表的HMI名
+                                   f"行 {context.excel_row_number} 未命名点位")))
+                cols_display = ", ".join(settings_values)
                 errors.append(_format_error_message(
                     context.sheet_name, context.excel_row_number,
-                    f'数据类型为REAL的点，其SLL, SL, SH, SHH设定值中存在多个有效值 ({", ".join(settings_values)})。一个点在这些列中最多只能有一个有效值。',
+                    f'数据类型为REAL的点，其设定值中存在多个有效值 ({cols_display})。一个点在这些列中最多只能有一个有效值。',
                     point_name=var_name_value
                 ))
         return errors
@@ -342,20 +365,37 @@ class RealSetpointUniquenessRule(ValidationRule):
 # --- 新增的第三方表规则 --- #
 
 class BoolSetpointEmptyRule(ValidationRule):
-    """规则：数据类型为 BOOL 的点，其 SLL, SL, SH, SHH 设定值列必须为空。"""
+    """规则：数据类型为 BOOL 的点，其指定的设定值列必须为空。"""
+    def __init__(self, setpoint_cols_map: Optional[Dict[str, str]] = None):
+        """
+        初始化规则。
+        Args:
+            setpoint_cols_map: 一个字典，键是列常量，值是列的中文友好名称。
+                               如果为None，则使用默认的第三方表列名和描述。
+        """
+        self.setpoint_cols_map = setpoint_cols_map
+
     def validate(self, context: ValidationContext) -> List[str]:
         errors = []
         if context.data_type == C.DATA_TYPE_BOOL: # 检查是否为 BOOL 类型
-            setpoint_cols_to_check = {
-                C.TP_INPUT_SLL_SET_COL: "SLL 设定值",
-                C.TP_INPUT_SL_SET_COL: "SL 设定值",
-                C.TP_INPUT_SH_SET_COL: "SH 设定值",
-                C.TP_INPUT_SHH_SET_COL: "SHH 设定值",
-            }
-            for col_const, col_name_cn in setpoint_cols_to_check.items():
+            cols_to_check_this_instance: Dict[str, str]
+            if self.setpoint_cols_map:
+                cols_to_check_this_instance = self.setpoint_cols_map
+            else:
+                # 默认使用第三方表的列常量和描述
+                cols_to_check_this_instance = {
+                    C.TP_INPUT_SLL_SET_COL: "SLL设定值",
+                    C.TP_INPUT_SL_SET_COL: "SL设定值",
+                    C.TP_INPUT_SH_SET_COL: "SH设定值",
+                    C.TP_INPUT_SHH_SET_COL: "SHH设定值",
+                }
+
+            for col_const, col_name_cn in cols_to_check_this_instance.items():
                 value = context.row.get(col_const)
                 if _is_value_present(value):
-                    var_name_value = str(context.row.get(C.TP_INPUT_VAR_NAME_COL, f"行 {context.excel_row_number} 未命名点位"))
+                    var_name_value = str(context.row.get(C.TP_INPUT_VAR_NAME_COL, # 优先用第三方表的变量名列
+                                       context.row.get(C.HMI_NAME_COL,  # 否则尝试主IO表的HMI名
+                                       f"行 {context.excel_row_number} 未命名点位")))
                     errors.append(_format_error_message(
                         context.sheet_name, context.excel_row_number,
                         f'数据类型为BOOL的点，其设定值列 "{col_name_cn}" 不应填写数据。请清空该单元格。',
@@ -363,7 +403,24 @@ class BoolSetpointEmptyRule(ValidationRule):
                         column_name=col_name_cn,
                         value=value
                     ))
-            # 因为可能同时填了多个，所以检查完所有列再返回
+        return errors
+
+class AlwaysRequiredRule(ValidationRule):
+    """规则：指定的列必须填写，无论是否为预留点位。"""
+    def __init__(self, column: str, column_name_cn: str):
+        self.column = column
+        self.column_name_cn = column_name_cn
+
+    def validate(self, context: ValidationContext) -> List[str]:
+        errors = []
+        value = context.row.get(self.column)
+        if not _is_value_present(value):
+            errors.append(_format_error_message(
+                context.sheet_name, context.excel_row_number,
+                f'列 "{self.column_name_cn}" 是必填项，不能为空。',
+                point_name=context.hmi_name, # 尝试使用HMI名称作为点位标识
+                column_name=self.column_name_cn
+            ))
         return errors
 
 # --- 规则注册表 (更新) --- #
@@ -371,21 +428,24 @@ class BoolSetpointEmptyRule(ValidationRule):
 MAIN_IO_RULES: List[ValidationRule] = [
     # 通用规则
     HmiDescriptionConsistencyRule(),
-    # 针对预留点位
-    ReservedPointEmptyRule(C.POWER_SUPPLY_TYPE_COL, "供电类型（有源/无源）"),
-    ReservedPointEmptyRule(C.WIRING_SYSTEM_COL, "线制"),
-    # 针对预留 AI 点位
+    # AlwaysRequiredRule 会处理所有情况下的必填，包括预留和非预留
+    AlwaysRequiredRule(C.POWER_SUPPLY_TYPE_COL, C.POWER_SUPPLY_TYPE_COL),
+    AlwaysRequiredRule(C.WIRING_SYSTEM_COL, C.WIRING_SYSTEM_COL),
+    # 保留对值的有效性校验 (这些规则内部通常会先检查 _is_value_present)
+    PowerSupplyValueRule(), 
+    WiringSystemValueRule(),
+
+    # 针对预留 AI 点位特定列必须为空的规则 (其他列，非供电和线制)
     ReservedAiSpecificEmptyRule(C.RANGE_LOW_LIMIT_COL, "量程低限"),
     ReservedAiSpecificEmptyRule(C.RANGE_HIGH_LIMIT_COL, "量程高限"),
     ReservedAiSpecificEmptyRule(C.SLL_SET_COL, "SLL设定值"),
     ReservedAiSpecificEmptyRule(C.SL_SET_COL, "SL设定值"),
     ReservedAiSpecificEmptyRule(C.SH_SET_COL, "SH设定值"),
     ReservedAiSpecificEmptyRule(C.SHH_SET_COL, "SHH设定值"),
-    # 针对非预留点位
-    NonReservedRequiredRule(C.POWER_SUPPLY_TYPE_COL, "供电类型（有源/无源）"),
-    NonReservedRequiredRule(C.WIRING_SYSTEM_COL, "线制"),
-    PowerSupplyValueRule(),
-    WiringSystemValueRule(),
+
+    # 针对非预留点位其他列的必填规则
+    NonReservedRequiredRule(C.MODULE_TYPE_COL, C.MODULE_TYPE_COL), # 模块类型对非预留点仍是必填
+
     # 针对非预留 AI 点位
     RangeRequiredAiRule(),
     RangeNumericAiRule(C.RANGE_LOW_LIMIT_COL, "量程低限"),
@@ -394,11 +454,20 @@ MAIN_IO_RULES: List[ValidationRule] = [
     SetpointNumericAiRule(C.SL_SET_COL, "SL设定值"),
     SetpointNumericAiRule(C.SH_SET_COL, "SH设定值"),
     SetpointNumericAiRule(C.SHH_SET_COL, "SHH设定值"),
+    
+    # 报警设定值唯一性与布尔型点表报警为空规则
+    # RealSetpointUniquenessRule([C.SLL_SET_COL, C.SL_SET_COL, C.SH_SET_COL, C.SHH_SET_COL]), # 移除此规则，因为主IO表允许同时有多个报警 (恢复原始行为)
+    # BoolSetpointEmptyRule({ # 移除此规则，恢复原始行为，主IO表不对BOOL点的SLL/SL/SH/SHH做空检查
+    #     C.SLL_SET_COL: C.SLL_SET_COL, 
+    #     C.SL_SET_COL: C.SL_SET_COL,
+    #     C.SH_SET_COL: C.SH_SET_COL,
+    #     C.SHH_SET_COL: C.SHH_SET_COL 
+    # }),
 ]
 
 THIRD_PARTY_RULES: List[ValidationRule] = [
-    RealSetpointUniquenessRule(),
-    BoolSetpointEmptyRule(), # 添加新规则
+    RealSetpointUniquenessRule(), # 不带参数，使用默认TP列
+    BoolSetpointEmptyRule(), # 不带参数，使用默认TP列
 ]
 
 # --- 重构后的行级校验函数 (示例) --- #
