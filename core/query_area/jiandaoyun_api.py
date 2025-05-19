@@ -32,6 +32,11 @@ class JianDaoYunAPI:
         :param project_no: 项目编号（用于过滤）
         :return: 数据列表
         """
+        # 新增: 如果项目编号为空，则直接返回空列表，不进行查询
+        if not project_no or not project_no.strip():
+            logging.info("项目编号为空，不执行简道云查询，直接返回空列表。")
+            return []
+            
         all_data = []
         last_data_id = None
         batch_size = 100  # API限制

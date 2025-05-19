@@ -273,6 +273,13 @@ class MainWindow(QMainWindow):
 
     def _handle_query(self, project_no: str):
         """处理查询请求"""
+        # 新增: 校验项目编号是否为空
+        if not project_no or not project_no.strip():
+            QMessageBox.warning(self, "输入错误", "请输入有效的项目编号后再查询。")
+            logger.warning("用户尝试在项目编号为空时执行查询。")
+            self.status_bar.showMessage("请输入项目编号。")
+            return
+            
         try:
             # 执行查询 (调用 ProjectService)
             if not self.project_service:
