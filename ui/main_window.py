@@ -36,6 +36,7 @@ from core.post_upload_processor.plc_generators.hollysys_generator.generator impo
 from core.post_upload_processor.plc_generators.hollysys_generator.safety_generator import SafetyHollysysGenerator # 新增：导入安全型生成器
 from core.post_upload_processor.hmi_generators.yk_generator.generator import KingViewGenerator, C
 from core.post_upload_processor.hmi_generators.lk_generator.generator import LikongGenerator # 新增：导入力控生成器
+from core.post_upload_processor.fat_generators import generate_fat_checklist_from_source # 修改: 导入正确的函数
 
 # Import new data processors
 from core.project_list_area import ProjectService
@@ -87,6 +88,11 @@ class MainWindow(QMainWindow):
         self.upload_io_table_btn = QPushButton("上传IO点表")
         self.upload_io_table_btn.setMinimumHeight(28) 
         self.upload_io_table_btn.setStyleSheet("QPushButton { padding-bottom: 2px; }")
+
+        # 新增：创建生成FAT点表按钮
+        self.generate_fat_table_btn = QPushButton("生成FAT点表")
+        self.generate_fat_table_btn.setMinimumHeight(28)
+        self.generate_fat_table_btn.setStyleSheet("QPushButton { padding-bottom: 2px; }")
 
         self.upload_hmi_btn = QPushButton("生成HMI点表")
         self.upload_hmi_btn.setMinimumHeight(28) 
@@ -239,6 +245,7 @@ class MainWindow(QMainWindow):
 
         # 此处直接使用已在 __init__ 中创建的按钮实例
         upload_buttons_layout.addWidget(self.upload_io_table_btn)
+        upload_buttons_layout.addWidget(self.generate_fat_table_btn)
         upload_buttons_layout.addWidget(self.upload_hmi_btn)
         upload_buttons_layout.addWidget(self.upload_plc_btn)
         upload_buttons_widget.setLayout(upload_buttons_layout) # 确保布局被设置
@@ -270,6 +277,10 @@ class MainWindow(QMainWindow):
         # IO点表模板生成按钮信号
         if hasattr(self, 'generate_io_template_btn'):
             self.generate_io_template_btn.clicked.connect(self._trigger_generate_points)
+        
+        # 新增：生成FAT点表按钮信号
+        if hasattr(self, 'generate_fat_table_btn'):
+            self.generate_fat_table_btn.clicked.connect(self._handle_generate_fat_table)
 
     def _handle_query(self, project_no: str):
         """处理查询请求"""
@@ -939,4 +950,59 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"_is_safety_plc: Error while checking for safety modules: {e}", exc_info=True)
             return False # 出错时，按非安全处理
+
+    def _handle_generate_fat_table(self):
+        """处理点击"生成FAT点表"按钮的事件。"""
+        if not self.verified_io_table_path:
+            QMessageBox.warning(self, "操作无效", "请先上传并验证IO点表文件。")
+            logger.warning("FAT表生成尝试失败：未找到已验证的IO点表路径。")
+            return
+
+        # 从已验证的IO点表路径中提取文件名（不含扩展名）作为基础
+        original_filename_stem = os.path.splitext(os.path.basename(self.verified_io_table_path))[0]
+        
+        # 构造FAT点检表的输出文件名，例如：原始文件名_FAT.xlsx
+        fat_output_filename = f"{original_filename_stem}_FAT.xlsx"
+
+        # 恢复固定的输出目录逻辑
+        output_base_dir_name = "FAT点表" # 定义子目录名
+        output_dir = os.path.join(os.getcwd(), output_base_dir_name) # 拼接完整路径
+        try:
+            os.makedirs(output_dir, exist_ok=True) # 确保目录存在
+            logger.info(f"FAT点表将保存到固定目录: {output_dir}")
+        except OSError as e:
+            error_msg_mkdir = f"创建FAT点表输出目录 '{output_dir}' 失败: {e}"
+            QMessageBox.critical(self, "目录创建错误", error_msg_mkdir)
+            logger.error(error_msg_mkdir)
+            self.status_bar.showMessage("FAT点表目录创建失败。", 5000)
+            return
+            
+        self.status_bar.showMessage("正在生成FAT点表...")
+        QApplication.processEvents() # 确保UI更新
+
+        # 构造最终的完整输出路径
+        final_output_path = os.path.join(output_dir, fat_output_filename)
+
+        try:
+            success, generated_file_path, error_message = generate_fat_checklist_from_source(
+                original_file_path=self.verified_io_table_path,
+                output_dir=output_dir, # 传递的是目录
+                output_filename=fat_output_filename # 传递的是文件名
+            )
+
+            if success and generated_file_path: # generated_file_path 应该是完整的路径
+                QMessageBox.information(self, "成功", f"FAT点表已成功生成并保存至:\n{generated_file_path}")
+                logger.info(f"FAT点表已成功生成: {generated_file_path}")
+                self.status_bar.showMessage(f"FAT点表生成成功: {os.path.basename(generated_file_path)}", 5000)
+            else:
+                detailed_error = f"生成FAT点表失败。错误详情: {error_message}"
+                QMessageBox.critical(self, "生成失败", detailed_error)
+                logger.error(detailed_error)
+                self.status_bar.showMessage("FAT点表生成失败。", 5000)
+
+        except Exception as e:
+            full_error_msg = f"处理FAT点表生成时发生意外错误: {str(e)}"
+            QMessageBox.critical(self, "严重错误", full_error_msg)
+            logger.error(full_error_msg, exc_info=True)
+            self.status_bar.showMessage("FAT点表生成过程中发生严重错误。", 5000)
 
