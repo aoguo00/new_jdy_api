@@ -1,0 +1,66 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+
+
+**阶段一：夯实数据基础和核心逻辑 (自底向上)**
+
+1.  **数据处理 - 类型转换时机 (`io_data_model.py`, `excel_reader.py`)**
+    *   **操作**：
+        1.  修改 `core/post_upload_processor/uploaded_file_processor/io_data_model.py` 中的 `UploadedIOPoint` 类，将需要特定类型的字段（如 `range_low_limit`, `sll_set_value`, `save_history` 等）的类型注解从 `Optional[str]` 改为 `Optional[float]`, `Optional[bool]` 等。
+        2.  修改 `core/post_upload_processor/uploaded_file_processor/excel_reader.py` 中的解析逻辑 (`_parse_io_sheet_to_uploaded_points`, `_parse_third_party_df_to_uploaded_points`)，在从Excel读取字符串后，立即尝试将这些字段转换为其新的目标类型。妥善处理转换失败的情况（记录日志，字段值可能设为`None`）。
+    *   **理由**：这是最底层的改动，直接影响核心数据对象的结构。先稳定它，后续模块才能基于正确的类型进行操作。
+
+2.  **代码可维护性 - 常量与枚举 (`io_data_model.py`, `excel_reader.py`, `validator.py`, 各生成器)**
+    *   **操作**：
+        1.  定义 `Enum` 类型（例如在 `io_data_model.py` 或一个新的 `enums.py` 中）来表示像 `source_type`, `data_type` 这类具有固定取值的字段。
+        2.  更新 `UploadedIOPoint` 模型以使用这些 `Enum` 类型。
+        3.  修改 `excel_reader.py`，使其在解析时将相关的字符串值转换为对应的 `Enum`成员。
+        4.  更新所有使用这些字段的模块（如各个生成器在判断 `point.data_type` 时，`validator.py` 中的 `ValidationContext` 或规则如果也用到了这些字段）以使用新的 `Enum` 类型进行比较。
+    *   **理由**：这也是对核心数据模型的增强，与类型转换紧密相关，应尽早完成。
+
+3.  **更新下游核心模块以适应新的 `UploadedIOPoint` (各生成器, `validator.py`)**
+    *   **操作**：
+        1.  遍历所有点表生成器模块（如 `lk_generator.py`, `hollysys_generator.py` 等）。由于 `UploadedIOPoint` 中的相关字段现在可能已经是 `float`, `bool` 或 `Enum` 类型，移除这些生成器内部原有的从字符串到这些类型的转换逻辑。
+        2.  检查 `validator.py`。虽然它主要在 `UploadedIOPoint` 创建前操作DataFrame，但如果其 `ValidationContext` 或某些规则间接地处理或期望了特定格式的字符串（现在变成了类型化数据或枚举），则需要调整。
+    *   **理由**：确保核心业务逻辑模块能够正确处理经过类型转换和枚举化后的标准数据对象。
+
+**阶段二：优化核心逻辑和模块接口的稳定性**
+
+4.  **代码重复性 (主要关注 `core` 目录内的模块)**
+    *   **操作**：
+        1.  审查各生成器之间、`excel_reader.py` 与 `validator.py` 之间是否存在可抽取的通用逻辑（如数据提取、默认值处理、特定的字符串操作等）。
+        2.  将这些通用逻辑封装到共享的辅助函数或工具类中 (例如，可以创建一个 `core/utils.py` 或在相应子包内创建 `utils.py`)。
+        3.  如果生成器之间有更复杂的共享行为，可以考虑引入基类。
+    *   **理由**：在核心数据模型和其主要生产者/消费者稳定后，进行代码去重可以使核心逻辑更清晰，并可能固化一些通用的处理模式，这有助于稳定核心模块的接口。
+
+5.  **配置的灵活性与外部化 (可选，`excel_reader.py`, `validator.py`)**
+    *   **操作**：评估是否有将 `INTERMEDIATE_POINT_DEFINITIONS` 或校验规则列表等Python内部配置外部化到JSON/YAML文件的强烈需求。如果决定实施，则修改相应模块以从外部文件加载配置。
+    *   **理由**：这是一个相对独立的架构决策。如果当前Python内部配置已满足需求且易于维护，此步骤可以推迟或省略。如果实施，它会改变配置的来源，但理想情况下不应大幅改变使用这些配置的模块的公共API。
+
+**阶段三：UI层和整体测试**
+
+6.  **UI代码组织 - `MainWindow` 职责细化 (`ui/main_window.py`)**
+    *   **操作**：
+        1.  将 `MainWindow` 中较长、复杂的方法（如 `_handle_upload_io_table`, `_handle_plc_generation_requested` 等）拆分为更小、职责更单一的辅助方法。
+        2.  考虑是否需要引入专门的处理器/控制器类来管理某些复杂的UI交互流程。
+    *   **理由**：此时，`MainWindow` 所调用的核心服务 (`validate_io_table`, `load_workbook_data`, 各生成器的 `generate_xxx` 方法) 的接口及其返回的数据结构 (`UploadedIOPoint` 的内容) 应该已经比较稳定了。因此，对 `MainWindow` 进行内部结构重构，风险较低，不太会因为核心逻辑的变动而需要立即返工。您所担心的“生成器和excel_reader一些列也改动了的话，那么我的main_window.py又要改”——如果这些“列的改动”指的是`UploadedIOPoint`内部字段类型的变化，那么这个影响应该在阶段一和阶段三中被处理掉了。如果指的是生成器输出文件的列的改动，这通常不直接影响`MainWindow`调用生成器的方式。
+
+7.  **测试覆盖 (贯穿始终，但在此阶段可进行更全面的集成测试)**
+    *   **操作**：
+        *   在前面每个阶段修改模块时，都应为其编写或更新单元测试。
+        *   在此阶段，可以重点进行集成测试，确保从UI触发的整个流程（文件选择 -> 校验 -> 解析 -> （用户操作） -> 生成）能够正确工作。
+    *   **理由**：测试是保证重构质量和后续维护性的关键。
+
+**总结这个顺序的逻辑：**
+
+*   **先内后外**：先稳定最核心的数据模型 (`UploadedIOPoint`) 和直接操作它的模块 (`excel_reader.py`, 生成器)。
+*   **依赖驱动**：被依赖的模块（数据模型、解析器）先改，依赖方（生成器、UI）后调整。
+*   **接口稳定优先**：在重构 `MainWindow` 之前，尽量使其调用的核心服务接口稳定下来。
+
+通过这样的顺序，当您开始重构 `MainWindow` 时，它所依赖的 `load_workbook_data` 返回的 `self.loaded_io_data_by_sheet` 中的 `UploadedIOPoint` 对象已经是经过类型转换和枚举化处理的了。`MainWindow` 本身可能不需要关心这些具体的类型细节（因为它主要是传递数据），但它调用的生成器已经适配了这些新类型。
+
+
