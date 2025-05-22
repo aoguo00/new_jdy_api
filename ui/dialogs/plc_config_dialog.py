@@ -224,7 +224,8 @@ class PLCConfigDialogUI:
 
         config_table.setRowCount(0)
         for item_data in config_items: # item_data is like {'slot_id', 'model', 'type', 'channels', 'description'}
-            slot_id = item_data['slot_id']
+            # 这里 item_data['slot_id'] 已经是 0 基，无需再次转换
+            slot_display = item_data['slot_id']
             model = item_data['model']
             module_type = item_data.get('type', '未知')
             channels = str(item_data.get('channels', 0))
@@ -232,13 +233,14 @@ class PLCConfigDialogUI:
 
             row = config_table.rowCount()
             config_table.insertRow(row)
-            config_table.setItem(row, 0, QTableWidgetItem(str(slot_id)))
+            config_table.setItem(row, 0, QTableWidgetItem(str(slot_display)))
             config_table.setItem(row, 1, QTableWidgetItem(model))
             config_table.setItem(row, 2, QTableWidgetItem(module_type))
             config_table.setItem(row, 3, QTableWidgetItem(channels))
             config_table.setItem(row, 4, QTableWidgetItem(description))
 
-            if slot_id == 1:
+            # LK/LE系统固定槽位0（旧槽位1）高亮
+            if slot_display == 0:
                 color = Qt.GlobalColor.lightGray
                 for col in range(config_table.columnCount()):
                     table_item = config_table.item(row, col)
@@ -250,11 +252,11 @@ class PLCConfigDialogUI:
         rack_page = QWidget()
         rack_layout = QVBoxLayout(rack_page)
         
-        info_text = f"机架 {rack_id} (槽位1-{slots_per_rack})"
+        info_text = f"机架 {rack_id} (槽位0-{slots_per_rack-1})"
         if system_type == "LK":
-            info_text = f"机架 {rack_id} (LK系统: 槽位1固定为DP模块, 可配置槽位2-{slots_per_rack})"
+            info_text = f"机架 {rack_id} (LK系统: 槽位0固定为DP模块, 可配置槽位1-{slots_per_rack-1})"
         elif system_type == "LE_CPU":
-            info_text = f"机架 {rack_id} (LE系统: 槽位1请配置LE5118 CPU, 可配置槽位2-{slots_per_rack})"
+            info_text = f"机架 {rack_id} (LE系统: 槽位0请配置LE5118 CPU, 可配置槽位1-{slots_per_rack-1})"
         
         info_label = QLabel(info_text)
         rack_layout.addWidget(info_label)
@@ -659,15 +661,15 @@ class PLCConfigEmbeddedWidget(QWidget):
         model_text_item = config_table.item(row, 1) # For logging/finding unique_id
         if not slot_text_item or not slot_text_item.text().isdigit() or not model_text_item: return
         
-        slot_id = int(slot_text_item.text())
-        # model_name_in_table = model_text_item.text() # Not directly used to find, use configured_modules
+        displayed_slot_id = int(slot_text_item.text())
+        internal_slot_id = displayed_slot_id + 1  # 转回1基以与内部配置保持一致
 
         # ... (LK slot 1 check remains) ...
-        if self.system_type == "LK" and slot_id == 1:
+        if self.system_type == "LK" and displayed_slot_id == 0:
              QMessageBox.warning(self, "提示", "LK系统槽位1的DP模块是预设的，不能移除。")
              return
         
-        module_to_remove_key = (current_rack_id, slot_id)
+        module_to_remove_key = (current_rack_id, internal_slot_id)
         removed_module_obj = self.configured_modules.pop(module_to_remove_key, None)
         if removed_module_obj:
             del self.current_config[module_to_remove_key]
@@ -675,7 +677,7 @@ class PLCConfigEmbeddedWidget(QWidget):
             # No need to explicitly add back to self.current_modules_pool here,
             # _rebuild_current_modules_pool will correctly include it when called.
         else:
-            logger.warning(f"Attempted to remove module from ({current_rack_id},{slot_id}), but it was not found in configured_modules.")
+            logger.warning(f"Attempted to remove module from ({current_rack_id},{internal_slot_id}), but it was not found in configured_modules.")
             # Fallback: try to remove from current_config if it's somehow there without being in configured_modules
             if module_to_remove_key in self.current_config:
                 del self.current_config[module_to_remove_key]
@@ -944,7 +946,7 @@ class PLCConfigEmbeddedWidget(QWidget):
             
             if module_info_obj:
                 rack_config_items_for_ui.append({
-                    'slot_id': slot_id,
+                    'slot_id': slot_id - 1 if slot_id > 0 else slot_id,
                     'model': module_info_obj.get('model', model_name),
                     'type': module_info_obj.get('type', module_info_obj.get('io_type', '未知')),
                     'channels': str(module_info_obj.get('channels', 0)),
@@ -952,7 +954,7 @@ class PLCConfigEmbeddedWidget(QWidget):
                 })
             else: # 实在找不到信息
                  rack_config_items_for_ui.append({
-                    'slot_id': slot_id, 'model': model_name, 'type': "未知", 
+                    'slot_id': slot_id - 1 if slot_id > 0 else slot_id, 'model': model_name, 'type': "未知", 
                     'channels': '?', 'description': "模块信息缺失"
                 })
         
