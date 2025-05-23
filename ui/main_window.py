@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from typing import List, Dict, Any, Optional, Tuple
 import pandas as pd # 确保导入 pandas
 import os
+import configparser  # 新增：用于读取配置文件
 
 # API and old DeviceManager (if still needed for other parts, though ideally not for third_party)
 from core.query_area import JianDaoYunAPI
@@ -48,9 +49,21 @@ from ui.components.project_list_area import ProjectListArea
 from ui.components.device_list_area import DeviceListArea
 from ui.components.third_party_device_area import ThirdPartyDeviceArea
 
-# Dialogs
+# Dialogs - 修改：导入PLC配置组件
 from ui.dialogs.plc_config_dialog import PLCConfigEmbeddedWidget
 from ui.dialogs.error_display_dialog import ErrorDisplayDialog
+
+# 新增：导入新的现代化PLC配置组件
+try:
+    from ui.components.plc_config.plc_config_adapter import PLCConfigAdapter
+    MODERN_PLC_CONFIG_AVAILABLE = True
+    logger = logging.getLogger(__name__)
+    logger.info("现代化PLC配置组件可用")
+except ImportError as e:
+    MODERN_PLC_CONFIG_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning(f"现代化PLC配置组件不可用: {e}")
+
 # 移除模块管理对话框导入
 # from ui.dialogs.module_manager_dialog import ModuleManagerDialog
 
@@ -83,6 +96,9 @@ class MainWindow(QMainWindow):
 
         # 修改：用于存储从IO点表加载的所有已解析数据，按工作表名分组
         self.loaded_io_data_by_sheet: Optional[Dict[str, List[UploadedIOPoint]]] = None
+
+        # 新增：存储数据库路径用于配置读取
+        self.db_path = db_path
 
         # 创建上传按钮成员变量 (移到这里，以便 setup_ui 和 setup_connections 都能访问)
         self.upload_io_table_btn = QPushButton("上传IO点表")
@@ -154,6 +170,60 @@ class MainWindow(QMainWindow):
         self.setup_ui()
         self.setup_connections()
 
+    def _get_config_value(self, key: str, default_value: Any) -> Any:
+        """
+        读取配置文件中的值
+        
+        Args:
+            key: 配置键，支持点分隔的路径如 'ui.use_modern_plc_config'
+            default_value: 默认值
+            
+        Returns:
+            配置值或默认值
+        """
+        try:
+            config = configparser.ConfigParser()
+            # 修复：配置文件应该在项目根目录
+            config_file_path = os.path.join(os.getcwd(), 'config.ini')
+            
+            if not os.path.exists(config_file_path):
+                logger.warning(f"配置文件不存在: {config_file_path}，使用默认值")
+                return default_value
+                
+            config.read(config_file_path, encoding='utf-8')
+            
+            # 解析点分隔的键
+            parts = key.split('.')
+            if len(parts) != 2:
+                logger.warning(f"配置键格式无效: {key}，使用默认值")
+                return default_value
+                
+            section, option = parts
+            
+            if not config.has_section(section.upper()):
+                logger.warning(f"配置节不存在: {section}，使用默认值")
+                return default_value
+                
+            if not config.has_option(section.upper(), option):
+                logger.warning(f"配置项不存在: {key}，使用默认值")
+                return default_value
+            
+            # 根据默认值类型进行转换
+            value = config.get(section.upper(), option)
+            
+            if isinstance(default_value, bool):
+                return value.lower() in ('true', '1', 'yes', 'on')
+            elif isinstance(default_value, int):
+                return int(value)
+            elif isinstance(default_value, float):
+                return float(value)
+            else:
+                return value
+                
+        except Exception as e:
+            logger.error(f"读取配置失败: {e}，使用默认值")
+            return default_value
+
     def setup_ui(self):
         """设置UI界面"""
         central_widget = QWidget() # central_widget 仍然需要，QTabWidget 将设置在其上
@@ -179,26 +249,53 @@ class MainWindow(QMainWindow):
 
         main_tab_widget.addTab(main_functional_tab, "数据查询")
 
-        # --- 第三个标签页（原第二个）：PLC硬件配置 ---
+        # --- PLC硬件配置标签页 (新旧版本可配置切换) ---
         plc_config_tab_container = QWidget() 
         plc_config_layout = QVBoxLayout(plc_config_tab_container)
         plc_config_layout.setContentsMargins(5,5,5,5) 
 
         if self.io_data_loader: 
-            self.embedded_plc_config_widget = PLCConfigEmbeddedWidget(
-                io_data_loader=self.io_data_loader,
-                devices_data=None, 
-                parent=self 
-            )
-            plc_config_layout.addWidget(self.embedded_plc_config_widget)
+            # 读取配置决定使用新版还是旧版
+            use_modern_ui = self._get_config_value('ui.use_modern_plc_config', True)
+            show_comparison = self._get_config_value('ui.show_comparison_mode', False)
+            
+            logger.info(f"PLC配置界面设置: use_modern_ui={use_modern_ui}, show_comparison={show_comparison}")
+            
+            if show_comparison:
+                # 对比模式：同时显示新旧版本
+                self._setup_comparison_plc_config(plc_config_layout)
+                tab_title = "PLC硬件配置 (对比模式)"
+            elif use_modern_ui and MODERN_PLC_CONFIG_AVAILABLE:
+                # 使用新版现代化组件
+                try:
+                    self.embedded_plc_config_widget = PLCConfigAdapter(
+                        io_data_loader=self.io_data_loader,
+                        devices_data=None, 
+                        parent=self 
+                    )
+                    plc_config_layout.addWidget(self.embedded_plc_config_widget)
+                    tab_title = "PLC硬件配置 (现代版)"
+                    logger.info("成功加载现代化PLC配置组件")
+                except Exception as e:
+                    logger.error(f"加载现代化PLC配置组件失败，回退到旧版: {e}", exc_info=True)
+                    self._setup_legacy_plc_config(plc_config_layout)
+                    tab_title = "PLC硬件配置 (回退到旧版)"
+            else:
+                # 使用旧版组件
+                self._setup_legacy_plc_config(plc_config_layout)
+                tab_title = "PLC硬件配置 (经典版)"
+                if not MODERN_PLC_CONFIG_AVAILABLE:
+                    logger.info("现代化PLC配置组件不可用，使用旧版组件")
         else:
+            # IO数据加载器不可用
             error_label_main = QLabel("错误：PLC配置模块因IO数据服务不可用而无法加载。")
             error_label_main.setAlignment(Qt.AlignmentFlag.AlignCenter)
             error_label_main.setStyleSheet("color: red; font-size: 14px;")
             plc_config_layout.addWidget(error_label_main)
             self.embedded_plc_config_widget = None 
+            tab_title = "PLC硬件配置 (不可用)"
 
-        main_tab_widget.addTab(plc_config_tab_container, "PLC硬件配置") 
+        main_tab_widget.addTab(plc_config_tab_container, tab_title)
 
         # --- 第三方设备配置标签页 ---
         self.third_party_area = ThirdPartyDeviceArea(
@@ -253,6 +350,74 @@ class MainWindow(QMainWindow):
         # 将包含按钮的QWidget设置为标签栏的角部控件 (例如，右上角)
         main_tab_widget.setCornerWidget(upload_buttons_widget, Qt.Corner.TopRightCorner)
 
+    def _setup_legacy_plc_config(self, layout: QVBoxLayout):
+        """设置旧版PLC配置组件"""
+        self.embedded_plc_config_widget = PLCConfigEmbeddedWidget(
+            io_data_loader=self.io_data_loader,
+            devices_data=None, 
+            parent=self 
+        )
+        layout.addWidget(self.embedded_plc_config_widget)
+        logger.info("已设置旧版PLC配置组件")
+
+    def _setup_comparison_plc_config(self, layout: QVBoxLayout):
+        """设置对比模式PLC配置组件"""
+        from PySide6.QtWidgets import QSplitter
+        
+        # 创建水平分割器
+        splitter = QSplitter(Qt.Horizontal)
+        
+        # 左侧：旧版组件
+        left_frame = QWidget()
+        left_layout = QVBoxLayout(left_frame)
+        left_layout.setContentsMargins(4, 4, 4, 4)
+        
+        left_title = QLabel("📝 经典版 PLCConfigEmbeddedWidget")
+        left_title.setStyleSheet("font-weight: bold; color: #fa8c16; font-size: 14px;")
+        left_layout.addWidget(left_title)
+        
+        self.embedded_plc_config_widget = PLCConfigEmbeddedWidget(
+            io_data_loader=self.io_data_loader,
+            devices_data=None, 
+            parent=self 
+        )
+        left_layout.addWidget(self.embedded_plc_config_widget)
+        
+        # 右侧：新版组件
+        right_frame = QWidget()
+        right_layout = QVBoxLayout(right_frame)
+        right_layout.setContentsMargins(4, 4, 4, 4)
+        
+        right_title = QLabel("🚀 现代版 PLCConfigAdapter")
+        right_title.setStyleSheet("font-weight: bold; color: #52c41a; font-size: 14px;")
+        right_layout.addWidget(right_title)
+        
+        if MODERN_PLC_CONFIG_AVAILABLE:
+            try:
+                self.modern_plc_config_widget = PLCConfigAdapter(
+                    io_data_loader=self.io_data_loader,
+                    devices_data=None, 
+                    parent=self 
+                )
+                right_layout.addWidget(self.modern_plc_config_widget)
+            except Exception as e:
+                error_label = QLabel(f"现代版组件加载失败: {str(e)}")
+                error_label.setStyleSheet("color: red; font-size: 12px;")
+                right_layout.addWidget(error_label)
+                logger.error(f"对比模式中现代版组件加载失败: {e}", exc_info=True)
+        else:
+            unavailable_label = QLabel("现代版组件不可用")
+            unavailable_label.setStyleSheet("color: #8c8c8c; font-size: 12px;")
+            right_layout.addWidget(unavailable_label)
+        
+        # 添加到分割器
+        splitter.addWidget(left_frame)
+        splitter.addWidget(right_frame)
+        splitter.setSizes([700, 700])
+        
+        layout.addWidget(splitter)
+        logger.info("已设置对比模式PLC配置组件")
+
     def setup_connections(self):
         """设置信号连接"""
         # 查询区域信号
@@ -281,6 +446,24 @@ class MainWindow(QMainWindow):
         # 新增：生成FAT点表按钮信号
         if hasattr(self, 'generate_fat_table_btn'):
             self.generate_fat_table_btn.clicked.connect(self._handle_generate_fat_table)
+        
+        # PLC配置重置信号连接
+        if hasattr(self, 'embedded_plc_config_widget') and self.embedded_plc_config_widget:
+            # 检查组件类型并连接相应的重置信号
+            if hasattr(self.embedded_plc_config_widget, 'configuration_reset'):
+                # 现代化组件（PLCConfigAdapter）
+                self.embedded_plc_config_widget.configuration_reset.connect(self._handle_plc_config_reset)
+                logger.info("已连接现代化PLC配置组件的重置信号")
+            elif hasattr(self.embedded_plc_config_widget, 'configurationReset'):
+                # 直接使用PLCConfigWidget的情况
+                self.embedded_plc_config_widget.configurationReset.connect(self._handle_plc_config_reset)
+                logger.info("已连接PLCConfigWidget的重置信号")
+        
+        # 对比模式下的现代化组件信号连接
+        if hasattr(self, 'modern_plc_config_widget') and self.modern_plc_config_widget:
+            if hasattr(self.modern_plc_config_widget, 'configuration_reset'):
+                self.modern_plc_config_widget.configuration_reset.connect(self._handle_plc_config_reset)
+                logger.info("已连接对比模式现代化PLC配置组件的重置信号")
 
     def _handle_query(self, project_no: str):
         """处理查询请求"""
@@ -1010,4 +1193,35 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "严重错误", full_error_msg)
             logger.error(full_error_msg, exc_info=True)
             self.status_bar.showMessage("FAT点表生成过程中发生严重错误。", 5000)
+
+    def _handle_plc_config_reset(self):
+        """
+        处理PLC配置重置信号
+        
+        当用户点击重置配置按钮时，重新从API获取最新的设备数据
+        """
+        try:
+            if not hasattr(self, 'current_site_name') or not self.current_site_name:
+                logger.warning("没有当前场站，无法重新加载设备数据")
+                QMessageBox.warning(self, "无当前场站", "没有选中的场站，无法重新加载数据")
+                return
+            
+            site_name = self.current_site_name
+            logger.info(f"处理PLC配置重置，重新加载场站 '{site_name}' 的设备数据")
+            
+            # 显示加载状态
+            self.status_bar.showMessage(f"正在重新加载场站 '{site_name}' 的最新数据...")
+            
+            # 重新调用项目选择处理逻辑，这会触发API查询获取最新数据
+            self._handle_project_selected(site_name)
+            
+            # 显示完成状态
+            self.status_bar.showMessage(f"场站 '{site_name}' 的数据已重新加载", 3000)
+            
+            logger.info(f"PLC配置重置处理完成，场站 '{site_name}' 的数据已更新")
+            
+        except Exception as e:
+            logger.error(f"处理PLC配置重置失败: {e}", exc_info=True)
+            QMessageBox.critical(self, "重置处理失败", f"重新加载数据时发生错误：\n{str(e)}")
+            self.status_bar.showMessage("数据重新加载失败")
 

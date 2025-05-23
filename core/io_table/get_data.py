@@ -595,10 +595,10 @@ class SystemSetupManager:
                 'rack_name': f"机架{i + 1}",
                 'total_slots': self.default_slots, # 该机架的总槽位数
                 # 可用槽位数和用户起始槽位根据系统类型调整
-                # LE_CPU 主机架通常所有槽位都可用（槽位1由用户配置CPU）
+                # LE_CPU 主机架槽位0由用户配置CPU，从槽位0开始
                 # LK 系统机架槽位1固定给DP模块，所以用户可配置槽位从2开始，可用槽位数相应减少
-                'available_slots': self.default_slots if is_le_system_main_rack else self.default_slots -1 , # TODO: LE CPU的available slots也应该是 default_slots? Start slot是1没错
-                'start_slot': 1 if is_le_system_main_rack else 2, 
+                'available_slots': self.default_slots if is_le_system_main_rack else self.default_slots -1 , 
+                'start_slot': 0 if is_le_system_main_rack else 2, 
                 'modules': [], # 用于存储后续配置到此机架的模块列表（此阶段为空）
                 'system_type': self.system_type # 记录该机架所属的系统类型
             }
@@ -621,7 +621,7 @@ class SystemSetupManager:
         return {
             'rack_count': self.rack_count,
             'slots_per_rack': self.default_slots, # UI通常需要知道每个机架有多少槽
-            'user_start_slot': 1 if self.system_type == "LE_CPU" else 2, # 用户在UI上看到的第一个可配置槽位号
+            'user_start_slot': 0 if self.system_type == "LE_CPU" else 2, # 用户在UI上看到的第一个可配置槽位号
             'racks': [r.copy() for r in self.racks_data], # 返回机架数据的副本列表
             'system_type': self.system_type
         }
@@ -632,6 +632,13 @@ class SystemSetupManager:
         self.rack_count = 0       # 重置机架数量为0
         self.racks_data = []      # 清空机架数据列表
         logger.info("SystemSetupManager state has been reset to defaults (0 racks, type LK).")
+
+    def reset_to_defaults(self):
+        """重置系统设置为默认状态"""
+        self.system_type = 'LK'  # 默认为LK系统
+        self.rack_count = 1      # 默认1个机架
+        self.racks_data = []     # 清空机架数据
+        logger.info("SystemSetupManager: 已重置为默认状态 (LK系统, 1个机架)")
 
 class PLCConfigurationHandler:
     """
@@ -722,12 +729,12 @@ class PLCConfigurationHandler:
 
         # LE_CPU 系统规则
         if system_type == "LE_CPU":
-            if slot_id == 1: # LE_CPU 系统的槽位1
+            if slot_id == 0: # LE_CPU 系统的槽位0
                 # 必须是类型为 'CPU' 且型号为 'LE5118' 的模块
                 if not (module_type == 'CPU' and module_model.upper() == 'LE5118'):
-                    return {'valid': False, 'error': f"LE系统槽位1只能放置LE5118 CPU模块,尝试放置{module_model}({module_type})"}
-            elif module_type == 'CPU': # 如果是CPU模块 (如LE5118)，但尝试放置在非槽位1的位置
-                return {'valid': False, 'error': f"CPU模块 {module_model} 只能放置在LE系统的槽位1"}
+                    return {'valid': False, 'error': f"LE系统槽位0只能放置LE5118 CPU模块,尝试放置{module_model}({module_type})"}
+            elif module_type == 'CPU': # 如果是CPU模块 (如LE5118)，但尝试放置在非槽位0的位置
+                return {'valid': False, 'error': f"CPU模块 {module_model} 只能放置在LE系统的槽位0"}
         
         # LK 系统规则
         elif system_type == "LK": 
@@ -764,40 +771,47 @@ class PLCConfigurationHandler:
 
         # 处理空配置的情况
         if not config_dict: 
-            if system_type == "LE_CPU": # LE_CPU 系统不允许完全为空，至少槽位1要有CPU
-                msg = "错误: LE_CPU 系统配置为空，槽位1必须配置LE5118 CPU。"
+            if system_type == "LE_CPU": # LE_CPU 系统不允许完全为空，至少槽位0要有CPU
+                msg = "错误: LE_CPU 系统配置为空，槽位0必须配置LE5118 CPU。"
                 logger.warning(msg)
                 return False, msg
             else: # LK 系统可以接受空配置（虽然通常至少有DP模块）
                 logger.info("LK系统配置为空，视为有效。")
                 # 继续执行，后续会打印空的配置摘要
         
-        # 验证每个已配置机架的槽位1是否符合规则
+        # 验证每个已配置机架的关键槽位是否符合规则
         for r_id in rack_ids_in_config:
-            slot1_model = config_dict.get((r_id, 1)) # 获取该机架槽位1配置的模块型号
-            if not slot1_model: # 如果槽位1没有配置模块
-                err_detail = "LE5118 CPU" if system_type == "LE_CPU" else "DP模块"
-                msg = f"错误: 机架 {r_id} 槽位1必须配置{err_detail}。"
+            if system_type == "LE_CPU":
+                # LE_CPU系统检查槽位0
+                slot_key = (r_id, 0)
+                slot_name = "槽位0"
+            else:
+                # LK系统检查槽位1
+                slot_key = (r_id, 1)
+                slot_name = "槽位1"
+                
+            if slot_key not in config_dict:
+                msg = f"错误: 机架 {r_id} 的{slot_name}未配置任何模块。"
                 logger.warning(msg)
                 return False, msg
             
-            # 获取槽位1模块的详细信息
-            slot1_info = self._get_module_details_for_config(slot1_model, processed_devices_context)
-            if not slot1_info:
-                msg = f"错误: 机架 {r_id} 槽位1配置的模块 {slot1_model} 信息无法获取。"
+            slot_model = config_dict[slot_key]
+            slot_info = self._get_module_details_for_config(slot_model, processed_devices_context)
+            if not slot_info:
+                msg = f"错误: 机架 {r_id} {slot_name}的模块 '{slot_model}' 信息无法获取。"
                 logger.warning(msg)
                 return False, msg
-
-            slot1_type = slot1_info.get('type')
-            # 根据系统类型检查槽位1的模块类型是否正确
+            
+            slot_type = slot_info.get('type')
+            # 根据系统类型检查关键槽位的模块类型是否正确
             if system_type == "LE_CPU":
-                if not (slot1_type == 'CPU' and slot1_model.upper() == 'LE5118'):
-                    msg = f"错误: 机架 {r_id} (LE系统) 槽位1必须配置LE5118 CPU, 当前为 {slot1_model}({slot1_type})。"
+                if not (slot_type == 'CPU' and slot_model.upper() == 'LE5118'):
+                    msg = f"错误: 机架 {r_id} (LE_CPU系统) 槽位0必须配置LE5118 CPU模块, 当前为 {slot_model}({slot_type})。"
                     logger.warning(msg)
                     return False, msg
             elif system_type == "LK":
-                if slot1_type != 'DP':
-                    msg = f"错误: 机架 {r_id} (LK系统) 槽位1必须配置DP模块, 当前为 {slot1_model}({slot1_type})。"
+                if not (slot_type == 'DP' and 'PROFIBUS' in slot_model.upper()):
+                    msg = f"错误: 机架 {r_id} (LK系统) 槽位1必须配置DP模块, 当前为 {slot_model}({slot_type})。"
                     logger.warning(msg)
                     return False, msg
         
@@ -894,10 +908,18 @@ class PLCConfigurationHandler:
         
         for (rack_id, slot_id), model_name in sorted_config:
             # ------------------------------
-            # 槽号改为 0 基：内部仍使用 1 基进行校验，
-            # 但在地址字符串及输出数据中使用 0 基槽号
+            # 槽号改为 0 基：内部使用的是 1 基槽位号（除了LE_CPU系统从槽位0开始）
+            # 在地址字符串中使用 0 基槽号显示
+            # LE_CPU系统：槽位0保持为0，槽位1及以上减1
+            # LK系统：槽位1变为0，槽位2变为1，以此类推
             # ------------------------------
-            zero_based_slot_id = slot_id - 1
+            if slot_id == 0:
+                # LE_CPU系统的槽位0保持为0
+                zero_based_slot_id = 0
+            else:
+                # 其他槽位都减1变为0基
+                zero_based_slot_id = slot_id - 1
+                
             module_info = self._get_module_details_for_config(model_name, processed_devices_context)
             if not module_info: 
                 logger.warning(f"Cannot generate addresses for unknown module {model_name} at {rack_id}_{slot_id}")
@@ -1000,44 +1022,35 @@ class IODataLoader:
     
     def __init__(self):
         """构造函数，初始化所有辅助类和内部状态变量。"""
+        # 从预定义系列数据中提取所有可能的和利时产品前缀 (如 'LK', 'LE')
+        self.HOLLYSYS_PREFIXES = list(PLC_SERIES_CONFIG_DEF.keys())
+        
+        # 初始化各个辅助类
         self.module_info_provider = ModuleInfoProvider()
+        self.device_processor = DeviceDataProcessor(self.module_info_provider, self.HOLLYSYS_PREFIXES)
+        self.system_setup_manager = SystemSetupManager()
+        self.config_handler = PLCConfigurationHandler(self.module_info_provider)
         
-        # 从 plc_modules.PLC_SERIES 动态生成和利时产品型号前缀列表
-        # 这里假设 PLC_SERIES 已被正确导入并在类级别或实例级别可用
-        self.HOLLYSYS_PREFIXES = [
-            prefix.upper() for series_data in PLC_SERIES_CONFIG_DEF.values() 
-            for prefix in series_data.get("prefixes", [])
-        ]
-        
-        # 初始化设备数据处理器，传入模块信息提供者和和利时前缀
-        self.device_processor = DeviceDataProcessor(
-            module_info_provider=self.module_info_provider,
-            hollysys_prefixes=self.HOLLYSYS_PREFIXES
-        )
-        # 初始化系统设置管理器，使用其内部定义的默认机架槽位数
-        self.system_setup_manager = SystemSetupManager(default_rack_slots=SystemSetupManager.DEFAULT_RACK_SLOTS)
-        # 初始化PLC配置处理器，传入模块信息提供者
-        self.config_handler = PLCConfigurationHandler(module_info_provider=self.module_info_provider)
+        # 初始化持久化存储管理器
+        from .plc_config_persistence import PLCConfigPersistence
+        self.persistence_manager = PLCConfigPersistence()
 
-        # 存储原始的、未处理的设备数据列表
+        # 初始化内部状态（这些状态在设备数据加载时将被更新）
+        # 原始设备数据列表
         self.original_devices_data: List[Dict[str, Any]] = []
-        # 存储经过处理、筛选和丰富化后的和利时相关设备数据列表
-        self.processed_enriched_devices: List[Dict[str, Any]] = [] 
+
+        # 经过处理和丰富化的设备数据（仅和利时相关）
+        self.processed_enriched_devices: List[Dict[str, Any]] = []
         
-        # 当前PLC的配置，格式为 {(rack_id, slot_id): model_name}
-        self.current_plc_config: Dict[tuple, str] = {}
+        # 当前加载的PLC模块配置，由保存配置方法更新
+        self.current_plc_config: Dict[Tuple[int, int], str] = {} # {(机架号, 槽位号): "模块型号"}
+
         # 最后一次成功生成的通道地址列表
         self.last_generated_addresses: List[Dict[str, Any]] = []
         # 最后一次成功生成的IO通道总数
         self.last_generated_io_count: int = 0
 
-        # 场站配置缓存，格式为 {site_name: {
-        #     'config': {(rack_id, slot_id): model_name},
-        #     'processed_devices': List[Dict[str, Any]], 
-        #     'system_info': Dict[str, Any],
-        #     'addresses': List[Dict[str, Any]],
-        #     'io_count': int
-        # }}
+        # 场站配置缓存（保留用于向后兼容，但主要使用持久化存储）
         self.site_config_cache: Dict[str, Dict[str, Any]] = {}
         
         # 当前场站名称
@@ -1075,8 +1088,13 @@ class IODataLoader:
         Returns:
             bool: 如果有缓存返回True，否则返回False
         """
-        has_cache = site_name in self.site_config_cache
-        logger.info(f"IODataLoader: 检查场站 '{site_name}' 缓存状态: {has_cache}")
+        # 优先检查持久化存储
+        has_persisted = self.persistence_manager.has_site_config(site_name)
+        # 其次检查内存缓存（向后兼容）
+        has_memory_cache = site_name in self.site_config_cache
+        
+        has_cache = has_persisted or has_memory_cache
+        logger.info(f"IODataLoader: 检查场站 '{site_name}' 缓存状态: {has_cache} (持久化: {has_persisted}, 内存: {has_memory_cache})")
         return has_cache
 
     def load_cached_config_for_site(self, site_name: str) -> bool:
@@ -1089,12 +1107,19 @@ class IODataLoader:
         Returns:
             bool: 成功加载返回True，失败返回False
         """
-        if site_name not in self.site_config_cache:
-            logger.warning(f"IODataLoader: 场站 '{site_name}' 没有缓存的配置")
-            return False
-        
         try:
-            cached_data = self.site_config_cache[site_name]
+            # 优先从持久化存储加载
+            persisted_data = self.persistence_manager.load_site_config(site_name)
+            if persisted_data:
+                logger.info(f"IODataLoader: 从持久化存储加载场站 '{site_name}' 的配置")
+                cached_data = persisted_data
+            # 其次从内存缓存加载（向后兼容）
+            elif site_name in self.site_config_cache:
+                logger.info(f"IODataLoader: 从内存缓存加载场站 '{site_name}' 的配置")
+                cached_data = self.site_config_cache[site_name]
+            else:
+                logger.warning(f"IODataLoader: 场站 '{site_name}' 没有缓存的配置")
+                return False
             
             # 恢复PLC配置
             self.current_plc_config = cached_data.get('config', {}).copy()
@@ -1131,7 +1156,7 @@ class IODataLoader:
 
     def save_current_config_to_cache(self) -> bool:
         """
-        将当前配置保存到缓存中。
+        将当前配置保存到缓存中（内存和持久化存储）。
         
         Returns:
             bool: 成功保存返回True，失败返回False
@@ -1157,10 +1182,17 @@ class IODataLoader:
                 'io_count': self.last_generated_io_count
             }
             
-            # 保存到缓存
+            # 保存到内存缓存（向后兼容）
             self.site_config_cache[self.current_site_name] = cache_data
             
-            logger.info(f"IODataLoader: 成功将场站 '{self.current_site_name}' 的配置保存到缓存")
+            # 保存到持久化存储
+            persistence_success = self.persistence_manager.save_site_config(self.current_site_name, cache_data)
+            
+            if persistence_success:
+                logger.info(f"IODataLoader: 成功将场站 '{self.current_site_name}' 的配置保存到缓存（内存+持久化）")
+            else:
+                logger.warning(f"IODataLoader: 场站 '{self.current_site_name}' 的配置保存到内存成功，但持久化失败")
+            
             logger.info(f"  - 保存了 {len(self.current_plc_config)} 个模块配置")
             logger.info(f"  - 保存了 {len(self.processed_enriched_devices)} 个处理后的设备")
             logger.info(f"  - 保存了 {len(self.last_generated_addresses)} 个地址记录")
@@ -1180,7 +1212,7 @@ class IODataLoader:
         logger.debug(f"IODataLoader: get_current_plc_config called, returning {len(self.current_plc_config)} configured modules.")
         return self.current_plc_config.copy() # 返回副本以防外部修改
 
-    def set_devices_data(self, devices_data: List[Dict[str, Any]]) -> None:
+    def set_devices_data(self, devices_data: List[Dict[str, Any]], force_update: bool = False) -> None:
         """
         设置新的设备数据列表，并触发整个处理流程：
         1. 保存原始数据。
@@ -1190,9 +1222,22 @@ class IODataLoader:
         
         Args:
             devices_data (List[Dict[str, Any]]): 从外部传入的原始设备数据列表。
+            force_update (bool): 是否强制更新，忽略缓存配置。当从API获取新数据时应设为True。
         """
         self.original_devices_data = devices_data or [] # 保证列表存在
-        logger.info(f"Setting new device data: {len(self.original_devices_data)} raw items.")
+        logger.info(f"Setting new device data: {len(self.original_devices_data)} raw items (force_update={force_update}).")
+
+        # 只在真正的强制更新时才清除配置（比如切换到新场站或用户主动刷新）
+        # 缓存恢复过程中不应该清除配置
+        if force_update:
+            if self.current_site_name:
+                logger.info(f"强制更新模式：清除场站 '{self.current_site_name}' 的当前PLC配置")
+            # 清除当前PLC配置，让系统重新开始
+            self.current_plc_config = {}
+            self.last_generated_addresses = []
+            self.last_generated_io_count = 0
+        else:
+            logger.info("非强制更新模式：保留现有PLC配置，仅更新可用模块列表")
 
         # 1. 标准化原始数据
         processed_list = self.device_processor.process_raw_device_list(self.original_devices_data)
@@ -1214,11 +1259,6 @@ class IODataLoader:
         # 4. 根据最新的设备数据重新计算系统设置（机架、系统类型）
         self.system_setup_manager.calculate_system_setup(self.processed_enriched_devices)
         logger.info(f"System setup updated. Current type: {self.system_setup_manager.get_system_type()}")
-        
-        # 当设备数据重置时，清除当前的PLC配置和已生成的地址信息
-        self.current_plc_config = {}
-        self.last_generated_addresses = []
-        self.last_generated_io_count = 0
 
     def get_rack_info(self) -> Dict[str, Any]:
         """返回由SystemSetupManager计算和维护的当前机架及系统设置信息。"""
@@ -1263,16 +1303,31 @@ class IODataLoader:
                 - available_for_ui (List[Dict[str, Any]]): 符合条件的可用模块列表 (副本)。
                 - has_data (bool): 表示列表是否为空的布尔值。
         """
+        # 添加详细调试日志
+        logger.info(f"load_available_modules called with filter: '{module_type_filter}'")
+        logger.info(f"  - processed_enriched_devices count: {len(self.processed_enriched_devices)}")
+        logger.info(f"  - ALLOWED_MODULE_TYPES: {self.ALLOWED_MODULE_TYPES}")
+        logger.info(f"  - SPECIAL_ALLOWED_MODULES count: {len(self.SPECIAL_ALLOWED_MODULES)}")
+        
         source_for_shuttle: List[Dict[str, Any]]
         # 判断模块来源：优先使用已处理的设备数据，否则使用所有预定义模块
         if self.processed_enriched_devices:
             source_for_shuttle = self.processed_enriched_devices 
-            logger.debug(f"Loading available modules for shuttle from {len(source_for_shuttle)} processed/enriched devices.")
+            logger.info(f"使用processed_enriched_devices作为数据源: {len(source_for_shuttle)} 个设备")
+            # 调试：打印前几个设备的详细信息
+            for i, device in enumerate(source_for_shuttle[:3]):
+                logger.info(f"  设备{i+1}: model={device.get('model')}, type={device.get('type')}, brand={device.get('brand')}")
         else:
             source_for_shuttle = self.module_info_provider.get_all_predefined_modules()
-            logger.debug(f"Loading available modules for shuttle from {len(source_for_shuttle)} predefined modules (no device data).")
+            logger.info(f"使用预定义模块作为数据源: {len(source_for_shuttle)} 个模块")
+            # 调试：打印前几个预定义模块的信息
+            for i, module in enumerate(source_for_shuttle[:3]):
+                logger.info(f"  预定义模块{i+1}: model={module.get('model')}, type={module.get('type')}")
 
         available_for_ui = []
+        filtered_out_by_type = 0
+        filtered_out_by_filter = 0
+        
         for module_candidate in source_for_shuttle:
             m_copy = module_candidate.copy() # 操作副本
             m_type = m_copy.get('type', '未录入') # 使用已丰富化的 'type' 字段
@@ -1286,8 +1341,32 @@ class IODataLoader:
                 # 如果模块被允许，再应用UI的类型过滤器
                 if module_type_filter == '全部' or m_type == module_type_filter:
                     available_for_ui.append(m_copy)
+                else:
+                    filtered_out_by_filter += 1
+            else:
+                filtered_out_by_type += 1
         
-        logger.info(f"load_available_modules: Filter '{module_type_filter}'. Found {len(available_for_ui)} modules for UI.")
+        logger.info(f"load_available_modules 结果统计:")
+        logger.info(f"  - 数据源总数: {len(source_for_shuttle)}")
+        logger.info(f"  - 被类型过滤排除: {filtered_out_by_type}")
+        logger.info(f"  - 被UI过滤器排除: {filtered_out_by_filter}")
+        logger.info(f"  - 最终可用模块: {len(available_for_ui)}")
+        
+        # 如果结果为空，额外调试
+        if len(available_for_ui) == 0:
+            logger.warning("⚠️ 可用模块列表为空，进行详细诊断:")
+            logger.warning(f"  - 数据源类型: {'processed_enriched_devices' if self.processed_enriched_devices else 'predefined_modules'}")
+            if source_for_shuttle:
+                logger.warning(f"  - 数据源样本 (前3个):")
+                for i, item in enumerate(source_for_shuttle[:3]):
+                    item_type = item.get('type', '未录入')
+                    item_model = item.get('model', 'N/A')
+                    is_allowed = item_type in self.ALLOWED_MODULE_TYPES
+                    is_special = item_model.upper() in self.SPECIAL_ALLOWED_MODULES
+                    logger.warning(f"    [{i+1}] {item_model} (type={item_type}) - allowed_type={is_allowed}, special={is_special}")
+            else:
+                logger.warning("  - 数据源本身为空!")
+        
         return available_for_ui, len(available_for_ui) > 0
         
     def get_module_by_model(self, model_str: str) -> Optional[Dict[str, Any]]:
@@ -1489,6 +1568,53 @@ class IODataLoader:
             self.system_setup_manager.reset_state()
 
         logger.info("IODataLoader: All project-specific data and configurations have been reset. SystemSetupManager also reset.")
+
+    def reset_current_site_config(self) -> bool:
+        """
+        重置当前场站的配置
+        
+        清除持久化存储、内存缓存，并重置为初始状态
+        
+        Returns:
+            bool: 重置是否成功
+        """
+        if not self.current_site_name:
+            logger.warning("没有当前场站，无法重置配置")
+            return False
+        
+        try:
+            site_name = self.current_site_name
+            logger.info(f"开始重置场站 '{site_name}' 的配置")
+            
+            # 1. 删除持久化存储的配置文件
+            if hasattr(self, 'persistence') and self.persistence:
+                delete_success = self.persistence.delete_site_config(site_name)
+                if delete_success:
+                    logger.info(f"成功删除场站 '{site_name}' 的持久化配置文件")
+                else:
+                    logger.warning(f"删除场站 '{site_name}' 的持久化配置文件失败")
+            
+            # 2. 清除内存中的配置缓存
+            if hasattr(self, 'config_cache') and site_name in self.config_cache:
+                del self.config_cache[site_name]
+                logger.info(f"已清除场站 '{site_name}' 的内存缓存")
+            
+            # 3. 重置当前配置状态
+            self.current_plc_config = {}
+            self.channel_addresses_list = []
+            self.processed_enriched_devices = []
+            
+            # 4. 重置系统设置为默认状态
+            if hasattr(self, 'system_setup_manager'):
+                self.system_setup_manager.reset_to_defaults()
+                logger.info("系统设置已重置为默认状态")
+            
+            logger.info(f"成功重置场站 '{site_name}' 的配置，下次加载将从API获取最新数据")
+            return True
+            
+        except Exception as e:
+            logger.error(f"重置场站配置失败: {e}", exc_info=True)
+            return False
 
 # --- 全局辅助函数 --- 
 

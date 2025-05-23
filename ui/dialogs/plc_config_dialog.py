@@ -549,7 +549,8 @@ class PLCConfigEmbeddedWidget(QWidget):
         
         self.next_module_id_counter = 1 # 重置 unique_id 计数器
         
-        self.io_data_loader.set_devices_data(devices_data) # Loader 更新其内部状态 (包括 system_type, rack_info)
+        # 强制更新IODataLoader，因为这是来自API的新设备数据
+        self.io_data_loader.set_devices_data(devices_data, force_update=True) # Loader 更新其内部状态 (包括 system_type, rack_info)
         
         # 1. 基于新的设备数据（可能影响了io_data_loader中可用模块的来源）重新加载完整的模块池
         self._load_all_available_modules_with_unique_ids('全部') # 总是加载所有类型以填充 all_available_modules
