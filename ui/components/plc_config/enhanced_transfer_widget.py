@@ -13,7 +13,7 @@ import logging
 from typing import List, Dict, Any, Optional, Callable
 from PySide6.QtWidgets import (
     QWidget, QListWidget, QListWidgetItem, QLabel, QVBoxLayout, QHBoxLayout,
-    QPushButton, QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QFrame
+    QPushButton, QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QFrame, QMessageBox
 )
 from PySide6.QtCore import (
     Qt, Signal, QPropertyAnimation, QEasingCurve, QTimer, QRect, QPoint, 
@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # 尝试相对导入，失败则使用绝对导入
 try:
     from .models import TransferItem, TransferDirection, TransferListState
+    from .module_styles import format_module_display, get_module_style, get_module_icon
 except ImportError:
     import sys
     from pathlib import Path
@@ -37,6 +38,7 @@ except ImportError:
     sys.path.insert(0, str(project_root))
     
     from ui.components.plc_config.models import TransferItem, TransferDirection, TransferListState
+    from ui.components.plc_config.module_styles import format_module_display, get_module_style, get_module_icon
 
 
 class DragDropListWidget(QListWidget):
@@ -172,10 +174,43 @@ class DragDropListWidget(QListWidget):
         
         # 获取选中项目的keys
         selected_keys = []
-        for item in selected_items:
-            transfer_item = item.data(Qt.UserRole)
-            if transfer_item:
-                selected_keys.append(transfer_item.key)
+        draggable_keys = []  # 可拖拽的keys
+        
+        # 检查是否有不可拖拽的模块（当从右侧拖拽时）
+        if self.list_id == "right":
+            # 查找父组件的can_remove_from_right方法
+            parent_widget = self.parent()
+            while parent_widget:
+                if hasattr(parent_widget, 'parent'):
+                    grand_parent = parent_widget.parent()
+                    if grand_parent and hasattr(grand_parent, 'can_remove_from_right'):
+                        # 过滤可拖拽的项目
+                        for item in selected_items:
+                            transfer_item = item.data(Qt.UserRole)
+                            if transfer_item:
+                                key = transfer_item.key
+                                selected_keys.append(key)
+                                if grand_parent.can_remove_from_right(key):
+                                    draggable_keys.append(key)
+                        break
+                parent_widget = parent_widget.parent() if hasattr(parent_widget, 'parent') else None
+            
+            # 如果有不可拖拽的项目，显示提示
+            if selected_keys and not draggable_keys:
+                QMessageBox.warning(self, "操作受限", 
+                    "选中的模块不能被移除。\n\nLE_CPU系统中，LE5118 CPU模块必须固定在槽位0。")
+                return
+            elif len(draggable_keys) < len(selected_keys):
+                QMessageBox.information(self, "提示", 
+                    f"部分模块不能被移除。只有 {len(draggable_keys)} 个模块可以被拖拽。")
+            
+            selected_keys = draggable_keys
+        else:
+            # 左侧的所有项目都可以拖拽
+            for item in selected_items:
+                transfer_item = item.data(Qt.UserRole)
+                if transfer_item:
+                    selected_keys.append(transfer_item.key)
         
         if not selected_keys:
             return
@@ -294,18 +329,100 @@ class DragDropListWidget(QListWidget):
         """创建默认的列表项"""
         list_item = QListWidgetItem()
         
-        # 设置文本 - 包含图标
-        icon_text = f"{item.icon} " if item.icon else "🔧 "
-        text = f"{icon_text}{item.title}"
-        list_item.setText(text)
+        # 检查是否是PLCModule，以获取更多信息
+        if hasattr(item, 'module_type') and hasattr(item, 'channels'):
+            # 使用格式化函数生成显示文本
+            display_text = format_module_display(
+                item.title.replace(' 🔒', ''),  # 移除可能的锁图标
+                item.module_type,
+                item.channels
+            )
+            
+            # 如果是固定模块，添加锁图标
+            if '🔒' in item.title:
+                display_text += ' 🔒'
+                
+            list_item.setText(display_text)
+            
+            # 获取样式
+            style_dict = get_module_style(item.module_type, for_rack=False)
+            
+            # 创建内联样式
+            style_parts = []
+            for key, value in style_dict.items():
+                style_parts.append(f"{key}: {value}")
+            
+            # 应用颜色样式到数据（稍后通过自定义绘制应用）
+            list_item.setData(Qt.UserRole + 1, '; '.join(style_parts))
+        else:
+            # 原始方式
+            icon_text = f"{item.icon} " if item.icon else "🔧 "
+            text = f"{icon_text}{item.title}"
+            list_item.setText(text)
         
-        # 设置工具提示
-        tooltip = item.description if item.description else item.title
-        list_item.setToolTip(tooltip)
+        # 设置详细的工具提示
+        tooltip_lines = []
+        tooltip_lines.append(f"型号: {item.title}")
+        
+        if hasattr(item, 'module_type'):
+            tooltip_lines.append(f"类型: {item.module_type}")
+        
+        if hasattr(item, 'channels') and item.channels > 0:
+            tooltip_lines.append(f"通道数: {item.channels}")
+        
+        if item.description:
+            tooltip_lines.append(f"描述: {item.description}")
+        
+        if hasattr(item, 'manufacturer'):
+            tooltip_lines.append(f"制造商: {item.manufacturer}")
+        
+        # 如果有额外的详细信息
+        if hasattr(item, 'data') and item.data:
+            if 'details' in item.data:
+                details = item.data['details']
+                if isinstance(details, dict):
+                    tooltip_lines.append("\n详细参数:")
+                    for key, value in details.items():
+                        # 转换键名为中文
+                        key_cn = {
+                            'input_voltage': '输入电压',
+                            'power_consumption_max': '最大功耗',
+                            'dimensions': '尺寸',
+                            'operating_temperature': '工作温度',
+                            'sensor_type': '传感器类型',
+                            'signal_type': '信号类型',
+                            'protocol': '通讯协议',
+                            'features': '特性',
+                            'nor_flash': 'NOR Flash容量',
+                            'ddr_storage': 'DDR存储',
+                            'mram_storage': 'MRAM存储',
+                            'execution_speed': '执行速度',
+                            'supports_protocols': '支持协议',
+                            'installation_method': '安装方式',
+                            'sram_storage': 'SRAM存储',
+                            'dp_bus_speed': 'DP总线速度',
+                            'pcie_bus_speed': 'PCIe总线速度',
+                            'role': '角色',
+                            'is_safety_module': '安全模块',
+                            'is_master': '主站模块',
+                            'slot_required': '需要槽位'
+                        }.get(key, key)
+                        
+                        if isinstance(value, list):
+                            tooltip_lines.append(f"  {key_cn}: {', '.join(str(v) for v in value)}")
+                        elif isinstance(value, bool):
+                            tooltip_lines.append(f"  {key_cn}: {'是' if value else '否'}")
+                        else:
+                            tooltip_lines.append(f"  {key_cn}: {value}")
+        
+        list_item.setToolTip('\n'.join(tooltip_lines))
         
         # 设置禁用状态
         if item.disabled:
             list_item.setFlags(list_item.flags() & ~Qt.ItemIsEnabled)
+        
+        # 存储原始TransferItem对象
+        list_item.setData(Qt.UserRole, item)
         
         return list_item
 
@@ -736,23 +853,47 @@ class EnhancedTransferWidget(QWidget):
         selected_keys = list(self._state.right_selected)
         logger.info(f"🔄 准备移动项目到左侧: {selected_keys}")
         
-        moved_keys = self._state.move_to_left(selected_keys)
-        logger.info(f"🔄 状态管理器返回已移动项目: {moved_keys}")
+        # 检查是否有不可移除的模块
+        parent_widget = self.parent()
+        while parent_widget and not hasattr(parent_widget, 'can_remove_from_right'):
+            parent_widget = parent_widget.parent()
         
-        if moved_keys:
-            self._refresh_display()
-            logger.info(f"✅ 成功移动 {len(moved_keys)} 个项目到左侧")
+        if parent_widget and hasattr(parent_widget, 'can_remove_from_right'):
+            # 过滤掉不能移除的模块
+            movable_keys = []
+            blocked_keys = []
             
-            # 发送传输变化事件
-            transfer_data = {
-                'from': 'right',
-                'to': 'left',
-                'list': moved_keys
-            }
-            logger.info(f"📡 发送传输变化信号: {transfer_data}")
-            self.transferChange.emit(transfer_data)
-        else:
-            logger.warning("⚠️ move_to_left: 没有项目被移动")
+            for key in selected_keys:
+                if parent_widget.can_remove_from_right(key):
+                    movable_keys.append(key)
+                else:
+                    blocked_keys.append(key)
+            
+            if blocked_keys:
+                # 显示提示信息
+                if len(blocked_keys) == 1:
+                    msg = f"模块 {blocked_keys[0]} 不能被移除。\n\nLE_CPU系统中，LE5118 CPU模块必须固定在槽位0。"
+                else:
+                    msg = f"以下模块不能被移除：\n{', '.join(blocked_keys)}\n\nLE_CPU系统中，LE5118 CPU模块必须固定在槽位0。"
+                
+                QMessageBox.warning(self, "操作受限", msg)
+                
+                # 如果没有可移动的模块，直接返回
+                if not movable_keys:
+                    logger.info("⚠️ 拖拽操作被阻止：所有模块都不能被移除")
+                    return
+                
+                # 只移动可移动的模块
+                keys = movable_keys
+        
+        # 设置选中状态
+        self._state.right_selected = set(keys)
+        
+        # 执行移动
+        self.move_to_left()
+        
+        # 播放传输动画
+        self._play_transfer_animation("left")
     
     def get_right_items(self) -> List[TransferItem]:
         """获取右侧（已选）的所有项目"""
@@ -873,6 +1014,39 @@ class EnhancedTransferWidget(QWidget):
     
     def _move_items_to_left(self, keys: List[str]):
         """通过拖拽移动项目到左侧"""
+        # 检查是否有不可移除的模块
+        parent_widget = self.parent()
+        while parent_widget and not hasattr(parent_widget, 'can_remove_from_right'):
+            parent_widget = parent_widget.parent()
+        
+        if parent_widget and hasattr(parent_widget, 'can_remove_from_right'):
+            # 过滤掉不能移除的模块
+            movable_keys = []
+            blocked_keys = []
+            
+            for key in keys:
+                if parent_widget.can_remove_from_right(key):
+                    movable_keys.append(key)
+                else:
+                    blocked_keys.append(key)
+            
+            if blocked_keys:
+                # 显示提示信息
+                if len(blocked_keys) == 1:
+                    msg = f"模块 {blocked_keys[0]} 不能被移除。\n\nLE_CPU系统中，LE5118 CPU模块必须固定在槽位0。"
+                else:
+                    msg = f"以下模块不能被移除：\n{', '.join(blocked_keys)}\n\nLE_CPU系统中，LE5118 CPU模块必须固定在槽位0。"
+                
+                QMessageBox.warning(self, "操作受限", msg)
+                
+                # 如果没有可移动的模块，直接返回
+                if not movable_keys:
+                    logger.info("⚠️ 拖拽操作被阻止：所有模块都不能被移除")
+                    return
+                
+                # 只移动可移动的模块
+                keys = movable_keys
+        
         # 设置选中状态
         self._state.right_selected = set(keys)
         

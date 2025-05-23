@@ -920,6 +920,9 @@ class PLCConfigurationHandler:
                 # 其他槽位都减1变为0基
                 zero_based_slot_id = slot_id - 1
                 
+            # 机架号显示从1开始（内部rack_id从0开始，显示时+1）
+            display_rack_id = rack_id + 1
+                
             module_info = self._get_module_details_for_config(model_name, processed_devices_context)
             if not module_info: 
                 logger.warning(f"Cannot generate addresses for unknown module {model_name} at {rack_id}_{slot_id}")
@@ -942,7 +945,7 @@ class PLCConfigurationHandler:
                         'rack_id': rack_id, 'slot_id': zero_based_slot_id, 'model': model_name, 
                         'type': module_type, # 这是模块本身的类型，如 COM, DP, CPU
                         'channel': 0, 
-                        'address': f"{rack_id}_{zero_based_slot_id}_{module_type}_0", 
+                        'address': f"{display_rack_id}_{zero_based_slot_id}_{module_type}_0", 
                         'is_io_channel': False,
                         'module_type': module_type  # 确保COM/DP模块的条目也有module_type，值为COM/DP
                     })
@@ -956,7 +959,7 @@ class PLCConfigurationHandler:
                     # 只为实际的IO子类型 (AI, AO, DI, DO) 生成地址
                     if sub_type in ['AI', 'AO', 'DI', 'DO']:
                         for i in range(sub_ch_count):
-                            addr = f"{rack_id}_{zero_based_slot_id}_{sub_type}_{i}"
+                            addr = f"{display_rack_id}_{zero_based_slot_id}_{sub_type}_{i}"
                             channel_addresses.append({
                                 'rack_id': rack_id, 'slot_id': zero_based_slot_id, 'model': model_name, 
                                 'type': sub_type, # 这是子通道的类型 (DI, DO)
@@ -968,7 +971,7 @@ class PLCConfigurationHandler:
             # module_type 在这里是 AI, AO, DI, DO
             elif module_type in ['AI', 'AO', 'DI', 'DO'] and module_total_channels > 0:
                 for i in range(module_total_channels):
-                    addr = f"{rack_id}_{zero_based_slot_id}_{module_type}_{i}"
+                    addr = f"{display_rack_id}_{zero_based_slot_id}_{module_type}_{i}"
                     channel_addresses.append({
                         'rack_id': rack_id, 'slot_id': zero_based_slot_id, 'model': model_name,
                         'type': module_type, # 通道类型与其模块类型相同

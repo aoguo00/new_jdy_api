@@ -404,6 +404,10 @@ class PLCConfigWidget(QWidget):
         self.rack_widget = RackDisplayWidget(self)
         layout.addWidget(self.rack_widget)
         
+        # 设置IODataLoader引用
+        if hasattr(self, 'io_data_loader') and self.io_data_loader:
+            self.rack_widget.set_io_data_loader(self.io_data_loader)
+        
         return panel
     
     def connect_signals(self):
@@ -499,44 +503,66 @@ class PLCConfigWidget(QWidget):
             # 获取右侧已选择的模块
             right_items = self.transfer_widget.get_right_items()
             
-            # 为LE_CPU系统自动添加LE5118 CPU到槽位0
+            # 为LE_CPU系统自动处理LE5118 CPU到槽位0
             if system_type == 'LE_CPU':
-                rack_id = 1  # LE系统通常只有一个机架
-                config[(rack_id, 0)] = 'LE5118'  # 槽位0固定为LE5118 CPU
-                logger.info(f"LE_CPU系统：自动在槽位0配置LE5118 CPU")
+                # 检查右侧是否有LE5118 CPU模块
+                le5118_found = False
+                for item in right_items:
+                    # 检查key和标题（移除可能的锁图标）
+                    clean_title = item.title.replace(' 🔒', '') if hasattr(item, 'title') else ''
+                    if item.key.upper() == 'LE5118' or item.key.upper().startswith('LE5118') or \
+                       clean_title.upper() == 'LE5118' or clean_title.upper().startswith('LE5118'):
+                        # 将LE5118固定配置在槽位0
+                        for rack_id in range(rack_info.get('rack_count', 1)):
+                            config[(rack_id, 0)] = 'LE5118'
+                            logger.info(f"LE_CPU系统：自动在机架{rack_id}槽位0配置LE5118 CPU")
+                        le5118_found = True
+                        break
                 
-                # 用户配置的模块从槽位1开始
-                for index, item in enumerate(right_items):
-                    slot_id = index + 1  # LE系列用户配置从槽位1开始
-                    
-                    # 从PLCModule对象获取模型名称
-                    if hasattr(item, 'model') and item.model:
-                        model_name = item.model
-                    else:
-                        # 如果没有model属性，尝试从标题提取
-                        model_name = item.title
-                    
-                    config[(rack_id, slot_id)] = model_name
-                    logger.debug(f"LE系统配置槽位{slot_id}: {model_name}")
-                    
-            elif system_type == 'LK':
-                # LK系列：槽位1为DP模块，用户配置从槽位2开始
-                rack_id = 1  # LK系统主机架
-                config[(rack_id, 1)] = 'PROFIBUS-DP'  # 槽位1固定为DP模块
-                logger.info(f"LK系统：自动在槽位1配置PROFIBUS-DP模块")
+                if not le5118_found:
+                    logger.warning("LE_CPU系统但未找到LE5118 CPU模块，请确保已添加到右侧")
                 
-                # 用户配置的模块从槽位2开始
-                for index, item in enumerate(right_items):
-                    slot_id = index + 2  # LK系列用户配置从槽位2开始
+                # 处理其他模块（从槽位1开始）
+                slot_index = 1
+                for item in right_items:
+                    # 跳过已处理的LE5118（检查时移除锁图标）
+                    clean_title = item.title.replace(' 🔒', '') if hasattr(item, 'title') else ''
+                    if item.key.upper() == 'LE5118' or item.key.upper().startswith('LE5118') or \
+                       clean_title.upper() == 'LE5118' or clean_title.upper().startswith('LE5118'):
+                        continue
                     
-                    # 从PLCModule对象获取模型名称
-                    if hasattr(item, 'model') and item.model:
-                        model_name = item.model
-                    else:
-                        model_name = item.title
+                    # 为其他模块分配槽位
+                    if slot_index < rack_info.get('slots_per_rack', 11):
+                        # 使用模块型号而不是key
+                        model_name = item.model if hasattr(item, 'model') and item.model else item.title.split('(')[0].strip()
+                        config[(0, slot_index)] = model_name
+                        slot_index += 1
+            else:
+                # LK系统的处理逻辑
+                # LK系统：槽位1固定为DP模块，用户配置从槽位2开始
+                for rack_id in range(rack_info.get('rack_count', 1)):
+                    # 槽位1固定为PROFIBUS-DP
+                    config[(rack_id, 1)] = 'PROFIBUS-DP'
+                    logger.info(f"LK系统：自动在机架{rack_id}槽位1配置PROFIBUS-DP模块")
+                
+                # 将右侧的模块从槽位2开始分配
+                slot_index = 2
+                rack_id = 0
+                slots_per_rack = rack_info.get('slots_per_rack', 11)
+                
+                for item in right_items:
+                    # 如果当前机架满了，切换到下一个机架
+                    if slot_index >= slots_per_rack:
+                        rack_id += 1
+                        slot_index = 2  # LK系统从槽位2开始
+                        if rack_id >= rack_info.get('rack_count', 1):
+                            logger.warning("模块数量超过可用槽位数")
+                            break
                     
-                    config[(rack_id, slot_id)] = model_name
-                    logger.debug(f"LK系统配置槽位{slot_id}: {model_name}")
+                    # 使用模块型号而不是key
+                    model_name = item.model if hasattr(item, 'model') and item.model else item.title.split('(')[0].strip()
+                    config[(rack_id, slot_index)] = model_name
+                    slot_index += 1
             
             logger.info(f"获取当前模块配置: 系统类型={system_type}, 配置={len(config)}个模块")
             return config
@@ -636,23 +662,71 @@ class PLCConfigWidget(QWidget):
     
     def set_data_source(self, modules: List[PLCModule]):
         """
-        设置模块数据源
+        设置穿梭框的数据源
         
         Args:
-            modules: PLCModule列表
+            modules: 可用的模块列表
         """
-        logger.info(f"PLCConfigWidget: 设置数据源 {len(modules)} 个模块")
+        if not hasattr(self, 'transfer_widget') or not self.transfer_widget:
+            logger.error("transfer_widget未初始化")
+            return
         
-        self._current_data_source = modules.copy()
+        # 保存数据源
+        self._current_data_source = modules
         
-        # 更新穿梭框数据
-        if hasattr(self, 'transfer_widget') and self.transfer_widget:
+        # 获取系统类型和机架信息
+        rack_info = self.io_data_loader.get_rack_info()
+        system_type = rack_info.get('system_type', 'LK')
+        
+        # 新增：LE系列CPU自动处理逻辑
+        if system_type == 'LE_CPU':
+            logger.info("检测到LE_CPU系统，开始处理LE5118 CPU模块")
+            
+            # 分离LE5118 CPU和其他模块
+            le5118_modules = []
+            other_modules = []
+            
+            for module in modules:
+                if module.key.upper() == 'LE5118' or module.title.upper().startswith('LE5118'):
+                    le5118_modules.append(module)
+                    logger.info(f"找到LE5118 CPU模块: {module.title}")
+                else:
+                    other_modules.append(module)
+            
+            # 设置穿梭框数据源（左侧只显示非CPU模块）
+            self.transfer_widget.set_data_source(other_modules)
+            
+            # 如果找到LE5118，自动添加到右侧
+            if le5118_modules:
+                logger.info(f"将 {len(le5118_modules)} 个LE5118 CPU模块自动添加到右侧")
+                # 直接操作穿梭框的右侧面板
+                for cpu_module in le5118_modules:
+                    # 修改模块的标题和描述，标明它是固定的
+                    cpu_module.title = f"{cpu_module.title} 🔒"  # 添加锁图标
+                    cpu_module.description = f"{cpu_module.description} (固定在槽位0，不可移除)"
+                    
+                    # 使用穿梭框的内部方法将CPU添加到右侧
+                    if hasattr(self.transfer_widget, 'right_panel') and self.transfer_widget.right_panel:
+                        self.transfer_widget.right_panel.add_item(cpu_module)
+                        # 更新穿梭框的内部状态
+                        if hasattr(self.transfer_widget, '_state') and hasattr(self.transfer_widget._state, 'right_items'):
+                            # right_items是列表，使用append方法
+                            self.transfer_widget._state.right_items.append(cpu_module)
+                
+                # 触发传输变化信号
+                self.transfer_widget.transferChange.emit({
+                    'from': 'left',
+                    'to': 'right',
+                    'items': le5118_modules
+                })
+                
+                # 注意：机架显示和系统信息会由PLCConfigAdapter在设置完rack_info后更新
+                # 这里不需要立即更新
+        else:
+            # LK系统或其他系统，正常设置数据源
             self.transfer_widget.set_data_source(modules)
         
-        # 更新系统信息
-        self.update_system_info(self.io_data_loader.get_rack_info())
-        
-        logger.info("数据源设置完成")
+        logger.info(f"PLCConfigWidget: 已设置 {len(modules)} 个模块")
     
     def update_system_info(self, rack_info: Dict[str, Any]):
         """
@@ -748,11 +822,8 @@ class PLCConfigWidget(QWidget):
             
             # 重置系统信息显示
             if self.system_info:
-                self.system_info.update_system_type("未知")
-                self.system_info.update_rack_count(0)
-                self.system_info.update_config_status("无配置")
-                self.system_info.update_io_count(0)
-                self.system_info.update_save_status(False)
+                # 使用reset_info方法重置所有信息
+                self.system_info.reset_info()
             
             logger.info("UI状态已重置")
             
@@ -963,4 +1034,32 @@ class PLCConfigWidget(QWidget):
 
     def _on_reset_clicked(self):
         """处理重置按钮点击"""
-        self.reset_configuration() 
+        self.reset_configuration()
+    
+    def can_remove_from_right(self, module_key: str) -> bool:
+        """
+        检查模块是否可以从右侧移除
+        
+        对于LE_CPU系统，LE5118 CPU模块不能被移除（必须固定在槽位0）
+        
+        Args:
+            module_key: 模块的唯一标识
+            
+        Returns:
+            bool: True表示可以移除，False表示不能移除
+        """
+        # 获取系统类型
+        rack_info = self.io_data_loader.get_rack_info()
+        system_type = rack_info.get('system_type', 'LK')
+        
+        # LE_CPU系统的特殊规则
+        if system_type == 'LE_CPU':
+            # 检查是否是LE5118 CPU模块
+            # module_key可能是 "LE5118_1" 这样的格式
+            key_upper = module_key.upper()
+            if 'LE5118' in key_upper:  # 更宽松的匹配，包含LE5118即可
+                logger.warning(f"LE_CPU系统中，{module_key} CPU模块不能被移除（必须固定在槽位0）")
+                return False
+        
+        # 其他情况都可以移除
+        return True 

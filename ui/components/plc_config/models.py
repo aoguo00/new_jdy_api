@@ -10,6 +10,24 @@ from dataclasses import dataclass, field
 from typing import Optional, Any, Dict
 from enum import Enum
 
+# 导入样式系统
+try:
+    from .module_styles import get_module_icon
+except ImportError:
+    # 如果无法导入，使用默认图标
+    def get_module_icon(module_type: str, use_ascii: bool = False) -> str:
+        icon_map = {
+            'CPU': '🖥️',
+            'DI': '📥',
+            'DO': '📤',
+            'AI': '📊',
+            'AO': '📈',
+            'COM': '🌐',
+            'DP': '🔗',
+            'POWER': '🔌'
+        }
+        return icon_map.get(module_type.upper(), '🔧')
+
 
 class TransferDirection(Enum):
     """穿梭框方向枚举"""
@@ -113,16 +131,7 @@ class PLCModule(TransferItem):
     
     def _get_default_icon(self) -> str:
         """根据模块类型获取默认图标"""
-        icon_map = {
-            'CPU': '🖥️',
-            'DI': '📥',     # 数字输入
-            'DO': '📤',     # 数字输出  
-            'AI': '📊',     # 模拟输入
-            'AO': '📈',     # 模拟输出
-            'COMM': '🔗',   # 通讯模块
-            'POWER': '🔌',  # 电源模块
-        }
-        return icon_map.get(self.module_type.upper(), '🔧')
+        return get_module_icon(self.module_type)
     
     def is_placed(self) -> bool:
         """检查模块是否已放置到机架"""

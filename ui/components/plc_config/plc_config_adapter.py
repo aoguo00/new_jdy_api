@@ -157,7 +157,11 @@ class PLCConfigAdapter(QWidget):
                     # 转换最新API数据为模块格式（用于更新可用模块列表）
                     transfer_items = self._convert_devices_to_transfer_items(devices_data)
                     
-                    # 更新现代组件的数据源（可用模块列表）
+                    # 先更新系统信息（包括机架信息）
+                    rack_info = self.io_data_loader.get_rack_info()
+                    self.modern_widget.update_system_info(rack_info)
+                    
+                    # 再更新现代组件的数据源（可用模块列表）
                     self.modern_widget.set_data_source(transfer_items)
                     
                     # 恢复缓存的配置到UI
@@ -185,10 +189,14 @@ class PLCConfigAdapter(QWidget):
         # 2. 转换数据格式
         transfer_items = self._convert_devices_to_transfer_items(devices_data)
         
-        # 3. 更新现代组件
+        # 3. 先更新系统信息（包括机架信息）- 调整顺序到前面
+        rack_info = self.io_data_loader.get_rack_info()
+        self.modern_widget.update_system_info(rack_info)
+        
+        # 4. 再更新现代组件的数据源 - 这样LE5118自动添加时机架已经准备好
         self.modern_widget.set_data_source(transfer_items)
         
-        # 4. 从IODataLoader恢复已有配置
+        # 5. 从IODataLoader恢复已有配置
         self._restore_existing_config()
         
         logger.info("PLCConfigAdapter: 设备数据处理完成")
@@ -229,6 +237,17 @@ class PLCConfigAdapter(QWidget):
                 # 确定性ID格式：模型名_序号，例如：LK411_1, LK411_2
                 unique_id = f"{model}_{model_counters[model]}"
                 
+                # 收集详细信息
+                data = {'original': module}  # 保存原始数据
+                
+                # 如果模块有details字段，保存到data中
+                if 'details' in module:
+                    data['details'] = module['details']
+                
+                # 如果有子通道信息，也保存
+                if 'sub_channels' in module:
+                    data['sub_channels'] = module['sub_channels']
+                
                 plc_module = PLCModule(
                     key=unique_id,
                     title=model,
@@ -238,7 +257,8 @@ class PLCConfigAdapter(QWidget):
                     manufacturer=module.get('manufacturer', '和利时'),
                     channels=module.get('channels', 0),
                     icon=self._get_module_icon(module_type),
-                    unique_id=unique_id
+                    unique_id=unique_id,
+                    data=data  # 传递完整的详细信息
                 )
                 
                 transfer_items.append(plc_module)

@@ -20,135 +20,195 @@ from PySide6.QtGui import QFont, QColor, QPalette
 
 # 尝试相对导入，失败则使用绝对导入
 try:
-    from .models import PLCModule, TransferDirection
+    from .module_styles import get_module_style, get_module_icon, get_module_color
 except ImportError:
     import sys
     from pathlib import Path
     project_root = Path(__file__).parent.parent.parent.parent
     sys.path.insert(0, str(project_root))
     
-    from ui.components.plc_config.models import PLCModule, TransferDirection
+    from ui.components.plc_config.module_styles import get_module_style, get_module_icon, get_module_color
 
 logger = logging.getLogger(__name__)
 
 
-class SlotWidget(QWidget):
+class SlotWidget(QFrame):
     """
-    单个槽位显示组件
+    单个槽位组件
+    显示槽位号和模块信息
     """
     
     # 槽位点击信号
     slotClicked = Signal(int, int)  # rack_id, slot_id
     
-    def __init__(self, rack_id: int, slot_id: int, parent=None):
+    def __init__(self, slot_id: int, rack_id: int = 0, parent=None):
         super().__init__(parent)
-        self.rack_id = rack_id
         self.slot_id = slot_id
-        self.module: Optional[PLCModule] = None
+        self.rack_id = rack_id  # 保存rack_id用于信号
+        self.module_name = None
+        self.module_info = None  # 存储完整的模块信息
         self.setup_ui()
     
     def setup_ui(self):
         """设置UI"""
+        self.setFixedSize(100, 80)  # 增加高度以显示更多信息
+        self.setFrameStyle(QFrame.Box)
+        
+        # 布局
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(2, 2, 2, 2)
-        layout.setSpacing(1)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(2)
         
         # 槽位号标签
-        self.slot_label = QLabel(f"{self.slot_id}")
+        self.slot_label = QLabel(f"槽位 {self.slot_id}")
         self.slot_label.setAlignment(Qt.AlignCenter)
-        self.slot_label.setFixedHeight(16)
+        self.slot_label.setFont(QFont("Microsoft YaHei", 8))
         self.slot_label.setStyleSheet("""
             QLabel {
+                color: #8c8c8c;
                 font-size: 10px;
-                font-weight: bold;
-                color: #666;
-                background-color: #f0f0f0;
-                border-radius: 2px;
+                padding: 2px;
             }
         """)
         layout.addWidget(self.slot_label)
         
-        # 模块显示区域
-        self.module_display = QLabel("空")
-        self.module_display.setAlignment(Qt.AlignCenter)
-        self.module_display.setFixedSize(80, 50)
-        self.module_display.setWordWrap(True)
-        self._update_empty_style()
-        layout.addWidget(self.module_display)
+        # 模块内容区域（包含图标和类型）
+        self.module_content_widget = QWidget()
+        self.module_content_layout = QVBoxLayout(self.module_content_widget)
+        self.module_content_layout.setContentsMargins(0, 0, 0, 0)
+        self.module_content_layout.setSpacing(2)
         
-        # 设置整体固定大小
-        self.setFixedSize(90, 75)
+        # 模块图标和类型标签
+        self.module_icon_label = QLabel("空")
+        self.module_icon_label.setAlignment(Qt.AlignCenter)
+        self.module_icon_label.setFont(QFont("Microsoft YaHei", 16))  # 更大的图标
+        self.module_content_layout.addWidget(self.module_icon_label)
         
-        # 设置可点击
-        self.setStyleSheet("SlotWidget:hover { background-color: #f5f5f5; }")
+        # 模块型号标签
+        self.module_name_label = QLabel("")
+        self.module_name_label.setAlignment(Qt.AlignCenter)
+        self.module_name_label.setFont(QFont("Microsoft YaHei", 9, QFont.Bold))
+        self.module_name_label.setWordWrap(True)
+        self.module_content_layout.addWidget(self.module_name_label)
+        
+        layout.addWidget(self.module_content_widget)
+        layout.addStretch()
+        
+        # 设置初始样式
+        self._update_style()
     
-    def set_module(self, module: Optional[PLCModule]):
-        """设置模块"""
-        self.module = module
-        if module:
-            self._update_module_style()
+    def set_module(self, module_name: str, module_info: Dict[str, Any] = None):
+        """
+        设置模块
+        
+        Args:
+            module_name: 模块型号
+            module_info: 模块完整信息（包含type, channels等）
+        """
+        self.module_name = module_name
+        self.module_info = module_info or {}
+        
+        if module_name:
+            # 获取模块类型
+            module_type = self.module_info.get('type', '未知')
+            
+            # 设置图标
+            icon = get_module_icon(module_type)
+            self.module_icon_label.setText(icon)
+            
+            # 设置型号
+            self.module_name_label.setText(module_name)
+            
+            # 设置工具提示
+            self._update_tooltip()
         else:
-            self._update_empty_style()
+            self.clear_module()
+        
+        self._update_style()
     
-    def _update_module_style(self):
-        """更新模块样式"""
-        if not self.module:
+    def clear_module(self):
+        """清空模块"""
+        self.module_name = None
+        self.module_info = None
+        self.module_icon_label.setText("空")
+        self.module_name_label.setText("")
+        self.setToolTip(f"槽位 {self.slot_id}: 空")
+        self._update_style()
+    
+    def _update_style(self):
+        """更新样式"""
+        if self.module_name and self.module_info:
+            # 获取模块类型
+            module_type = self.module_info.get('type', '未知')
+            
+            # 获取样式配置
+            style_dict = get_module_style(module_type, for_rack=True)
+            
+            # 构建样式字符串
+            style_parts = [
+                "QFrame {",
+                f"    background-color: {style_dict['background-color']};",
+                f"    border: {style_dict['border']};",
+                "    border-radius: 6px;",
+                "}"
+            ]
+            
+            self.setStyleSheet('\n'.join(style_parts))
+            
+            # 设置文字颜色
+            self.module_name_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {style_dict['color']};
+                    font-weight: {style_dict['font-weight']};
+                }}
+            """)
+            
+            # 图标稍微透明
+            self.module_icon_label.setStyleSheet("""
+                QLabel {
+                    background: transparent;
+                }
+            """)
+        else:
+            # 空槽位样式
+            self.setStyleSheet("""
+                QFrame {
+                    background-color: #f5f5f5;
+                    border: 2px dashed #d9d9d9;
+                    border-radius: 6px;
+                }
+            """)
+            self.module_icon_label.setStyleSheet("color: #bfbfbf;")
+    
+    def _update_tooltip(self):
+        """更新工具提示"""
+        if not self.module_name:
+            self.setToolTip(f"槽位 {self.slot_id}: 空")
             return
         
-        # 显示模块信息
-        icon = self.module.icon if self.module.icon else "🔧"
-        text = f"{icon}\n{self.module.model}"
-        self.module_display.setText(text)
+        tooltip_lines = [f"槽位 {self.slot_id}"]
+        tooltip_lines.append(f"型号: {self.module_name}")
         
-        # 根据模块类型设置颜色
-        type_colors = {
-            'CPU': '#1890ff',
-            'DI': '#52c41a', 
-            'DO': '#fa8c16',
-            'AI': '#13c2c2',
-            'AO': '#722ed1',
-            'COM': '#eb2f96',
-            'DP': '#f5222d'
-        }
+        if self.module_info:
+            if 'type' in self.module_info:
+                tooltip_lines.append(f"类型: {self.module_info['type']}")
+            
+            if 'channels' in self.module_info and self.module_info['channels'] > 0:
+                tooltip_lines.append(f"通道数: {self.module_info['channels']}")
+            
+            if 'description' in self.module_info:
+                tooltip_lines.append(f"描述: {self.module_info['description']}")
+            
+            # 显示子通道信息
+            if 'sub_channels' in self.module_info:
+                sub_ch = self.module_info['sub_channels']
+                sub_info = []
+                for ch_type, ch_count in sub_ch.items():
+                    sub_info.append(f"{ch_type}:{ch_count}")
+                tooltip_lines.append(f"子通道: {', '.join(sub_info)}")
         
-        bg_color = type_colors.get(self.module.module_type, '#d9d9d9')
-        border_color = bg_color
-        
-        self.module_display.setStyleSheet(f"""
-            QLabel {{
-                border: 2px solid {border_color};
-                border-radius: 4px;
-                background-color: {bg_color}15;
-                font-size: 9px;
-                font-weight: bold;
-                color: {bg_color};
-                padding: 2px;
-            }}
-        """)
-        
-        # 设置工具提示
-        tooltip = f"模块: {self.module.model}\n类型: {self.module.module_type}"
-        if self.module.channels > 0:
-            tooltip += f"\n通道数: {self.module.channels}"
-        if self.module.description:
-            tooltip += f"\n描述: {self.module.description}"
-        self.module_display.setToolTip(tooltip)
-    
-    def _update_empty_style(self):
-        """更新空槽位样式"""
-        self.module_display.setText("空")
-        self.module_display.setStyleSheet("""
-            QLabel {
-                border: 1px dashed #d9d9d9;
-                border-radius: 4px;
-                background-color: #fafafa;
-                font-size: 10px;
-                color: #8c8c8c;
-                padding: 2px;
-            }
-        """)
-        self.module_display.setToolTip("空槽位")
-    
+        self.setToolTip('\n'.join(tooltip_lines))
+
     def mousePressEvent(self, event):
         """鼠标点击事件"""
         if event.button() == Qt.LeftButton:
@@ -177,8 +237,8 @@ class RackWidget(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
         
-        # 机架标题
-        title = QLabel(f"机架 {self.rack_id}")
+        # 机架标题（显示编号从1开始，内部ID从0开始）
+        title = QLabel(f"机架 {self.rack_id + 1}")
         title.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
         title.setStyleSheet("""
             QLabel {
@@ -199,7 +259,7 @@ class RackWidget(QWidget):
         cols = (self.slots_count + rows - 1) // rows  # 向上取整
         
         for i in range(self.slots_count):
-            slot_widget = SlotWidget(self.rack_id, i, self)
+            slot_widget = SlotWidget(i, self.rack_id, self)
             slot_widget.slotClicked.connect(self.slotClicked.emit)
             
             row = i // cols
@@ -220,22 +280,22 @@ class RackWidget(QWidget):
             }
         """)
     
-    def set_module_at_slot(self, slot_id: int, module: Optional[PLCModule]):
+    def set_module_at_slot(self, slot_id: int, module_name: str, module_info: Dict[str, Any] = None):
         """在指定槽位设置模块"""
         if 0 <= slot_id < len(self.slot_widgets):
-            self.slot_widgets[slot_id].set_module(module)
+            self.slot_widgets[slot_id].set_module(module_name, module_info)
         else:
             logger.warning(f"槽位ID超出范围: {slot_id}")
     
     def clear_all_slots(self):
         """清空所有槽位"""
         for slot_widget in self.slot_widgets:
-            slot_widget.set_module(None)
+            slot_widget.clear_module()
     
-    def get_module_at_slot(self, slot_id: int) -> Optional[PLCModule]:
-        """获取指定槽位的模块"""
+    def get_module_at_slot(self, slot_id: int) -> Optional[Dict[str, Any]]:
+        """获取指定槽位的模块信息"""
         if 0 <= slot_id < len(self.slot_widgets):
-            return self.slot_widgets[slot_id].module
+            return self.slot_widgets[slot_id].module_info
         return None
 
 
@@ -254,6 +314,7 @@ class RackDisplayWidget(QWidget):
         super().__init__(parent)
         self.rack_widgets: List[RackWidget] = []
         self.rack_info: Dict[str, Any] = {}
+        self.io_data_loader = None  # 添加IODataLoader引用
         self.setup_ui()
     
     def setup_ui(self):
@@ -311,7 +372,7 @@ class RackDisplayWidget(QWidget):
         
         if rack_count > 0:
             # 创建机架组件
-            for rack_id in range(1, rack_count + 1):
+            for rack_id in range(rack_count):  # 从0开始
                 self._add_rack(rack_id, slots_per_rack)
             
             # 显示机架区域
@@ -365,29 +426,52 @@ class RackDisplayWidget(QWidget):
             logger.warning(f"找不到机架 {rack_id}")
             return
         
-        # 将内部槽位号转换为界面显示槽位号
-        # 内部槽位从1开始，界面显示从0开始
-        display_slot_id = slot_id - 1 if slot_id > 0 else 0
+        # 槽位号转换逻辑
+        # LE系统：内部槽位号就是显示槽位号（0-10）
+        # LK系统：内部槽位号是1-11，显示槽位号是0-10
+        system_type = self.rack_info.get('system_type', 'LK')
+        if system_type == 'LE_CPU':
+            # LE系统：槽位号不需要转换
+            display_slot_id = slot_id
+        else:
+            # LK系统：内部槽位从1开始，界面显示从0开始
+            display_slot_id = slot_id - 1 if slot_id > 0 else 0
         
         # 确保槽位ID在有效范围内
         if display_slot_id < 0 or display_slot_id >= len(rack_widget.slot_widgets):
-            logger.warning(f"槽位ID超出范围: 内部槽位{slot_id} -> 显示槽位{display_slot_id}")
+            logger.warning(f"槽位ID超出范围: 内部槽位{slot_id}, 显示槽位{display_slot_id}")
             return
         
-        # 创建简化的模块对象用于显示
-        # 这里可以根据model_name从IODataLoader获取详细信息
-        module = PLCModule(
-            key=f"rack_{rack_id}_slot_{slot_id}",
-            title=model_name,
-            description=f"机架{rack_id} 槽位{display_slot_id}",  # 使用显示槽位号
-            model=model_name,
-            module_type=self._guess_module_type(model_name),
-            manufacturer="和利时",
-            icon=self._get_module_icon(model_name)
-        )
+        # 获取模块的准确信息
+        module_info = self._get_module_info(model_name)
         
-        rack_widget.set_module_at_slot(display_slot_id, module)
+        rack_widget.set_module_at_slot(display_slot_id, model_name, module_info)
         logger.debug(f"在机架{rack_id}内部槽位{slot_id}(显示槽位{display_slot_id})设置模块: {model_name}")
+    
+    def _get_module_info(self, model_name: str) -> Dict[str, Any]:
+        """获取模块的准确信息"""
+        # 优先从IODataLoader获取
+        if self.io_data_loader:
+            module_info = self.io_data_loader.get_module_by_model(model_name)
+            if module_info:
+                return {
+                    'type': module_info.get('type', '未知'),
+                    'model': model_name,
+                    'channels': module_info.get('channels', 0),
+                    'description': module_info.get('description', ''),
+                    'sub_channels': module_info.get('sub_channels', {}),
+                    'manufacturer': module_info.get('manufacturer', '和利时'),
+                    'details': module_info.get('details', {})
+                }
+        
+        # 如果没有IODataLoader或找不到模块信息，使用原来的猜测方法
+        return {
+            'type': self._guess_module_type(model_name),
+            'model': model_name,
+            'channels': self._guess_channels(model_name),
+            'description': self._guess_description(model_name),
+            'sub_channels': self._guess_sub_channels(model_name)
+        }
     
     def _find_rack_widget(self, rack_id: int) -> Optional[RackWidget]:
         """查找指定ID的机架组件"""
@@ -417,22 +501,68 @@ class RackDisplayWidget(QWidget):
         else:
             return 'OTHER'
     
-    def _get_module_icon(self, model_name: str) -> str:
-        """根据模块型号获取图标"""
-        module_type = self._guess_module_type(model_name)
+    def _guess_channels(self, model_name: str) -> int:
+        """根据模块型号猜测通道数"""
+        model_upper = model_name.upper()
         
-        icon_map = {
-            'CPU': '🖥️',
-            'DI': '📥',
-            'DO': '📤',
-            'AI': '📊',
-            'AO': '📈',
-            'COM': '🌐',
-            'DP': '🔗',
-            'OTHER': '🔧'
-        }
+        if 'CPU' in model_upper or 'LE5118' in model_upper:
+            return 0  # 默认CPU没有通道
+        elif 'LK610' in model_upper or (any(x in model_upper for x in ['DI']) and 'DO' not in model_upper):
+            return 1  # 默认DI有1个通道
+        elif 'LK710' in model_upper or (any(x in model_upper for x in ['DO']) and 'DI' not in model_upper):
+            return 1  # 默认DO有1个通道
+        elif 'LK411' in model_upper or (any(x in model_upper for x in ['AI']) and 'AO' not in model_upper):
+            return 1  # 默认AI有1个通道
+        elif 'LK421' in model_upper or (any(x in model_upper for x in ['AO']) and 'AI' not in model_upper):
+            return 1  # 默认AO有1个通道
+        elif 'LK238' in model_upper or 'COM' in model_upper:
+            return 0  # 默认COM没有通道
+        elif 'PROFIBUS-DP' in model_upper or model_upper == 'DP':
+            return 0  # 默认DP没有通道
+        else:
+            return 0  # 其他类型默认没有通道
+    
+    def _guess_description(self, model_name: str) -> str:
+        """根据模块型号猜测描述"""
+        model_upper = model_name.upper()
         
-        return icon_map.get(module_type, '🔧')
+        if 'CPU' in model_upper or 'LE5118' in model_upper:
+            return 'CPU模块'
+        elif 'LK610' in model_upper or (any(x in model_upper for x in ['DI']) and 'DO' not in model_upper):
+            return '数字输入模块'
+        elif 'LK710' in model_upper or (any(x in model_upper for x in ['DO']) and 'DI' not in model_upper):
+            return '数字输出模块'
+        elif 'LK411' in model_upper or (any(x in model_upper for x in ['AI']) and 'AO' not in model_upper):
+            return '模拟输入模块'
+        elif 'LK421' in model_upper or (any(x in model_upper for x in ['AO']) and 'AI' not in model_upper):
+            return '模拟输出模块'
+        elif 'LK238' in model_upper or 'COM' in model_upper:
+            return '通信模块'
+        elif 'PROFIBUS-DP' in model_upper or model_upper == 'DP':
+            return 'PROFIBUS-DP模块'
+        else:
+            return '未知模块'
+    
+    def _guess_sub_channels(self, model_name: str) -> Dict[str, Dict[str, int]]:
+        """根据模块型号猜测子通道信息"""
+        model_upper = model_name.upper()
+        
+        if 'CPU' in model_upper or 'LE5118' in model_upper:
+            return {}  # CPU没有子通道
+        elif 'LK610' in model_upper or (any(x in model_upper for x in ['DI']) and 'DO' not in model_upper):
+            return {'DI': {x: 1 for x in ['A', 'B']}}
+        elif 'LK710' in model_upper or (any(x in model_upper for x in ['DO']) and 'DI' not in model_upper):
+            return {'DO': {x: 1 for x in ['A', 'B']}}
+        elif 'LK411' in model_upper or (any(x in model_upper for x in ['AI']) and 'AO' not in model_upper):
+            return {'AI': {x: 1 for x in ['A', 'B']}}
+        elif 'LK421' in model_upper or (any(x in model_upper for x in ['AO']) and 'AI' not in model_upper):
+            return {'AO': {x: 1 for x in ['A', 'B']}}
+        elif 'LK238' in model_upper or 'COM' in model_upper:
+            return {}  # COM没有子通道
+        elif 'PROFIBUS-DP' in model_upper or model_upper == 'DP':
+            return {}  # DP没有子通道
+        else:
+            return {}  # 其他类型默认没有子通道
     
     def clear_rack(self):
         """清空机架显示"""
@@ -461,7 +591,7 @@ class RackDisplayWidget(QWidget):
         
         for rack_widget in self.rack_widgets:
             for slot_widget in rack_widget.slot_widgets:
-                if slot_widget.module is not None:
+                if slot_widget.module_info:
                     occupied_slots += 1
         
         return {
@@ -470,4 +600,8 @@ class RackDisplayWidget(QWidget):
             'occupied_slots': occupied_slots,
             'free_slots': total_slots - occupied_slots,
             'occupancy_rate': (occupied_slots / total_slots * 100) if total_slots > 0 else 0
-        } 
+        }
+
+    def set_io_data_loader(self, io_data_loader):
+        """设置IODataLoader引用"""
+        self.io_data_loader = io_data_loader 
