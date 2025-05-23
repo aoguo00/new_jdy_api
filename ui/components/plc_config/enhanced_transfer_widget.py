@@ -13,7 +13,7 @@ import logging
 from typing import List, Dict, Any, Optional, Callable
 from PySide6.QtWidgets import (
     QWidget, QListWidget, QListWidgetItem, QLabel, QVBoxLayout, QHBoxLayout,
-    QPushButton, QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QFrame, QMessageBox
+    QPushButton, QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QFrame, QMessageBox, QSizePolicy
 )
 from PySide6.QtCore import (
     Qt, Signal, QPropertyAnimation, QEasingCurve, QTimer, QRect, QPoint, 
@@ -594,7 +594,8 @@ class EnhancedTransferWidget(QWidget):
         # 核心属性
         self._data_source: List[TransferItem] = []
         self._render_template: Optional[Callable] = None
-        self._list_style: Dict[str, Any] = {'width': 300, 'height': 400}
+        # 移除固定尺寸设置，改为最小尺寸
+        self._min_size: Dict[str, Any] = {'width': 250, 'height': 350}
         
         # 状态管理
         self._state = TransferListState()
@@ -615,7 +616,8 @@ class EnhancedTransferWidget(QWidget):
         
         # 左侧面板
         self.left_panel = EnhancedTransferPanelWidget("可用模块", "left", self)
-        layout.addWidget(self.left_panel)
+        # 设置拉伸因子，使面板能够自动扩展
+        layout.addWidget(self.left_panel, 1)
         
         # 中间操作按钮区域
         button_layout = self.create_button_panel()
@@ -623,7 +625,8 @@ class EnhancedTransferWidget(QWidget):
         
         # 右侧面板
         self.right_panel = EnhancedTransferPanelWidget("已选模块", "right", self)
-        layout.addWidget(self.right_panel)
+        # 设置拉伸因子，使面板能够自动扩展
+        layout.addWidget(self.right_panel, 1)
         
         # 应用列表样式
         self.apply_list_style()
@@ -714,13 +717,17 @@ class EnhancedTransferWidget(QWidget):
         if not (self.left_panel and self.right_panel):
             return
             
-        width = self._list_style.get('width', 300)
-        height = self._list_style.get('height', 400)
+        width = self._min_size.get('width', 250)
+        height = self._min_size.get('height', 350)
         
-        # 设置面板大小
+        # 设置面板最小尺寸而不是固定尺寸
         for panel in [self.left_panel, self.right_panel]:
-            panel.setFixedSize(width, height)
+            panel.setMinimumSize(width, height)
+            # 设置大小策略，允许扩展
+            panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            # 列表组件也设置最小尺寸和大小策略
             panel.list_widget.setMinimumSize(width - 20, height - 60)
+            panel.list_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
     
     def set_data_source(self, data: List[TransferItem]):
         """设置数据源"""
@@ -853,6 +860,9 @@ class EnhancedTransferWidget(QWidget):
         selected_keys = list(self._state.right_selected)
         logger.info(f"🔄 准备移动项目到左侧: {selected_keys}")
         
+        # 默认情况下，所有选中的模块都可以移动
+        movable_keys = selected_keys
+        
         # 检查是否有不可移除的模块
         parent_widget = self.parent()
         while parent_widget and not hasattr(parent_widget, 'can_remove_from_right'):
@@ -880,20 +890,27 @@ class EnhancedTransferWidget(QWidget):
                 
                 # 如果没有可移动的模块，直接返回
                 if not movable_keys:
-                    logger.info("⚠️ 拖拽操作被阻止：所有模块都不能被移除")
+                    logger.info("⚠️ 移动操作被阻止：所有模块都不能被移除")
                     return
-                
-                # 只移动可移动的模块
-                keys = movable_keys
         
-        # 设置选中状态
-        self._state.right_selected = set(keys)
+        # 执行实际的移动操作
+        moved_keys = self._state.move_to_left(movable_keys)
+        logger.info(f"🔄 状态管理器返回已移动项目: {moved_keys}")
         
-        # 执行移动
-        self.move_to_left()
-        
-        # 播放传输动画
-        self._play_transfer_animation("left")
+        if moved_keys:
+            self._refresh_display()
+            logger.info(f"✅ 成功移动 {len(moved_keys)} 个项目到左侧")
+            
+            # 发送传输变化事件
+            transfer_data = {
+                'from': 'right',
+                'to': 'left',
+                'list': moved_keys
+            }
+            logger.info(f"📡 发送传输变化信号: {transfer_data}")
+            self.transferChange.emit(transfer_data)
+        else:
+            logger.warning("⚠️ move_to_left: 没有项目被移动")
     
     def get_right_items(self) -> List[TransferItem]:
         """获取右侧（已选）的所有项目"""
@@ -1014,6 +1031,9 @@ class EnhancedTransferWidget(QWidget):
     
     def _move_items_to_left(self, keys: List[str]):
         """通过拖拽移动项目到左侧"""
+        # 默认情况下，所有选中的模块都可以移动
+        movable_keys = keys
+        
         # 检查是否有不可移除的模块
         parent_widget = self.parent()
         while parent_widget and not hasattr(parent_widget, 'can_remove_from_right'):
@@ -1043,12 +1063,9 @@ class EnhancedTransferWidget(QWidget):
                 if not movable_keys:
                     logger.info("⚠️ 拖拽操作被阻止：所有模块都不能被移除")
                     return
-                
-                # 只移动可移动的模块
-                keys = movable_keys
         
         # 设置选中状态
-        self._state.right_selected = set(keys)
+        self._state.right_selected = set(movable_keys)
         
         # 执行移动
         self.move_to_left()

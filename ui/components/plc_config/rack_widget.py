@@ -224,10 +224,11 @@ class RackWidget(QWidget):
     # 机架信号
     slotClicked = Signal(int, int)  # rack_id, slot_id
     
-    def __init__(self, rack_id: int, slots_count: int = 16, parent=None):
+    def __init__(self, rack_id: int, slots_count: int = 16, system_type: str = 'LK', parent=None):
         super().__init__(parent)
         self.rack_id = rack_id
         self.slots_count = slots_count
+        self.system_type = system_type
         self.slot_widgets: List[SlotWidget] = []
         self.setup_ui()
     
@@ -254,11 +255,19 @@ class RackWidget(QWidget):
         grid_layout = QGridLayout(slots_container)
         grid_layout.setSpacing(4)
         
+        # 修复：LK系统显示10个槽位（0-9），LE系统显示11个槽位（0-10）
+        if self.system_type == 'LK':
+            # LK系统：内部槽位1-10映射为显示槽位0-9
+            display_slots = self.slots_count - 1  # 11 - 1 = 10个显示槽位
+        else:
+            # LE系统：显示全部11个槽位（0-10）
+            display_slots = self.slots_count
+        
         # 创建槽位 (假设2行布局)
         rows = 2
-        cols = (self.slots_count + rows - 1) // rows  # 向上取整
+        cols = (display_slots + rows - 1) // rows  # 向上取整
         
-        for i in range(self.slots_count):
+        for i in range(display_slots):
             slot_widget = SlotWidget(i, self.rack_id, self)
             slot_widget.slotClicked.connect(self.slotClicked.emit)
             
@@ -373,7 +382,7 @@ class RackDisplayWidget(QWidget):
         if rack_count > 0:
             # 创建机架组件
             for rack_id in range(rack_count):  # 从0开始
-                self._add_rack(rack_id, slots_per_rack)
+                self._add_rack(rack_id, slots_per_rack, system_type)
             
             # 显示机架区域
             self.status_label.hide()
@@ -384,9 +393,9 @@ class RackDisplayWidget(QWidget):
             self.status_label.show()
             self.scroll_area.hide()
     
-    def _add_rack(self, rack_id: int, slots_count: int):
+    def _add_rack(self, rack_id: int, slots_count: int, system_type: str):
         """添加机架"""
-        rack_widget = RackWidget(rack_id, slots_count, self)
+        rack_widget = RackWidget(rack_id, slots_count, system_type, self)
         rack_widget.slotClicked.connect(self._on_slot_clicked)
         
         self.rack_widgets.append(rack_widget)

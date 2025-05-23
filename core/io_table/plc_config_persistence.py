@@ -80,6 +80,7 @@ class PLCConfigPersistence:
                 - processed_devices: 处理后的设备数据
                 - addresses: 地址列表
                 - io_count: IO通道数
+                - rack_configurations: 新增 - 每个机架的独立配置
                 
         Returns:
             是否保存成功
@@ -91,7 +92,7 @@ class PLCConfigPersistence:
             save_data = {
                 "site_name": site_name,
                 "save_time": datetime.now().isoformat(),
-                "version": "1.0",
+                "version": "1.1",  # 升级版本号以区分新格式
                 "config": {},
                 "system_info": config_data.get("system_info", {}),
                 "io_count": config_data.get("io_count", 0),
@@ -105,6 +106,27 @@ class PLCConfigPersistence:
                 key = f"{rack_id},{slot_id}"
                 save_data["config"][key] = model_name
             
+            # 新增：保存机架独立配置（如果存在）
+            if "rack_configurations" in config_data:
+                rack_configs = {}
+                for rack_id, modules in config_data["rack_configurations"].items():
+                    # 将模块列表转换为可序列化的格式
+                    serializable_modules = []
+                    for module in modules:
+                        module_data = {
+                            "key": module.key if hasattr(module, 'key') else str(module),
+                            "title": module.title if hasattr(module, 'title') else str(module),
+                            "model": module.model if hasattr(module, 'model') else module.title if hasattr(module, 'title') else str(module),
+                            "module_type": module.module_type if hasattr(module, 'module_type') else "未知",
+                            "channels": module.channels if hasattr(module, 'channels') else 0,
+                            "description": module.description if hasattr(module, 'description') else "",
+                            "is_fixed": "🔒" in (module.title if hasattr(module, 'title') else "")
+                        }
+                        serializable_modules.append(module_data)
+                    rack_configs[str(rack_id)] = serializable_modules
+                save_data["rack_configurations"] = rack_configs
+                logger.info(f"保存机架配置: {len(rack_configs)} 个机架")
+            
             # 备份现有文件（如果存在）
             if config_file.exists():
                 self._backup_config(site_name, config_file)
@@ -117,6 +139,8 @@ class PLCConfigPersistence:
             logger.info(f"  - 模块数: {len(save_data['config'])}")
             logger.info(f"  - IO通道数: {save_data['io_count']}")
             logger.info(f"  - 地址数: {save_data['addresses_count']}")
+            if "rack_configurations" in save_data:
+                logger.info(f"  - 机架配置: {len(save_data['rack_configurations'])} 个机架")
             
             # 同时保存完整数据（用于恢复）
             full_data_file = config_file.with_suffix('.full.json')
@@ -167,13 +191,24 @@ class PLCConfigPersistence:
                         continue
                 
                 # 构建返回数据
-                return {
+                result = {
                     "config": config_dict,
                     "system_info": full_data.get("system_info", {}),
                     "addresses": full_data.get("addresses", []),
                     "processed_devices": full_data.get("processed_devices", []),
                     "io_count": full_data.get("io_count", 0)
                 }
+                
+                # 新增：加载机架配置（如果存在）
+                if "rack_configurations" in full_data:
+                    rack_configs = {}
+                    for rack_id_str, modules_data in full_data["rack_configurations"].items():
+                        rack_id = int(rack_id_str)
+                        rack_configs[rack_id] = modules_data  # 保存原始数据，稍后在UI层重建对象
+                    result["rack_configurations"] = rack_configs
+                    logger.info(f"加载机架配置: {len(rack_configs)} 个机架")
+                
+                return result
             
             # 如果没有完整数据，加载基本配置
             with open(config_file, 'r', encoding='utf-8') as f:
@@ -194,13 +229,24 @@ class PLCConfigPersistence:
             logger.info(f"  - 模块数: {len(config_dict)}")
             logger.info(f"  - IO通道数: {save_data.get('io_count', 0)}")
             
-            return {
+            result = {
                 "config": config_dict,
                 "system_info": save_data.get("system_info", {}),
                 "addresses": [],  # 基本配置不包含地址列表
                 "processed_devices": [],  # 基本配置不包含设备列表
                 "io_count": save_data.get("io_count", 0)
             }
+            
+            # 新增：从基本配置加载机架配置（如果存在）
+            if "rack_configurations" in save_data:
+                rack_configs = {}
+                for rack_id_str, modules_data in save_data["rack_configurations"].items():
+                    rack_id = int(rack_id_str)
+                    rack_configs[rack_id] = modules_data
+                result["rack_configurations"] = rack_configs
+                logger.info(f"从基本配置加载机架配置: {len(rack_configs)} 个机架")
+            
+            return result
             
         except Exception as e:
             logger.error(f"加载场站 '{site_name}' 配置失败: {e}", exc_info=True)

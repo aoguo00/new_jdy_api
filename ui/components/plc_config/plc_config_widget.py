@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QLabel, QFrame, 
     QPushButton, QGroupBox, QGridLayout, QTableWidget, QTableWidgetItem,
-    QHeaderView, QMessageBox, QProgressBar
+    QHeaderView, QMessageBox, QProgressBar, QComboBox
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QFont, QColor, QPalette
@@ -300,13 +300,34 @@ class PLCConfigWidget(QWidget):
             return
         
         self.io_data_loader = io_data_loader
-        self._current_data_source: List[PLCModule] = []
-        self._rack_info: Dict[str, Any] = {}
         
-        self.setup_ui()
-        self.connect_signals()
+        # 内部状态
+        self._rack_info = {}
+        self._current_data_source = []
         
-        logger.info("PLCConfigWidget: 初始化完成")
+        # 新增：当前选中的机架ID
+        self.current_rack_id = 0
+        
+        # 新增：每个机架的独立配置
+        # 格式: {rack_id: [模块列表]}
+        self._rack_configurations = {}
+        
+        # 新增：所有已使用的模块key集合（用于排除重复）
+        self._used_module_keys = set()
+        
+        # UI组件引用
+        self.transfer_widget = None
+        self.rack_widget = None
+        self.system_info = None
+        
+        # 设置UI
+        try:
+            self.setup_ui()
+            self.connect_signals()
+            logger.info("PLCConfigWidget: 初始化完成")
+        except Exception as e:
+            logger.error(f"PLCConfigWidget初始化失败: {e}", exc_info=True)
+            self._show_error_ui(str(e))
     
     def _show_error_ui(self, error_message: str):
         """显示错误UI"""
@@ -373,6 +394,43 @@ class PLCConfigWidget(QWidget):
         title.setStyleSheet("color: #262626; margin-bottom: 8px;")
         layout.addWidget(title)
         
+        # 新增：机架选择器
+        self.rack_selector_widget = QWidget()
+        rack_selector_layout = QHBoxLayout(self.rack_selector_widget)
+        rack_selector_layout.setContentsMargins(0, 0, 0, 8)
+        
+        rack_label = QLabel("目标机架：")
+        rack_label.setStyleSheet("color: #262626; font-weight: bold;")
+        rack_selector_layout.addWidget(rack_label)
+        
+        self.rack_selector = QComboBox()
+        self.rack_selector.setMinimumWidth(150)
+        self.rack_selector.setStyleSheet("""
+            QComboBox {
+                padding: 5px 10px;
+                border: 1px solid #d9d9d9;
+                border-radius: 4px;
+                background-color: white;
+                font-size: 13px;
+            }
+            QComboBox:hover {
+                border-color: #40a9ff;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+        """)
+        self.rack_selector.currentIndexChanged.connect(self._on_rack_selection_changed)
+        rack_selector_layout.addWidget(self.rack_selector)
+        
+        # 机架状态提示
+        self.rack_status_label = QLabel("")
+        self.rack_status_label.setStyleSheet("color: #8c8c8c; font-size: 12px; margin-left: 10px;")
+        rack_selector_layout.addWidget(self.rack_status_label)
+        
+        rack_selector_layout.addStretch()
+        layout.addWidget(self.rack_selector_widget)
+        
         # 增强版穿梭框
         self.transfer_widget = EnhancedTransferWidget(self)
         layout.addWidget(self.transfer_widget)
@@ -429,8 +487,89 @@ class PLCConfigWidget(QWidget):
         """处理穿梭框变化"""
         logger.info(f"传输变化: {transfer_data}")
         
+        # 获取当前机架的配置
+        rack_info = self.io_data_loader.get_rack_info()
+        system_type = rack_info.get('system_type', 'LK')
+        slots_per_rack = rack_info.get('slots_per_rack', 11)
+        
+        # 计算可用槽位数
+        if system_type == 'LE_CPU':
+            # LE_CPU系统：槽位0固定给CPU，用户可用槽位从1开始
+            user_slots = slots_per_rack - 1
+        else:
+            # LK系统：槽位1固定给DP，用户可用槽位从2开始
+            user_slots = slots_per_rack - 2
+        
+        # 获取当前右侧的模块数量（排除固定模块）
+        right_items = self.transfer_widget.get_right_items()
+        if system_type == 'LE_CPU':
+            # 排除LE5118 CPU模块
+            user_modules = [m for m in right_items 
+                           if 'LE5118' not in m.key.upper() and 
+                           'LE5118' not in (m.title.replace(' 🔒', '') if hasattr(m, 'title') else '').upper()]
+        else:
+            # LK系统所有右侧模块都是用户模块
+            user_modules = right_items
+        
+        current_count = len(user_modules)
+        
+        # 检查是否超过限制
+        if current_count > user_slots:
+            # 超过限制，需要阻止这次操作
+            logger.warning(f"槽位已满：当前 {current_count} 个模块，最多允许 {user_slots} 个")
+            
+            # 显示警告
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self, 
+                "槽位已满", 
+                f"机架槽位已满！\n\n"
+                f"系统类型：{system_type}\n"
+                f"当前模块数：{current_count} 个\n"
+                f"最大允许数：{user_slots} 个\n\n"
+                f"请先移除一些模块再添加新的模块。"
+            )
+            
+            # 撤销最后一次操作
+            # 找出新添加的模块并移除
+            if hasattr(self.transfer_widget, '_state') and hasattr(self.transfer_widget._state, 'right_items'):
+                # 移除最后添加的模块
+                if len(self.transfer_widget._state.right_items) > user_slots:
+                    # 计算需要移除的模块数量
+                    excess_count = current_count - user_slots
+                    
+                    # 移除多余的模块（从末尾开始）
+                    modules_to_remove = []
+                    for i in range(excess_count):
+                        if self.transfer_widget._state.right_items:
+                            module = self.transfer_widget._state.right_items.pop()
+                            module.direction = TransferDirection.LEFT
+                            self.transfer_widget._state.left_items.append(module)
+                            modules_to_remove.append(module.title if hasattr(module, 'title') else str(module))
+                    
+                    # 刷新显示
+                    self.transfer_widget._refresh_display()
+                    
+                    logger.info(f"已自动移除 {excess_count} 个超出限制的模块: {modules_to_remove}")
+            
+            # 不继续执行后续操作
+            return
+        
+        # 保存当前机架的配置
+        self._save_current_rack_configuration()
+        
+        # 更新已使用模块集合
+        self._update_transfer_data_source()
+        
+        # 刷新左侧列表显示（排除已使用的模块）
+        if hasattr(self.transfer_widget, '_refresh_display'):
+            self.transfer_widget._refresh_display()
+        
         # 更新机架显示
         self._update_rack_display()
+        
+        # 更新机架状态提示
+        self._update_rack_status()
         
         # 更新系统信息
         self._update_system_info()
@@ -499,72 +638,54 @@ class PLCConfigWidget(QWidget):
             config = {}
             rack_info = self.io_data_loader.get_rack_info()
             system_type = rack_info.get('system_type', 'LK')
+            rack_count = rack_info.get('rack_count', 0)
+            slots_per_rack = rack_info.get('slots_per_rack', 11)
             
-            # 获取右侧已选择的模块
-            right_items = self.transfer_widget.get_right_items()
+            # 确保当前机架的配置已保存
+            self._save_current_rack_configuration()
             
-            # 为LE_CPU系统自动处理LE5118 CPU到槽位0
-            if system_type == 'LE_CPU':
-                # 检查右侧是否有LE5118 CPU模块
-                le5118_found = False
-                for item in right_items:
-                    # 检查key和标题（移除可能的锁图标）
-                    clean_title = item.title.replace(' 🔒', '') if hasattr(item, 'title') else ''
-                    if item.key.upper() == 'LE5118' or item.key.upper().startswith('LE5118') or \
-                       clean_title.upper() == 'LE5118' or clean_title.upper().startswith('LE5118'):
-                        # 将LE5118固定配置在槽位0
-                        for rack_id in range(rack_info.get('rack_count', 1)):
+            # 为每个机架构建配置
+            for rack_id in range(rack_count):
+                # 获取该机架保存的模块
+                rack_modules = self._rack_configurations.get(rack_id, [])
+                
+                if system_type == 'LE_CPU':
+                    # LE_CPU系统：槽位0固定为LE5118 CPU
+                    # 检查是否有LE5118模块
+                    le5118_found = False
+                    for module in rack_modules:
+                        clean_title = module.title.replace(' 🔒', '') if hasattr(module, 'title') else ''
+                        if 'LE5118' in module.key.upper() or 'LE5118' in clean_title.upper():
                             config[(rack_id, 0)] = 'LE5118'
-                            logger.info(f"LE_CPU系统：自动在机架{rack_id}槽位0配置LE5118 CPU")
-                        le5118_found = True
-                        break
-                
-                if not le5118_found:
-                    logger.warning("LE_CPU系统但未找到LE5118 CPU模块，请确保已添加到右侧")
-                
-                # 处理其他模块（从槽位1开始）
-                slot_index = 1
-                for item in right_items:
-                    # 跳过已处理的LE5118（检查时移除锁图标）
-                    clean_title = item.title.replace(' 🔒', '') if hasattr(item, 'title') else ''
-                    if item.key.upper() == 'LE5118' or item.key.upper().startswith('LE5118') or \
-                       clean_title.upper() == 'LE5118' or clean_title.upper().startswith('LE5118'):
-                        continue
-                    
-                    # 为其他模块分配槽位
-                    if slot_index < rack_info.get('slots_per_rack', 11):
-                        # 使用模块型号而不是key
-                        model_name = item.model if hasattr(item, 'model') and item.model else item.title.split('(')[0].strip()
-                        config[(0, slot_index)] = model_name
-                        slot_index += 1
-            else:
-                # LK系统的处理逻辑
-                # LK系统：槽位1固定为DP模块，用户配置从槽位2开始
-                for rack_id in range(rack_info.get('rack_count', 1)):
-                    # 槽位1固定为PROFIBUS-DP
-                    config[(rack_id, 1)] = 'PROFIBUS-DP'
-                    logger.info(f"LK系统：自动在机架{rack_id}槽位1配置PROFIBUS-DP模块")
-                
-                # 将右侧的模块从槽位2开始分配
-                slot_index = 2
-                rack_id = 0
-                slots_per_rack = rack_info.get('slots_per_rack', 11)
-                
-                for item in right_items:
-                    # 如果当前机架满了，切换到下一个机架
-                    if slot_index >= slots_per_rack:
-                        rack_id += 1
-                        slot_index = 2  # LK系统从槽位2开始
-                        if rack_id >= rack_info.get('rack_count', 1):
-                            logger.warning("模块数量超过可用槽位数")
+                            le5118_found = True
                             break
                     
-                    # 使用模块型号而不是key
-                    model_name = item.model if hasattr(item, 'model') and item.model else item.title.split('(')[0].strip()
-                    config[(rack_id, slot_index)] = model_name
-                    slot_index += 1
+                    if le5118_found:
+                        # 其他模块从槽位1开始
+                        slot_index = 1
+                        for module in rack_modules:
+                            clean_title = module.title.replace(' 🔒', '') if hasattr(module, 'title') else ''
+                            # 跳过LE5118
+                            if 'LE5118' in module.key.upper() or 'LE5118' in clean_title.upper():
+                                continue
+                            
+                            if slot_index < slots_per_rack:
+                                model_name = module.model if hasattr(module, 'model') and module.model else module.title.split('(')[0].strip()
+                                config[(rack_id, slot_index)] = model_name
+                                slot_index += 1
+                else:
+                    # LK系统：槽位1固定为PROFIBUS-DP
+                    config[(rack_id, 1)] = 'PROFIBUS-DP'
+                    
+                    # 用户模块从槽位2开始
+                    slot_index = 2
+                    for module in rack_modules:
+                        if slot_index < slots_per_rack:
+                            model_name = module.model if hasattr(module, 'model') and module.model else module.title.split('(')[0].strip()
+                            config[(rack_id, slot_index)] = model_name
+                            slot_index += 1
             
-            logger.info(f"获取当前模块配置: 系统类型={system_type}, 配置={len(config)}个模块")
+            logger.info(f"获取完整模块配置: 系统类型={system_type}, 总配置={len(config)}个模块")
             return config
             
         except Exception as e:
@@ -671,12 +792,18 @@ class PLCConfigWidget(QWidget):
             logger.error("transfer_widget未初始化")
             return
         
+        # 新增：清空旧的机架配置，避免场站间配置混用
+        logger.info("清空旧的机架配置")
+        self._rack_configurations.clear()
+        self._used_module_keys.clear()
+        
         # 保存数据源
-        self._current_data_source = modules
+        self._current_data_source = modules.copy()
         
         # 获取系统类型和机架信息
         rack_info = self.io_data_loader.get_rack_info()
         system_type = rack_info.get('system_type', 'LK')
+        rack_count = rack_info.get('rack_count', 0)
         
         # 新增：LE系列CPU自动处理逻辑
         if system_type == 'LE_CPU':
@@ -693,38 +820,48 @@ class PLCConfigWidget(QWidget):
                 else:
                     other_modules.append(module)
             
-            # 设置穿梭框数据源（左侧只显示非CPU模块）
-            self.transfer_widget.set_data_source(other_modules)
-            
-            # 如果找到LE5118，自动添加到右侧
-            if le5118_modules:
-                logger.info(f"将 {len(le5118_modules)} 个LE5118 CPU模块自动添加到右侧")
-                # 直接操作穿梭框的右侧面板
-                for cpu_module in le5118_modules:
-                    # 修改模块的标题和描述，标明它是固定的
-                    cpu_module.title = f"{cpu_module.title} 🔒"  # 添加锁图标
-                    cpu_module.description = f"{cpu_module.description} (固定在槽位0，不可移除)"
+            # 如果找到LE5118，自动添加到每个机架的配置中
+            if le5118_modules and rack_count > 0:
+                for rack_id in range(rack_count):
+                    if rack_id not in self._rack_configurations:
+                        self._rack_configurations[rack_id] = []
                     
-                    # 使用穿梭框的内部方法将CPU添加到右侧
-                    if hasattr(self.transfer_widget, 'right_panel') and self.transfer_widget.right_panel:
-                        self.transfer_widget.right_panel.add_item(cpu_module)
-                        # 更新穿梭框的内部状态
-                        if hasattr(self.transfer_widget, '_state') and hasattr(self.transfer_widget._state, 'right_items'):
-                            # right_items是列表，使用append方法
-                            self.transfer_widget._state.right_items.append(cpu_module)
+                    # 检查该机架是否已有LE5118
+                    has_le5118 = any(
+                        'LE5118' in m.key.upper() or 
+                        'LE5118' in (m.title.replace(' 🔒', '') if hasattr(m, 'title') else '').upper()
+                        for m in self._rack_configurations[rack_id]
+                    )
+                    
+                    if not has_le5118:
+                        for cpu_module in le5118_modules:
+                            # 创建模块副本，避免共享引用
+                            cpu_copy = PLCModule(
+                                key=cpu_module.key,
+                                title=f"{cpu_module.title} 🔒",  # 添加锁图标
+                                description=f"{cpu_module.description} (固定在槽位0，不可移除)",
+                                disabled=cpu_module.disabled,
+                                icon=cpu_module.icon,
+                                model=cpu_module.model if hasattr(cpu_module, 'model') else cpu_module.title,
+                                direction=cpu_module.direction
+                            )
+                            # 复制其他属性
+                            for attr in ['module_type', 'channels', 'manufacturer', 'data']:
+                                if hasattr(cpu_module, attr):
+                                    setattr(cpu_copy, attr, getattr(cpu_module, attr))
+                            
+                            self._rack_configurations[rack_id].append(cpu_copy)
+                            logger.info(f"自动添加LE5118 CPU到机架 {rack_id}")
                 
-                # 触发传输变化信号
-                self.transfer_widget.transferChange.emit({
-                    'from': 'left',
-                    'to': 'right',
-                    'items': le5118_modules
-                })
-                
-                # 注意：机架显示和系统信息会由PLCConfigAdapter在设置完rack_info后更新
-                # 这里不需要立即更新
-        else:
-            # LK系统或其他系统，正常设置数据源
-            self.transfer_widget.set_data_source(modules)
+                # 将LE5118加入已使用集合
+                for module in le5118_modules:
+                    self._used_module_keys.add(module.key)
+            
+            # 设置数据源为其他模块
+            self._current_data_source = other_modules
+        
+        # 恢复当前机架的配置
+        self._restore_rack_configuration(self.current_rack_id)
         
         logger.info(f"PLCConfigWidget: 已设置 {len(modules)} 个模块")
     
@@ -737,6 +874,29 @@ class PLCConfigWidget(QWidget):
         """
         self._rack_info = rack_info.copy()
         
+        # 更新机架选择器
+        if hasattr(self, 'rack_selector') and self.rack_selector:
+            self.rack_selector.clear()
+            rack_count = rack_info.get('rack_count', 0)
+            
+            # 初始化每个机架的配置
+            for i in range(rack_count):
+                if i not in self._rack_configurations:
+                    self._rack_configurations[i] = []
+            
+            if rack_count > 0:
+                for i in range(rack_count):
+                    self.rack_selector.addItem(f"机架 {i + 1}", i)
+                self.rack_selector.setCurrentIndex(0)
+                self.current_rack_id = 0
+                self.rack_selector_widget.setVisible(True)
+                
+                # 更新机架状态提示
+                self._update_rack_status()
+            else:
+                self.rack_selector_widget.setVisible(False)
+                logger.warning("没有可用的机架")
+        
         # 更新机架显示
         if hasattr(self, 'rack_widget') and self.rack_widget:
             self.rack_widget.set_rack_info(rack_info)
@@ -745,6 +905,52 @@ class PLCConfigWidget(QWidget):
         self._update_system_info()
         
         logger.info(f"系统信息已更新: {rack_info.get('system_type', '未知')}")
+    
+    def _update_rack_status(self):
+        """更新机架状态提示"""
+        if not hasattr(self, 'rack_status_label') or not self.rack_status_label:
+            return
+        
+        try:
+            # 获取当前机架的配置
+            rack_info = self.io_data_loader.get_rack_info()
+            
+            # 获取当前机架的模块
+            current_rack_modules = self._rack_configurations.get(self.current_rack_id, [])
+            
+            # 获取槽位信息
+            slots_per_rack = rack_info.get('slots_per_rack', 11)
+            system_type = rack_info.get('system_type', 'LK')
+            
+            # 计算可用槽位
+            if system_type == 'LE_CPU':
+                # LE_CPU系统：槽位0固定给CPU，用户可用槽位从1开始
+                user_slots = slots_per_rack - 1
+                # 计算已使用的槽位（不包括LE5118 CPU）
+                used_slots = len([m for m in current_rack_modules 
+                                if 'LE5118' not in m.key.upper() and 
+                                'LE5118' not in (m.title.replace(' 🔒', '') if hasattr(m, 'title') else '').upper()])
+            else:
+                # LK系统：槽位1固定给DP，用户可用槽位从2开始
+                user_slots = slots_per_rack - 2
+                used_slots = len(current_rack_modules)
+            
+            available_slots = user_slots - used_slots
+            
+            # 更新状态标签
+            status_text = f"已用 {used_slots}/{user_slots} 槽位，剩余 {available_slots} 个"
+            if available_slots == 0:
+                self.rack_status_label.setStyleSheet("color: #ff4d4f; font-size: 12px; margin-left: 10px;")
+            elif available_slots <= 2:
+                self.rack_status_label.setStyleSheet("color: #faad14; font-size: 12px; margin-left: 10px;")
+            else:
+                self.rack_status_label.setStyleSheet("color: #52c41a; font-size: 12px; margin-left: 10px;")
+            
+            self.rack_status_label.setText(status_text)
+            
+        except Exception as e:
+            logger.error(f"更新机架状态失败: {e}", exc_info=True)
+            self.rack_status_label.setText("")
     
     def reset_configuration(self):
         """重置配置"""
@@ -806,6 +1012,10 @@ class PLCConfigWidget(QWidget):
     def _reset_ui_state(self):
         """重置UI状态"""
         try:
+            # 清空机架配置
+            self._rack_configurations.clear()
+            self._used_module_keys.clear()
+            
             # 清空穿梭框选择
             if self.transfer_widget:
                 self.transfer_widget.clear_selections()
@@ -894,6 +1104,9 @@ class PLCConfigWidget(QWidget):
             bool: 应用是否成功
         """
         try:
+            # 保存当前机架的配置（确保最新的修改被保存）
+            self._save_current_rack_configuration()
+            
             # 获取当前配置
             current_config = self._get_current_module_config()
             if not current_config:
@@ -913,8 +1126,14 @@ class PLCConfigWidget(QWidget):
             logger.info(f"准备应用PLC配置: {len(config_dict_for_validation)} 个模块")
             logger.debug(f"配置详情: {config_dict_for_validation}")
             
+            # 准备rack_configurations（如果有的话）
+            rack_configurations_to_save = None
+            if hasattr(self, '_rack_configurations') and self._rack_configurations:
+                rack_configurations_to_save = self._rack_configurations
+                logger.info(f"准备保存 {len(rack_configurations_to_save)} 个机架的独立配置")
+            
             # 调用IODataLoader的保存方法，它会进行完整的验证和保存
-            success = self.io_data_loader.save_configuration(config_dict_for_validation)
+            success = self.io_data_loader.save_configuration(config_dict_for_validation, rack_configurations_to_save)
             
             # 恢复按钮状态
             if hasattr(self, 'system_info') and self.system_info:
@@ -1063,3 +1282,245 @@ class PLCConfigWidget(QWidget):
         
         # 其他情况都可以移除
         return True 
+
+    def _on_rack_selection_changed(self, index: int):
+        """处理机架选择器变化"""
+        if not hasattr(self, 'rack_selector') or not self.rack_selector or index < 0:
+            return
+        
+        selected_rack_id = self.rack_selector.itemData(index)
+        if selected_rack_id is None:
+            return
+        
+        # 保存当前机架的配置
+        self._save_current_rack_configuration()
+        
+        # 切换到新机架
+        self.current_rack_id = selected_rack_id
+        logger.info(f"机架选择变化: 当前机架ID={selected_rack_id}")
+        
+        # 恢复新机架的配置
+        self._restore_rack_configuration(selected_rack_id)
+        
+        # 更新机架状态提示
+        self._update_rack_status()
+        
+        # 更新机架显示
+        self._update_rack_display()
+        
+        # 更新系统信息
+        self._update_system_info()
+    
+    def _save_current_rack_configuration(self):
+        """保存当前机架的配置"""
+        if not hasattr(self, 'transfer_widget') or not self.transfer_widget:
+            return
+        
+        # 获取右侧的所有模块
+        right_items = self.transfer_widget.get_right_items()
+        
+        # 保存到当前机架的配置中
+        self._rack_configurations[self.current_rack_id] = right_items.copy()
+        
+        logger.info(f"保存机架 {self.current_rack_id} 的配置: {len(right_items)} 个模块")
+    
+    def _restore_rack_configuration(self, rack_id: int):
+        """恢复指定机架的配置"""
+        if not hasattr(self, 'transfer_widget') or not self.transfer_widget:
+            return
+        
+        # 获取机架的已保存配置
+        saved_modules = self._rack_configurations.get(rack_id, [])
+        
+        # 临时断开信号连接，避免触发多次更新
+        self.transfer_widget.transferChange.disconnect(self._on_transfer_change)
+        
+        try:
+            # 清空穿梭框的选择和右侧内容
+            self.transfer_widget.clear_selections()
+            if hasattr(self.transfer_widget, '_state'):
+                self.transfer_widget._state.right_items.clear()
+                self.transfer_widget._state.left_selected.clear()
+                self.transfer_widget._state.right_selected.clear()
+            
+            # 重新设置数据源（排除所有机架已使用的模块）
+            self._update_transfer_data_source()
+            
+            # 恢复该机架的模块到右侧
+            if saved_modules:
+                logger.info(f"恢复机架 {rack_id} 的配置: {len(saved_modules)} 个模块")
+                for module in saved_modules:
+                    if hasattr(self.transfer_widget, 'right_panel') and self.transfer_widget.right_panel:
+                        self.transfer_widget.right_panel.add_item(module)
+                        if hasattr(self.transfer_widget, '_state') and hasattr(self.transfer_widget._state, 'right_items'):
+                            self.transfer_widget._state.right_items.append(module)
+            else:
+                logger.info(f"机架 {rack_id} 没有已保存的配置")
+            
+            # 刷新显示
+            self.transfer_widget._refresh_display()
+            
+        finally:
+            # 重新连接信号
+            self.transfer_widget.transferChange.connect(self._on_transfer_change)
+    
+    def _update_transfer_data_source(self):
+        """更新穿梭框的数据源，排除所有机架已使用的模块"""
+        if not hasattr(self, 'transfer_widget') or not self.transfer_widget:
+            return
+        
+        # 收集所有机架已使用的模块key
+        self._used_module_keys.clear()
+        for rack_id, modules in self._rack_configurations.items():
+            for module in modules:
+                if hasattr(module, 'key'):
+                    self._used_module_keys.add(module.key)
+        
+        # 过滤出未使用的模块
+        available_modules = []
+        for module in self._current_data_source:
+            if module.key not in self._used_module_keys:
+                available_modules.append(module)
+        
+        # 更新穿梭框的左侧列表
+        if hasattr(self.transfer_widget, '_state'):
+            self.transfer_widget._state.left_items = available_modules
+        
+        logger.info(f"更新数据源: 总模块数={len(self._current_data_source)}, 已使用={len(self._used_module_keys)}, 可用={len(available_modules)}")
+    
+    def _update_rack_display(self):
+        """更新机架显示"""
+        if not hasattr(self, 'rack_widget') or not self.rack_widget:
+            return
+        
+        # 获取当前配置
+        config = self._get_current_module_config()
+        
+        # 更新机架显示
+        self.rack_widget.update_configuration(config)
+        
+        logger.debug("机架显示已更新")
+    
+    def _update_system_info(self):
+        """更新系统信息"""
+        if not hasattr(self, 'system_info') or not self.system_info:
+            return
+        
+        try:
+            # 获取系统信息
+            rack_info = self.io_data_loader.get_rack_info()
+            system_type = rack_info.get('system_type', '未知')
+            rack_count = rack_info.get('rack_count', 0)
+            
+            # 获取配置状态
+            config = self._get_current_module_config()
+            configured_count = len(config)
+            # 修改：使用可用槽数而不是物理槽数进行显示
+            # 每个机架的可用槽数 = 物理槽数 - 1（槽位0通常被系统占用）
+            available_slots_per_rack = rack_info.get('slots_per_rack', 11) - 1
+            total_available_slots = rack_count * available_slots_per_rack
+            
+            # 获取IO通道数
+            io_count = self._calculate_io_count()
+            
+            # 检查保存状态
+            current_site = getattr(self.io_data_loader, 'current_site_name', None)
+            is_saved = False
+            if current_site and hasattr(self.io_data_loader, 'persistence_manager'):
+                is_saved = self.io_data_loader.persistence_manager.has_site_config(current_site)
+            
+            # 更新显示
+            self.system_info.update_system_info(system_type, rack_count)
+            self.system_info.update_config_status(configured_count, total_available_slots)
+            self.system_info.update_io_count(io_count)
+            self.system_info.update_save_status(is_saved, current_site if current_site else "")
+            
+        except Exception as e:
+            logger.error(f"更新系统信息失败: {e}", exc_info=True)
+    
+    def _calculate_io_count(self) -> int:
+        """计算IO通道总数 - 基于旧版PLCConfigEmbeddedWidget的统计逻辑"""
+        try:
+            # 获取当前配置的模块
+            current_config = self._get_current_module_config()
+            if not current_config:
+                return 0
+            
+            # 按旧版逻辑统计各类型通道数
+            summary = {
+                "AI": 0, "AO": 0, "DI": 0, "DO": 0, 
+                "未录入_IO": 0, "CPU_count": 0
+            }
+            
+            # 遍历每个配置的模块
+            for (rack_id, slot_id), model_name in current_config.items():
+                try:
+                    # 获取模块信息
+                    module_info = self.io_data_loader.get_module_by_model(model_name)
+                    if not module_info:
+                        logger.warning(f"无法获取模块 {model_name} 的信息")
+                        continue
+                    
+                    module_type = module_info.get('type', '未知')
+                    total_channels = module_info.get('channels', 0)
+                    
+                    io_counted_for_module = False
+                    
+                    # 处理带子通道的CPU模块 (如LE5118)
+                    if module_type == "CPU" and "sub_channels" in module_info:
+                        summary["CPU_count"] += 1
+                        for sub_type, sub_count in module_info["sub_channels"].items():
+                            if sub_type in summary:
+                                summary[sub_type] += sub_count
+                        io_counted_for_module = True
+                        logger.debug(f"CPU模块 {model_name} 子通道: {module_info['sub_channels']}")
+                    
+                    # 处理带子通道的混合IO模块 (DI/DO, AI/AO)
+                    elif module_type in ["DI/DO", "AI/AO"] and "sub_channels" in module_info:
+                        for sub_type, sub_count in module_info["sub_channels"].items():
+                            if sub_type in summary:
+                                summary[sub_type] += sub_count
+                        io_counted_for_module = True
+                        logger.debug(f"混合模块 {model_name} 子通道: {module_info['sub_channels']}")
+                    
+                    # 处理标准的单一类型IO模块
+                    elif module_type in summary and module_type not in ['DP', 'COM', 'CPU', 'RACK']:
+                        summary[module_type] += total_channels
+                        io_counted_for_module = True
+                        logger.debug(f"标准IO模块 {model_name} ({module_type}): {total_channels} 通道")
+                    
+                    # 处理没有子通道的CPU模块（仅计数CPU，不计IO）
+                    elif module_type == "CPU" and "sub_channels" not in module_info:
+                        summary["CPU_count"] += 1
+                        logger.debug(f"标准CPU模块 {model_name}: 不计入IO通道")
+                    
+                    # 未统计的模块且有通道数的，计入未录入IO
+                    elif not io_counted_for_module and module_type not in ['DP', 'COM', 'CPU', 'RACK', '未录入'] and total_channels > 0:
+                        summary["未录入_IO"] += total_channels
+                        logger.debug(f"未录入类型模块 {model_name} ({module_type}): {total_channels} 通道")
+                    
+                    else:
+                        logger.debug(f"模块 {model_name} ({module_type}): 不计入IO统计")
+                        
+                except Exception as e:
+                    logger.error(f"处理模块 {model_name} 时出错: {e}")
+                    continue
+            
+            # 计算总IO通道数
+            total_io_channels = sum(summary.get(t, 0) for t in ['AI', 'AO', 'DI', 'DO', '未录入_IO'])
+            
+            logger.info(f"IO通道统计完成:")
+            for ch_type in ['AI', 'AO', 'DI', 'DO']:
+                if summary.get(ch_type, 0) > 0:
+                    logger.info(f"  {ch_type} 通道数: {summary[ch_type]}")
+            if summary.get("未录入_IO", 0) > 0:
+                logger.info(f"  未录入类型IO通道数: {summary['未录入_IO']}")
+            if summary.get("CPU_count", 0) > 0:
+                logger.info(f"  CPU模块数量: {summary['CPU_count']}")
+            logger.info(f"  总IO通道数: {total_io_channels}")
+            
+            return total_io_channels
+            
+        except Exception as e:
+            logger.error(f"计算IO通道数失败: {e}", exc_info=True)
+            return 0 

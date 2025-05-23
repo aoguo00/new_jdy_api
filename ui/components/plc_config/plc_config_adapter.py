@@ -162,6 +162,7 @@ class PLCConfigAdapter(QWidget):
                     self.modern_widget.update_system_info(rack_info)
                     
                     # 再更新现代组件的数据源（可用模块列表）
+                    # 这会清空旧的机架配置，确保不会混用不同场站的配置
                     self.modern_widget.set_data_source(transfer_items)
                     
                     # 恢复缓存的配置到UI
@@ -194,10 +195,16 @@ class PLCConfigAdapter(QWidget):
         self.modern_widget.update_system_info(rack_info)
         
         # 4. 再更新现代组件的数据源 - 这样LE5118自动添加时机架已经准备好
+        # 这里会自动清空旧的机架配置
         self.modern_widget.set_data_source(transfer_items)
         
-        # 5. 从IODataLoader恢复已有配置
-        self._restore_existing_config()
+        # 5. 从IODataLoader恢复已有配置（如果有）
+        # 只有在有缓存配置时才恢复，否则保持空配置
+        current_config = self.io_data_loader.get_current_plc_config()
+        if current_config:
+            self._restore_existing_config()
+        else:
+            logger.info("新场站没有已保存的配置，保持空配置状态")
         
         logger.info("PLCConfigAdapter: 设备数据处理完成")
     
@@ -499,7 +506,19 @@ class PLCConfigAdapter(QWidget):
             
             # 更新现代组件
             self.modern_widget.update_system_info(rack_info)
-            self._apply_config_to_modern_widget(current_config)
+            
+            # 新增：检查是否有rack_configurations需要恢复
+            if hasattr(self.io_data_loader, 'current_rack_configurations') and self.io_data_loader.current_rack_configurations:
+                logger.info(f"从缓存恢复机架配置: {len(self.io_data_loader.current_rack_configurations)} 个机架")
+                self._restore_rack_configurations(self.io_data_loader.current_rack_configurations)
+            else:
+                # 如果没有新格式的rack_configurations，使用旧逻辑
+                self._apply_config_to_modern_widget(current_config)
+            
+            # 修复：强制更新机架显示
+            if hasattr(self.modern_widget, '_update_rack_display') and self.modern_widget._update_rack_display:
+                self.modern_widget._update_rack_display()
+                logger.info("已触发机架显示更新")
             
             logger.info("成功从缓存恢复配置到现代组件")
             return True
@@ -507,6 +526,56 @@ class PLCConfigAdapter(QWidget):
         except Exception as e:
             logger.error(f"从缓存恢复配置失败: {e}", exc_info=True)
             return False
+    
+    def _restore_rack_configurations(self, rack_configurations: Dict[int, List]):
+        """恢复机架配置到现代组件"""
+        try:
+            if not hasattr(self.modern_widget, '_rack_configurations'):
+                logger.warning("现代组件不支持rack_configurations")
+                return
+            
+            # 新增：先清空现有配置，避免混用
+            self.modern_widget._rack_configurations.clear()
+            logger.info("已清空旧的机架配置，准备恢复新配置")
+            
+            # 重建机架配置
+            for rack_id, modules_data in rack_configurations.items():
+                modules_list = []
+                
+                for module_data in modules_data:
+                    # 从保存的数据重建PLCModule对象
+                    plc_module = PLCModule(
+                        key=module_data.get('key', ''),
+                        title=module_data.get('title', ''),
+                        description=module_data.get('description', ''),
+                        model=module_data.get('model', module_data.get('title', '')),
+                        module_type=module_data.get('module_type', '未知'),
+                        channels=module_data.get('channels', 0),
+                        disabled=False,
+                        icon=self._get_module_icon(module_data.get('module_type', ''))
+                    )
+                    
+                    # 如果是固定模块（如LE5118），保持其固定状态
+                    if module_data.get('is_fixed', False):
+                        plc_module.title = f"{plc_module.title} 🔒"
+                        plc_module.description = f"{plc_module.description} (固定在槽位0，不可移除)"
+                    
+                    modules_list.append(plc_module)
+                
+                self.modern_widget._rack_configurations[rack_id] = modules_list
+                logger.info(f"恢复机架 {rack_id} 的配置: {len(modules_list)} 个模块")
+            
+            # 恢复当前机架的显示
+            if hasattr(self.modern_widget, '_restore_rack_configuration'):
+                self.modern_widget._restore_rack_configuration(self.modern_widget.current_rack_id)
+            
+            # 修复：触发机架显示更新
+            if hasattr(self.modern_widget, '_update_rack_display'):
+                self.modern_widget._update_rack_display()
+                logger.info("已触发机架显示更新（从rack_configurations恢复后）")
+            
+        except Exception as e:
+            logger.error(f"恢复机架配置失败: {e}", exc_info=True)
     
     def reset_to_initial_state(self):
         """

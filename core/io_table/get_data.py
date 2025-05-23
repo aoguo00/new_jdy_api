@@ -1019,9 +1019,11 @@ class IODataLoader:
     提高了代码的可维护性和扩展性。
     """
     # 允许出现在穿梭框供用户选择的模块类型 (RACK类型已移除，因为它代表机架本身)
-    # CPU类型现在也允许在穿梭框中显示，以便LE_CPU系统的用户可以选择LE5118
-    # DP模块保持在允许列表中，虽然LK系统会自动在槽位1配置DP，但用户仍可能需要看到它
-    ALLOWED_MODULE_TYPES = ['CPU', 'AI', 'AO', 'DI', 'DO', 'DI/DO', 'AI/AO', 'COM', 'DP'] 
+    # CPU和DP模块不在穿梭框中显示：
+    # - LK系列的CPU不放在LK117机架上
+    # - DP模块在LK系统槽位1自动配置，无需用户选择
+    # 穿梭框只展示AI、AO、DI、DO、DI/DO、AI/AO和COM通信模块
+    ALLOWED_MODULE_TYPES = ['AI', 'AO', 'DI', 'DO', 'DI/DO', 'AI/AO', 'COM'] 
     
     def __init__(self):
         """构造函数，初始化所有辅助类和内部状态变量。"""
@@ -1125,10 +1127,20 @@ class IODataLoader:
                 return False
             
             # 恢复PLC配置
-            self.current_plc_config = cached_data.get('config', {}).copy()
+            if 'config' in cached_data:
+                self.current_plc_config = cached_data['config']
+            
+            # 新增：恢复rack_configurations（如果存在）
+            if 'rack_configurations' in cached_data:
+                self.current_rack_configurations = cached_data['rack_configurations']
+                logger.info(f"  - 恢复了 {len(self.current_rack_configurations)} 个机架的独立配置")
+            else:
+                # 清空rack_configurations，避免使用过时的数据
+                self.current_rack_configurations = {}
             
             # 恢复处理后的设备数据
-            self.processed_enriched_devices = cached_data.get('processed_devices', []).copy()
+            if 'processed_devices' in cached_data:
+                self.processed_enriched_devices = cached_data['processed_devices']
             
             # 恢复系统信息到SystemSetupManager
             system_info = cached_data.get('system_info', {})
@@ -1184,6 +1196,11 @@ class IODataLoader:
                 'addresses': self.last_generated_addresses.copy(),
                 'io_count': self.last_generated_io_count
             }
+            
+            # 新增：如果有rack_configurations，也添加到缓存数据中
+            if hasattr(self, 'current_rack_configurations') and self.current_rack_configurations:
+                cache_data['rack_configurations'] = self.current_rack_configurations
+                logger.info(f"  - 保存了 {len(self.current_rack_configurations)} 个机架的独立配置")
             
             # 保存到内存缓存（向后兼容）
             self.site_config_cache[self.current_site_name] = cache_data
@@ -1313,19 +1330,27 @@ class IODataLoader:
         logger.info(f"  - SPECIAL_ALLOWED_MODULES count: {len(self.SPECIAL_ALLOWED_MODULES)}")
         
         source_for_shuttle: List[Dict[str, Any]]
-        # 判断模块来源：优先使用已处理的设备数据，否则使用所有预定义模块
-        if self.processed_enriched_devices:
+        
+        # 重要修改：只有当实际有和利时设备时，才使用processed_enriched_devices
+        # 检查是否有有效的机架数量（表示确实有和利时PLC系统）
+        has_valid_plc_system = (
+            self.processed_enriched_devices and 
+            hasattr(self, 'system_setup_manager') and 
+            self.system_setup_manager.rack_count > 0
+        )
+        
+        if has_valid_plc_system:
             source_for_shuttle = self.processed_enriched_devices 
             logger.info(f"使用processed_enriched_devices作为数据源: {len(source_for_shuttle)} 个设备")
             # 调试：打印前几个设备的详细信息
             for i, device in enumerate(source_for_shuttle[:3]):
                 logger.info(f"  设备{i+1}: model={device.get('model')}, type={device.get('type')}, brand={device.get('brand')}")
         else:
-            source_for_shuttle = self.module_info_provider.get_all_predefined_modules()
-            logger.info(f"使用预定义模块作为数据源: {len(source_for_shuttle)} 个模块")
-            # 调试：打印前几个预定义模块的信息
-            for i, module in enumerate(source_for_shuttle[:3]):
-                logger.info(f"  预定义模块{i+1}: model={module.get('model')}, type={module.get('type')}")
+            # 没有有效的PLC系统时，返回空列表
+            logger.warning("⚠️ 没有检测到有效的和利时PLC系统（机架数=0），返回空模块列表")
+            logger.info(f"  - processed_enriched_devices: {len(self.processed_enriched_devices)} 个")
+            logger.info(f"  - rack_count: {getattr(self.system_setup_manager, 'rack_count', 0)}")
+            return [], False  # 返回空列表
 
         available_for_ui = []
         filtered_out_by_type = 0
@@ -1413,7 +1438,7 @@ class IODataLoader:
         logger.warning(f"Module model '{model_str}' not found by any lookup method.")
         return None
         
-    def save_configuration(self, config_data_from_ui: Any) -> bool:
+    def save_configuration(self, config_data_from_ui: Any, rack_configurations: Optional[Dict[int, List]] = None) -> bool:
         """
         保存 (经过验证后) 从UI传递过来的PLC配置数据。
         此方法会协调 `PLCConfigurationHandler` 来执行实际的验证、模拟保存（打印统计和地址），
@@ -1423,6 +1448,7 @@ class IODataLoader:
             config_data_from_ui (Any): 来自UI的配置数据。可以是两种格式：
                 - `Dict[tuple, str]`: 直接是 `{(rack_id, slot_id): model_name}` 的字典。
                 - `List[Dict[str, Any]]`: 包含 `{"rack_id", "slot_id", "model"}` 的字典列表，将被转换为上述字典格式。
+            rack_configurations (Optional[Dict[int, List]]): 新增参数 - 每个机架的独立配置
             
         Returns:
             bool: 配置是否成功保存 (True) 或失败 (False)。
@@ -1462,6 +1488,12 @@ class IODataLoader:
 
         if success:
             self.current_plc_config = config_dict.copy() # 存储已验证的配置副本
+            
+            # 新增：保存rack_configurations
+            if rack_configurations:
+                self.current_rack_configurations = rack_configurations
+                logger.info(f"保存了 {len(rack_configurations)} 个机架的独立配置")
+            
             # 配置成功保存后，调用自身的 generate_channel_addresses 方法，
             # 该方法内部会调用 handler 并执行COM/DP过滤。
             filtered_generated_addrs = self.generate_channel_addresses(
