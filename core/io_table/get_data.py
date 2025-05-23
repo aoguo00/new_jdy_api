@@ -986,6 +986,9 @@ class IODataLoader:
     5.  **通道地址管理**: 
         - 在配置成功保存后，自动调用 `PLCConfigurationHandler` 生成通道地址，并存储结果。
         - 提供方法 (`get_channel_addresses`) 供外部获取最后一次成功生成的通道地址列表。
+    6.  **场站配置缓存**:
+        - 为每个场站缓存已配置的PLC模块配置、处理后的设备数据、系统信息等。
+        - 当重新切换到已配置过的场站时，直接从缓存恢复配置，避免重新处理数据。
 
     通过将不同职责分离到专门的类中，`IODataLoader` 自身保持相对简洁，主要承担协调和流程控制的角色，
     提高了代码的可维护性和扩展性。
@@ -1028,6 +1031,18 @@ class IODataLoader:
         # 最后一次成功生成的IO通道总数
         self.last_generated_io_count: int = 0
 
+        # 场站配置缓存，格式为 {site_name: {
+        #     'config': {(rack_id, slot_id): model_name},
+        #     'processed_devices': List[Dict[str, Any]], 
+        #     'system_info': Dict[str, Any],
+        #     'addresses': List[Dict[str, Any]],
+        #     'io_count': int
+        # }}
+        self.site_config_cache: Dict[str, Dict[str, Any]] = {}
+        
+        # 当前场站名称
+        self.current_site_name: Optional[str] = None
+
         # 特殊允许的模块列表：这些模块型号会绕过一些常规的类型过滤逻辑，确保它们在穿梭框中可见
         # 例如，所有COM, DI/DO, AI/AO类型的模块，以及特定的CPU型号（如LE5118）和老旧型号（如LK238）
         all_predefined = self.module_info_provider.get_all_predefined_modules()
@@ -1039,6 +1054,123 @@ class IODataLoader:
         logger.info(f"IODataLoader initialized. System type: {self.system_setup_manager.get_system_type()}. "
                     f"Found {len(self.HOLLYSYS_PREFIXES)} Hollysys prefixes. "
                     f"{len(self.SPECIAL_ALLOWED_MODULES)} special modules.")
+
+    def set_current_site(self, site_name: str):
+        """
+        设置当前场站名称，用于缓存管理。
+        
+        Args:
+            site_name (str): 场站名称
+        """
+        self.current_site_name = site_name
+        logger.info(f"IODataLoader: 当前场站已设置为: {site_name}")
+
+    def has_cached_config_for_site(self, site_name: str) -> bool:
+        """
+        检查指定场站是否有缓存的配置。
+        
+        Args:
+            site_name (str): 场站名称
+            
+        Returns:
+            bool: 如果有缓存返回True，否则返回False
+        """
+        has_cache = site_name in self.site_config_cache
+        logger.info(f"IODataLoader: 检查场站 '{site_name}' 缓存状态: {has_cache}")
+        return has_cache
+
+    def load_cached_config_for_site(self, site_name: str) -> bool:
+        """
+        从缓存加载指定场站的配置。
+        
+        Args:
+            site_name (str): 场站名称
+            
+        Returns:
+            bool: 成功加载返回True，失败返回False
+        """
+        if site_name not in self.site_config_cache:
+            logger.warning(f"IODataLoader: 场站 '{site_name}' 没有缓存的配置")
+            return False
+        
+        try:
+            cached_data = self.site_config_cache[site_name]
+            
+            # 恢复PLC配置
+            self.current_plc_config = cached_data.get('config', {}).copy()
+            
+            # 恢复处理后的设备数据
+            self.processed_enriched_devices = cached_data.get('processed_devices', []).copy()
+            
+            # 恢复系统信息到SystemSetupManager
+            system_info = cached_data.get('system_info', {})
+            if system_info:
+                # 直接设置SystemSetupManager的内部状态
+                self.system_setup_manager.system_type = system_info.get('system_type', 'LK')
+                self.system_setup_manager.rack_count = system_info.get('rack_count', 0)
+                self.system_setup_manager.racks_data = system_info.get('racks_data', [])
+            
+            # 恢复生成的地址和IO计数
+            self.last_generated_addresses = cached_data.get('addresses', []).copy()
+            self.last_generated_io_count = cached_data.get('io_count', 0)
+            
+            # 设置当前场站名称
+            self.current_site_name = site_name
+            
+            logger.info(f"IODataLoader: 成功从缓存恢复场站 '{site_name}' 的配置")
+            logger.info(f"  - 恢复了 {len(self.current_plc_config)} 个模块配置")
+            logger.info(f"  - 恢复了 {len(self.processed_enriched_devices)} 个处理后的设备")
+            logger.info(f"  - 恢复了 {len(self.last_generated_addresses)} 个地址记录")
+            logger.info(f"  - 系统类型: {self.system_setup_manager.system_type}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"IODataLoader: 从缓存恢复场站 '{site_name}' 配置时出错: {e}", exc_info=True)
+            return False
+
+    def save_current_config_to_cache(self) -> bool:
+        """
+        将当前配置保存到缓存中。
+        
+        Returns:
+            bool: 成功保存返回True，失败返回False
+        """
+        if not self.current_site_name:
+            logger.warning("IODataLoader: 无法保存到缓存，当前场站名称未设置")
+            return False
+        
+        try:
+            # 获取当前系统信息
+            system_info = {
+                'system_type': self.system_setup_manager.get_system_type(),
+                'rack_count': self.system_setup_manager.rack_count,
+                'racks_data': self.system_setup_manager.racks_data.copy() if hasattr(self.system_setup_manager, 'racks_data') else []
+            }
+            
+            # 创建缓存数据
+            cache_data = {
+                'config': self.current_plc_config.copy(),
+                'processed_devices': self.processed_enriched_devices.copy(),
+                'system_info': system_info,
+                'addresses': self.last_generated_addresses.copy(),
+                'io_count': self.last_generated_io_count
+            }
+            
+            # 保存到缓存
+            self.site_config_cache[self.current_site_name] = cache_data
+            
+            logger.info(f"IODataLoader: 成功将场站 '{self.current_site_name}' 的配置保存到缓存")
+            logger.info(f"  - 保存了 {len(self.current_plc_config)} 个模块配置")
+            logger.info(f"  - 保存了 {len(self.processed_enriched_devices)} 个处理后的设备")
+            logger.info(f"  - 保存了 {len(self.last_generated_addresses)} 个地址记录")
+            logger.info(f"  - 系统类型: {system_info.get('system_type')}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"IODataLoader: 保存场站 '{self.current_site_name}' 配置到缓存时出错: {e}", exc_info=True)
+            return False
 
     def get_current_plc_config(self) -> Dict[Tuple[int, int], str]:
         """
@@ -1259,6 +1391,13 @@ class IODataLoader:
             # 基于过滤后的地址列表，重新计算实际的IO通道数量
             self.last_generated_io_count = sum(1 for addr in self.last_generated_addresses if addr.get('is_io_channel'))
             
+            # 自动将当前配置保存到缓存
+            cache_save_success = self.save_current_config_to_cache()
+            if cache_save_success:
+                logger.info("配置已自动保存到缓存中")
+            else:
+                logger.warning("配置保存成功，但缓存保存失败")
+            
             logger.info(f"Configuration saved successfully. {len(self.last_generated_addresses)} IO point table entries stored. Total IO channels: {self.last_generated_io_count}. Message: {message}")
         else:
             # 如果保存失败，错误信息应已由 PLCConfigurationHandler 或上述转换逻辑打印
@@ -1313,7 +1452,7 @@ class IODataLoader:
 
     def clear_current_project_configuration(self):
         """
-        清除当前加载的项目相关的PLC配置、设备数据和系统信息。
+        清除当前加载的项目相关的PLC配置、设备数据、系统信息和场站缓存。
         主要在用户清除项目选择或主界面清空时调用，以重置到初始状态。
         """
         logger.info("Clearing current project configuration in IODataLoader.")
@@ -1340,6 +1479,10 @@ class IODataLoader:
         # self.original_devices_data 也应该被清空，因为它代表了当前项目的数据
         self.original_devices_data: List[Dict[str, Any]] = []
 
+        # 清空场站配置缓存
+        self.site_config_cache.clear()
+        self.current_site_name = None
+        logger.info("IODataLoader: 已清空所有场站配置缓存")
 
         # 重置 SystemSetupManager 的状态，以确保 rack_count 等信息也恢复到初始
         if hasattr(self, 'system_setup_manager') and self.system_setup_manager:

@@ -442,6 +442,9 @@ class PLCConfigEmbeddedWidget(QWidget):
             mod.get('unique_id') for mod in self.configured_modules.values() if mod and mod.get('unique_id') is not None
         }
         
+        logger.debug(f"_rebuild_current_modules_pool: 已配置的模块unique_id集合: {configured_unique_ids}")
+        logger.debug(f"_rebuild_current_modules_pool: 总共有 {len(self.all_available_modules)} 个可用模块")
+        
         # self.all_available_modules 此刻应该已经根据UI的类型过滤器刷新过了
         # 如果没有，这里的过滤可能不完整。但 load_modules 方法处理了类型过滤问题。
         # 实际上，all_available_modules 应该总是包含所有类型的模块（由 _load_all_available_modules_with_unique_ids('全部') 填充）
@@ -460,10 +463,24 @@ class PLCConfigEmbeddedWidget(QWidget):
                 if module_actual_type == self.module_type_filter:
                     filtered_by_type_pool.append(module)
         
-        self.current_modules_pool = [
-            m for m in filtered_by_type_pool if m.get('unique_id') not in configured_unique_ids
-        ]
-        logger.info(f"_rebuild_current_modules_pool: Rebuilt pool with {len(self.current_modules_pool)} modules for type '{self.module_type_filter}'.")
+        logger.debug(f"_rebuild_current_modules_pool: 类型过滤后剩余 {len(filtered_by_type_pool)} 个模块 (过滤器: '{self.module_type_filter}')")
+        
+        # 排除已配置的模块
+        excluded_count = 0
+        self.current_modules_pool = []
+        for m in filtered_by_type_pool:
+            module_unique_id = m.get('unique_id')
+            if module_unique_id in configured_unique_ids:
+                excluded_count += 1
+                logger.debug(f"_rebuild_current_modules_pool: 排除已配置模块 {m.get('model', 'N/A')} (unique_id: {module_unique_id})")
+            else:
+                self.current_modules_pool.append(m)
+        
+        logger.info(f"_rebuild_current_modules_pool: 重建模块池完成")
+        logger.info(f"  - 类型过滤器: '{self.module_type_filter}'")
+        logger.info(f"  - 类型过滤后: {len(filtered_by_type_pool)} 个模块")
+        logger.info(f"  - 排除已配置: {excluded_count} 个模块")
+        logger.info(f"  - 最终可用: {len(self.current_modules_pool)} 个模块")
 
     def _initialize_dialog_state(self):
         """根据 io_data_loader 初始化配置状态 (current_config, configured_modules, system_type, rack_info)。"""
@@ -510,6 +527,26 @@ class PLCConfigEmbeddedWidget(QWidget):
             return
 
         logger.info(f"set_devices_data called with {len(devices_data)} devices.")
+        
+        # 检查是否有当前场站的缓存配置
+        current_site = getattr(self.io_data_loader, 'current_site_name', None)
+        if current_site and self.io_data_loader.has_cached_config_for_site(current_site):
+            logger.info(f"发现场站 '{current_site}' 有缓存配置，将从缓存恢复而不重新处理设备数据")
+            
+            # 从缓存加载配置
+            if self.io_data_loader.load_cached_config_for_site(current_site):
+                # 从缓存恢复成功，直接恢复UI配置
+                if self._restore_config_from_cache():
+                    logger.info(f"成功从缓存恢复场站 '{current_site}' 的配置到UI")
+                    return
+                else:
+                    logger.warning(f"从缓存恢复UI配置失败，将重新处理设备数据")
+            else:
+                logger.warning(f"从缓存加载场站 '{current_site}' 配置失败，将重新处理设备数据")
+        
+        # 没有缓存或缓存恢复失败，正常处理设备数据
+        logger.info("没有缓存或缓存恢复失败，正常处理设备数据")
+        
         self.next_module_id_counter = 1 # 重置 unique_id 计数器
         
         self.io_data_loader.set_devices_data(devices_data) # Loader 更新其内部状态 (包括 system_type, rack_info)
@@ -1120,4 +1157,105 @@ class PLCConfigEmbeddedWidget(QWidget):
         except Exception as e_general:
             logger.error(f"PLCConfigEmbeddedWidget.reset_to_initial_state: A general error occurred: {e_general}", exc_info=True)
             raise # Re-raise for general errors too
+
+    def _restore_config_from_cache(self) -> bool:
+        """
+        从IODataLoader的缓存恢复配置到UI。
+        
+        Returns:
+            bool: 成功恢复返回True，失败返回False
+        """
+        if not self.io_data_loader:
+            logger.warning("PLCConfigEmbeddedWidget: 无法从缓存恢复配置，IODataLoader未初始化")
+            return False
+        
+        try:
+            # 从IODataLoader恢复核心数据结构
+            self.current_config = self.io_data_loader.get_current_plc_config()
+            
+            # 恢复系统信息
+            rack_info = self.io_data_loader.get_rack_info()
+            self.system_type = rack_info.get('system_type', 'LK')
+            self.rack_info = rack_info
+            
+            # 重新加载可用模块列表（必须在重建configured_modules之前）
+            self._load_all_available_modules_with_unique_ids('全部')
+            
+            # 重新构建configured_modules字典
+            # 关键：从all_available_modules中查找模块，确保unique_id一致
+            self.configured_modules = {}
+            
+            # 统计每个型号需要配置的数量
+            model_count_needed = {}
+            for (rack_id, slot_id), model_name in self.current_config.items():
+                model_count_needed[model_name.upper()] = model_count_needed.get(model_name.upper(), 0) + 1
+            
+            logger.info(f"缓存恢复：需要配置的模块统计: {model_count_needed}")
+            
+            # 为每个型号预留对应数量的模块实例
+            reserved_modules = {}  # {model_name: [module_instances]}
+            for model_name_upper, needed_count in model_count_needed.items():
+                available_instances = [
+                    m for m in self.all_available_modules 
+                    if m.get('model', '').upper() == model_name_upper
+                ]
+                if len(available_instances) >= needed_count:
+                    reserved_modules[model_name_upper] = available_instances[:needed_count]
+                    logger.info(f"为模块 {model_name_upper} 预留了 {needed_count} 个实例")
+                else:
+                    logger.warning(f"模块 {model_name_upper} 需要 {needed_count} 个实例，但只有 {len(available_instances)} 个可用")
+                    reserved_modules[model_name_upper] = available_instances  # 使用所有可用的
+            
+            # 分配模块实例到具体的配置位置
+            model_instance_counters = {model: 0 for model in model_count_needed.keys()}
+            
+            for (rack_id, slot_id), model_name in self.current_config.items():
+                model_name_upper = model_name.upper()
+                instance_counter = model_instance_counters[model_name_upper]
+                
+                if model_name_upper in reserved_modules and instance_counter < len(reserved_modules[model_name_upper]):
+                    # 使用预留的模块实例
+                    found_module = reserved_modules[model_name_upper][instance_counter].copy()
+                    self.configured_modules[(rack_id, slot_id)] = found_module
+                    model_instance_counters[model_name_upper] += 1
+                    
+                    logger.debug(f"缓存恢复：位置 ({rack_id},{slot_id}) 分配模块 {model_name} (unique_id: {found_module.get('unique_id')})")
+                else:
+                    # 如果预留实例不足，回退到从IODataLoader获取
+                    logger.warning(f"缓存恢复：模块 {model_name} 预留实例不足，从IODataLoader获取")
+                    module_detail = self.io_data_loader.get_module_by_model(model_name)
+                    if module_detail:
+                        found_module = module_detail.copy()
+                        self._ensure_module_unique_id(found_module)
+                        self.configured_modules[(rack_id, slot_id)] = found_module
+                    else:
+                        # 创建基本模块对象
+                        found_module = {
+                            'model': model_name,
+                            'type': '未知',
+                            'channels': 0,
+                            'description': '缓存恢复时模块信息缺失',
+                            'unique_id': f"cache_restored_{rack_id}_{slot_id}"
+                        }
+                        self.configured_modules[(rack_id, slot_id)] = found_module
+            
+            # 重建当前模块池
+            self._rebuild_current_modules_pool()
+            
+            # 更新UI
+            self.view.populate_module_table(self.current_modules_pool)
+            self.create_rack_tabs()
+            self.update_all_config_tables()
+            self._update_system_info_label()
+            
+            logger.info(f"PLCConfigEmbeddedWidget: 成功从缓存恢复配置")
+            logger.info(f"  - 恢复了 {len(self.current_config)} 个模块配置")
+            logger.info(f"  - 左侧穿梭框显示 {len(self.current_modules_pool)} 个可用模块")
+            logger.info(f"  - 系统类型: {self.system_type}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"PLCConfigEmbeddedWidget: 从缓存恢复配置时出错: {e}", exc_info=True)
+            return False
 

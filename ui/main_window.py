@@ -430,6 +430,11 @@ class MainWindow(QMainWindow):
             logger.info(f"_handle_project_selected FOR {site_name} CALLED") # 新增日志
             logger.info(f"当前选定的场站已更新为: {self.current_site_name}") 
 
+            # 设置IODataLoader的当前场站名称（用于缓存管理）
+            if hasattr(self, 'io_data_loader') and self.io_data_loader:
+                self.io_data_loader.set_current_site(site_name)
+                logger.info(f"已设置IODataLoader的当前场站为: {site_name}")
+
             # 执行查询 (调用 DeviceService)
             if not self.device_service:
                 raise Exception("设备服务未初始化")
