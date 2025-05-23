@@ -1016,9 +1016,9 @@ class IODataLoader:
     提高了代码的可维护性和扩展性。
     """
     # 允许出现在穿梭框供用户选择的模块类型 (RACK类型已移除，因为它代表机架本身)
-    # CPU 和 DP 模块通常不应由用户在穿梭框中手动选择添加，它们有特殊的配置规则。
-    # LK系统的DP模块会自动添加到槽位1。LE系统的CPU模块（如LE5118）也应在槽位1。
-    ALLOWED_MODULE_TYPES = ['AI', 'AO', 'DI', 'DO', 'DI/DO', 'AI/AO', 'COM'] 
+    # CPU类型现在也允许在穿梭框中显示，以便LE_CPU系统的用户可以选择LE5118
+    # DP模块保持在允许列表中，虽然LK系统会自动在槽位1配置DP，但用户仍可能需要看到它
+    ALLOWED_MODULE_TYPES = ['CPU', 'AI', 'AO', 'DI', 'DO', 'DI/DO', 'AI/AO', 'COM', 'DP'] 
     
     def __init__(self):
         """构造函数，初始化所有辅助类和内部状态变量。"""

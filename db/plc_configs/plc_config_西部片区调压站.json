@@ -1,0 +1,35 @@
+{
+  "site_name": "西部片区调压站",
+  "save_time": "2025-05-23T18:04:53.599414",
+  "version": "1.0",
+  "config": {
+    "1,1": "PROFIBUS-DP",
+    "1,2": "LK610",
+    "1,3": "LK411",
+    "1,4": "LK710",
+    "1,5": "LK710",
+    "1,6": "LK238",
+    "1,7": "LK610",
+    "1,8": "LK610",
+    "1,9": "LK610",
+    "1,10": "LK411"
+  },
+  "system_info": {
+    "system_type": "LK",
+    "rack_count": 1,
+    "racks_data": [
+      {
+        "rack_id": 1,
+        "rack_name": "机架1",
+        "total_slots": 11,
+        "available_slots": 10,
+        "start_slot": 2,
+        "modules": [],
+        "system_type": "LK"
+      }
+    ]
+  },
+  "io_count": 112,
+  "addresses_count": 112,
+  "processed_devices_count": 45
+}
