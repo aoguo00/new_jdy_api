@@ -1587,26 +1587,30 @@ class IODataLoader:
             logger.info(f"开始重置场站 '{site_name}' 的配置")
             
             # 1. 删除持久化存储的配置文件
-            if hasattr(self, 'persistence') and self.persistence:
-                delete_success = self.persistence.delete_site_config(site_name)
+            # 修复：使用正确的属性名 persistence_manager
+            if hasattr(self, 'persistence_manager') and self.persistence_manager:
+                delete_success = self.persistence_manager.delete_site_config(site_name)
                 if delete_success:
                     logger.info(f"成功删除场站 '{site_name}' 的持久化配置文件")
                 else:
                     logger.warning(f"删除场站 '{site_name}' 的持久化配置文件失败")
             
             # 2. 清除内存中的配置缓存
-            if hasattr(self, 'config_cache') and site_name in self.config_cache:
-                del self.config_cache[site_name]
+            # 修复：使用正确的属性名 site_config_cache
+            if hasattr(self, 'site_config_cache') and site_name in self.site_config_cache:
+                del self.site_config_cache[site_name]
                 logger.info(f"已清除场站 '{site_name}' 的内存缓存")
             
             # 3. 重置当前配置状态
             self.current_plc_config = {}
-            self.channel_addresses_list = []
+            # 修复：使用正确的属性名 last_generated_addresses
+            self.last_generated_addresses = []
             self.processed_enriched_devices = []
+            self.last_generated_io_count = 0
             
             # 4. 重置系统设置为默认状态
             if hasattr(self, 'system_setup_manager'):
-                self.system_setup_manager.reset_to_defaults()
+                self.system_setup_manager.reset_state()
                 logger.info("系统设置已重置为默认状态")
             
             logger.info(f"成功重置场站 '{site_name}' 的配置，下次加载将从API获取最新数据")

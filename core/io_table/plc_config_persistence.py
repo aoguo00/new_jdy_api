@@ -230,9 +230,9 @@ class PLCConfigPersistence:
             bool: 删除是否成功
         """
         try:
-            # 构造文件路径
-            config_file = self.config_dir / f"plc_config_{site_name}.json"
-            full_config_file = self.config_dir / f"plc_config_{site_name}.full.json"
+            # 使用_get_config_filename方法获取正确的文件路径
+            config_file = self._get_config_filename(site_name)
+            full_config_file = config_file.with_suffix('.full.json')
             
             deleted_files = []
             
@@ -249,9 +249,11 @@ class PLCConfigPersistence:
                 logger.info(f"已删除完整备份文件: {full_config_file}")
             
             # 清理备份目录中相关的备份文件
-            backup_dir = self.config_dir / "backups"
+            backup_dir = self.backup_dir
             if backup_dir.exists():
-                backup_pattern = f"plc_config_{site_name}_*.json"
+                # 获取安全的文件名用于匹配备份
+                safe_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in site_name).strip()
+                backup_pattern = f"plc_config_{safe_name}_*.json"
                 deleted_backups = []
                 
                 for backup_file in backup_dir.glob(backup_pattern):
@@ -261,7 +263,7 @@ class PLCConfigPersistence:
                 if deleted_backups:
                     logger.info(f"已删除 {len(deleted_backups)} 个备份文件: {deleted_backups}")
             
-            if deleted_files or deleted_backups:
+            if deleted_files:
                 logger.info(f"成功删除场站 '{site_name}' 的所有配置文件")
                 return True
             else:
