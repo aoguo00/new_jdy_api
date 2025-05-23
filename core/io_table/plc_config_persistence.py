@@ -12,12 +12,29 @@ PLC配置持久化存储模块
 import json
 import logging
 import os
+import sys  # 添加sys导入
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 import shutil
 
 logger = logging.getLogger(__name__)
+
+
+def get_app_base_path() -> Path:
+    """
+    获取应用程序的基准路径。
+    - 如果程序是被冻结（打包）的，则返回可执行文件所在的目录。
+    - 否则（作为脚本运行），返回项目根目录。
+    """
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        # PyInstaller 打包后的情况
+        # sys.executable 是可执行文件的路径
+        return Path(sys.executable).parent
+    else:
+        # 作为脚本运行时，返回项目根目录
+        # plc_config_persistence.py 在 core/io_table/ 目录下，所以需要向上两级
+        return Path(__file__).resolve().parent.parent.parent
 
 
 class PLCConfigPersistence:
@@ -39,9 +56,9 @@ class PLCConfigPersistence:
         if config_dir:
             self.config_dir = Path(config_dir)
         else:
-            # 默认存储在db目录下的plc_configs文件夹
-            project_root = Path(__file__).parent.parent.parent
-            self.config_dir = project_root / "db" / "plc_configs"
+            # 使用与main.py相同的方式获取基准路径
+            app_base_path = get_app_base_path()
+            self.config_dir = app_base_path / "db" / "plc_configs"
         
         # 确保目录存在
         self.config_dir.mkdir(parents=True, exist_ok=True)
