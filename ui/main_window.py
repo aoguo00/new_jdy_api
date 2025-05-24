@@ -105,6 +105,11 @@ class MainWindow(QMainWindow):
         self.upload_io_table_btn.setMinimumHeight(28) 
         self.upload_io_table_btn.setStyleSheet("QPushButton { padding-bottom: 2px; }")
 
+        # 新增：创建生成上下位通讯点表按钮
+        self.generate_communication_table_btn = QPushButton("生成上下位通讯点表")
+        self.generate_communication_table_btn.setMinimumHeight(28)
+        self.generate_communication_table_btn.setStyleSheet("QPushButton { padding-bottom: 2px; }")
+
         # 新增：创建生成FAT点表按钮
         self.generate_fat_table_btn = QPushButton("生成FAT点表")
         self.generate_fat_table_btn.setMinimumHeight(28)
@@ -342,6 +347,7 @@ class MainWindow(QMainWindow):
 
         # 此处直接使用已在 __init__ 中创建的按钮实例
         upload_buttons_layout.addWidget(self.upload_io_table_btn)
+        upload_buttons_layout.addWidget(self.generate_communication_table_btn)
         upload_buttons_layout.addWidget(self.generate_fat_table_btn)
         upload_buttons_layout.addWidget(self.upload_hmi_btn)
         upload_buttons_layout.addWidget(self.upload_plc_btn)
@@ -426,6 +432,8 @@ class MainWindow(QMainWindow):
 
         # 直接连接在MainWindow中创建的上传按钮的信号
         self.upload_io_table_btn.clicked.connect(self._handle_upload_io_table)
+        # 新增：连接生成上下位通讯点表按钮的信号
+        self.generate_communication_table_btn.clicked.connect(self._handle_generate_communication_table)
         # HMI 和 PLC 按钮的菜单信号连接
         if self.upload_hmi_btn.menu():
             self.upload_hmi_btn.menu().triggered.connect(
@@ -1171,28 +1179,80 @@ class MainWindow(QMainWindow):
         # 构造最终的完整输出路径
         final_output_path = os.path.join(output_dir, fat_output_filename)
 
+    def _handle_generate_communication_table(self):
+        """处理点击"生成上下位通讯点表"按钮的事件。"""
+        if not self.verified_io_table_path:
+            QMessageBox.warning(self, "操作无效", "请先上传并验证IO点表文件。")
+            logger.warning("上下位通讯点表生成尝试失败：未找到已验证的IO点表路径。")
+            return
+
+        # 从已验证的IO点表路径中提取文件名（不含扩展名）作为基础
+        original_filename_stem = os.path.splitext(os.path.basename(self.verified_io_table_path))[0]
+        
+        # 构造上下位通讯点表的输出文件名，例如：原始文件名_上下位通讯点表.xlsx
+        communication_output_filename = f"{original_filename_stem}_上下位通讯点表.xlsx"
+
+        # 定义输出目录
+        output_base_dir_name = "上下位通讯点表" # 定义子目录名
+        output_dir = os.path.join(os.getcwd(), output_base_dir_name) # 拼接完整路径
         try:
-            success, generated_file_path, error_message = generate_fat_checklist_from_source(
-                original_file_path=self.verified_io_table_path,
-                output_dir=output_dir, # 传递的是目录
-                output_filename=fat_output_filename # 传递的是文件名
-            )
+            os.makedirs(output_dir, exist_ok=True) # 确保目录存在
+            logger.info(f"上下位通讯点表将保存到固定目录: {output_dir}")
+        except OSError as e:
+            error_msg_mkdir = f"创建上下位通讯点表输出目录 '{output_dir}' 失败: {e}"
+            QMessageBox.critical(self, "目录创建错误", error_msg_mkdir)
+            logger.error(error_msg_mkdir)
+            self.status_bar.showMessage("上下位通讯点表目录创建失败。", 5000)
+            return
+            
+        self.status_bar.showMessage("正在生成上下位通讯点表...")
+        QApplication.processEvents() # 确保UI更新
 
-            if success and generated_file_path: # generated_file_path 应该是完整的路径
-                QMessageBox.information(self, "成功", f"FAT点表已成功生成并保存至:\n{generated_file_path}")
-                logger.info(f"FAT点表已成功生成: {generated_file_path}")
-                self.status_bar.showMessage(f"FAT点表生成成功: {os.path.basename(generated_file_path)}", 5000)
+        # 构造最终的完整输出路径
+        final_output_path = os.path.join(output_dir, communication_output_filename)
+        
+        # 调用生成表头的函数
+        try:
+            # Import necessary functions and types
+            from core.post_upload_processor.communication_table_generator import generate_communication_table_excel
+            from core.post_upload_processor.uploaded_file_processor.excel_reader import load_workbook_data
+            from core.post_upload_processor.uploaded_file_processor.io_data_model import UploadedIOPoint # Ensure this import is present or added if not already
+            from typing import List # Ensure List is imported
+
+            # 1. Load IO data from the verified Excel file
+            points_by_sheet, error_message = load_workbook_data(self.verified_io_table_path)
+
+            if error_message:
+                QMessageBox.critical(self, "数据加载失败", f"加载IO点表数据时发生错误: {error_message}")
+                logger.error(f"上下位通讯点表生成失败: 无法加载IO数据从 {self.verified_io_table_path} - {error_message}")
+                self.status_bar.showMessage("上下位通讯点表生成失败: IO数据加载错误。", 5000)
+                return
+
+            # 2. Consolidate all points from all sheets into a single list
+            all_points: List[UploadedIOPoint] = []
+            if points_by_sheet:
+                for sheet_name, points_in_sheet in points_by_sheet.items():
+                    if points_in_sheet: # Ensure there are points in the sheet
+                        all_points.extend(points_in_sheet)
+                logger.info(f"为上下位通讯点表加载了 {len(all_points)} 个点位，来源: {list(points_by_sheet.keys())}")
+            
+            if not all_points:
+                QMessageBox.warning(self, "无数据点", "从IO点表中未提取到有效数据点，无法生成上下位通讯点表。")
+                logger.warning(f"上下位通讯点表生成失败: 从 {self.verified_io_table_path} 未提取到数据点。")
+                self.status_bar.showMessage("上下位通讯点表生成失败: 无数据点。", 5000)
+                return
+
+            # 3. Call the generation function with the loaded io_points
+            success = generate_communication_table_excel(final_output_path, all_points) # Pass all_points
+            if success:
+                QMessageBox.information(self, "生成成功", f"上下位通讯点表已生成，文件路径：\n{final_output_path}")
+                self.status_bar.showMessage("上下位通讯点表生成成功！", 5000)
             else:
-                detailed_error = f"生成FAT点表失败。错误详情: {error_message}"
-                QMessageBox.critical(self, "生成失败", detailed_error)
-                logger.error(detailed_error)
-                self.status_bar.showMessage("FAT点表生成失败。", 5000)
-
+                QMessageBox.critical(self, "生成失败", "生成上下位通讯点表失败，请检查日志或联系开发者。")
+                self.status_bar.showMessage("上下位通讯点表生成失败。", 5000)
         except Exception as e:
-            full_error_msg = f"处理FAT点表生成时发生意外错误: {str(e)}"
-            QMessageBox.critical(self, "严重错误", full_error_msg)
-            logger.error(full_error_msg, exc_info=True)
-            self.status_bar.showMessage("FAT点表生成过程中发生严重错误。", 5000)
+            QMessageBox.critical(self, "生成失败", f"生成上下位通讯点表时发生异常：{e}")
+            self.status_bar.showMessage("上下位通讯点表生成异常。", 5000)
 
     def _handle_plc_config_reset(self):
         """
