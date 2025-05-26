@@ -76,7 +76,7 @@ class MainWindow(QMainWindow):
     def __init__(self, db_path: str):
         super().__init__()
         self.setWindowTitle("工控系统点表助手V1.0")
-        
+
         screen = self.screen()
         # self.resize(screen.size()) # Maximizing anyway
         # self.setWindowState(Qt.WindowState.WindowMaximized)
@@ -102,7 +102,7 @@ class MainWindow(QMainWindow):
 
         # 创建上传按钮成员变量 (移到这里，以便 setup_ui 和 setup_connections 都能访问)
         self.upload_io_table_btn = QPushButton("上传IO点表")
-        self.upload_io_table_btn.setMinimumHeight(28) 
+        self.upload_io_table_btn.setMinimumHeight(28)
         self.upload_io_table_btn.setStyleSheet("QPushButton { padding-bottom: 2px; }")
 
         # 新增：创建生成上下位通讯点表按钮
@@ -116,7 +116,7 @@ class MainWindow(QMainWindow):
         self.generate_fat_table_btn.setStyleSheet("QPushButton { padding-bottom: 2px; }")
 
         self.upload_hmi_btn = QPushButton("生成HMI点表")
-        self.upload_hmi_btn.setMinimumHeight(28) 
+        self.upload_hmi_btn.setMinimumHeight(28)
         self.upload_hmi_btn.setStyleSheet("QPushButton { padding-bottom: 2px; }")
         hmi_menu = QMenu(self.upload_hmi_btn) # QMenu 需要父对象
         hmi_menu.addAction("亚控")
@@ -124,7 +124,7 @@ class MainWindow(QMainWindow):
         self.upload_hmi_btn.setMenu(hmi_menu)
 
         self.upload_plc_btn = QPushButton("生成PLC点表")
-        self.upload_plc_btn.setMinimumHeight(28) 
+        self.upload_plc_btn.setMinimumHeight(28)
         self.upload_plc_btn.setStyleSheet("QPushButton { padding-bottom: 2px; }")
         plc_menu = QMenu(self.upload_plc_btn) # QMenu 需要父对象
         plc_menu.addAction("和利时PLC") # 恢复为统一的"和利时"选项
@@ -139,25 +139,25 @@ class MainWindow(QMainWindow):
 
             self.project_service = ProjectService(self.jdy_api)
             self.device_service = DeviceService(self.jdy_api)
-            
+
             # Instantiate new DatabaseService (singleton) with the provided db_path
             self.db_service = DatabaseService(db_path=db_path)
-            
+
             # Instantiate DAOs for third_party_config_area with the DatabaseService
             self.template_dao = TemplateDAO(self.db_service)
             self.config_dao = ConfiguredDeviceDAO(self.db_service)
-            
+
             # Instantiate Services for third_party_config_area with their respective DAOs
             self.tp_template_service = TemplateService(self.template_dao)
             self.tp_config_service = ConfigService(self.config_dao)
-            
+
             # 初始化IO数据加载器
             self.io_data_loader = IODataLoader()
-            
+
         except Exception as e:
             logger.error(f"核心服务初始化失败: {e}", exc_info=True)
             # Make sure other services are also set to None or handled
-            self.jdy_api = None 
+            self.jdy_api = None
             # self.template_manager = None
             # self.config_service = None
             self.plc_hardware_service = None
@@ -178,11 +178,11 @@ class MainWindow(QMainWindow):
     def _get_config_value(self, key: str, default_value: Any) -> Any:
         """
         读取配置文件中的值
-        
+
         Args:
             key: 配置键，支持点分隔的路径如 'ui.use_modern_plc_config'
             default_value: 默认值
-            
+
         Returns:
             配置值或默认值
         """
@@ -190,32 +190,32 @@ class MainWindow(QMainWindow):
             config = configparser.ConfigParser()
             # 修复：配置文件应该在项目根目录
             config_file_path = os.path.join(os.getcwd(), 'config.ini')
-            
+
             if not os.path.exists(config_file_path):
                 logger.warning(f"配置文件不存在: {config_file_path}，使用默认值")
                 return default_value
-                
+
             config.read(config_file_path, encoding='utf-8')
-            
+
             # 解析点分隔的键
             parts = key.split('.')
             if len(parts) != 2:
                 logger.warning(f"配置键格式无效: {key}，使用默认值")
                 return default_value
-                
+
             section, option = parts
-            
+
             if not config.has_section(section.upper()):
                 logger.warning(f"配置节不存在: {section}，使用默认值")
                 return default_value
-                
+
             if not config.has_option(section.upper(), option):
                 logger.warning(f"配置项不存在: {key}，使用默认值")
                 return default_value
-            
+
             # 根据默认值类型进行转换
             value = config.get(section.upper(), option)
-            
+
             if isinstance(default_value, bool):
                 return value.lower() in ('true', '1', 'yes', 'on')
             elif isinstance(default_value, int):
@@ -224,7 +224,7 @@ class MainWindow(QMainWindow):
                 return float(value)
             else:
                 return value
-                
+
         except Exception as e:
             logger.error(f"读取配置失败: {e}，使用默认值")
             return default_value
@@ -255,17 +255,17 @@ class MainWindow(QMainWindow):
         main_tab_widget.addTab(main_functional_tab, "数据查询")
 
         # --- PLC硬件配置标签页 (新旧版本可配置切换) ---
-        plc_config_tab_container = QWidget() 
+        plc_config_tab_container = QWidget()
         plc_config_layout = QVBoxLayout(plc_config_tab_container)
-        plc_config_layout.setContentsMargins(5,5,5,5) 
+        plc_config_layout.setContentsMargins(5,5,5,5)
 
-        if self.io_data_loader: 
+        if self.io_data_loader:
             # 读取配置决定使用新版还是旧版
             use_modern_ui = self._get_config_value('ui.use_modern_plc_config', True)
             show_comparison = self._get_config_value('ui.show_comparison_mode', False)
-            
+
             logger.info(f"PLC配置界面设置: use_modern_ui={use_modern_ui}, show_comparison={show_comparison}")
-            
+
             if show_comparison:
                 # 对比模式：同时显示新旧版本
                 self._setup_comparison_plc_config(plc_config_layout)
@@ -275,8 +275,8 @@ class MainWindow(QMainWindow):
                 try:
                     self.embedded_plc_config_widget = PLCConfigAdapter(
                         io_data_loader=self.io_data_loader,
-                        devices_data=None, 
-                        parent=self 
+                        devices_data=None,
+                        parent=self
                     )
                     plc_config_layout.addWidget(self.embedded_plc_config_widget)
                     tab_title = "PLC硬件配置"
@@ -297,7 +297,7 @@ class MainWindow(QMainWindow):
             error_label_main.setAlignment(Qt.AlignmentFlag.AlignCenter)
             error_label_main.setStyleSheet("color: red; font-size: 14px;")
             plc_config_layout.addWidget(error_label_main)
-            self.embedded_plc_config_widget = None 
+            self.embedded_plc_config_widget = None
             tab_title = "PLC硬件配置 (不可用)"
 
         main_tab_widget.addTab(plc_config_tab_container, tab_title)
@@ -313,21 +313,21 @@ class MainWindow(QMainWindow):
         # --- IO点表模板生成标签页 (放到最后) ---
         io_template_tab = QWidget()
         io_template_layout = QVBoxLayout(io_template_tab)
-        io_template_layout.setContentsMargins(20, 20, 20, 20) 
-        io_template_layout.setAlignment(Qt.AlignmentFlag.AlignCenter) 
+        io_template_layout.setContentsMargins(20, 20, 20, 20)
+        io_template_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.generate_io_template_btn = QPushButton("生成当前PLC配置的IO点表模板")
-        self.generate_io_template_btn.setFixedWidth(300) 
-        self.generate_io_template_btn.setFixedHeight(40) 
+        self.generate_io_template_btn.setFixedWidth(300)
+        self.generate_io_template_btn.setFixedHeight(40)
         description_label = QLabel("此功能会根据当前在'<b>'PLC硬件配置'</b>'选项卡中应用的模块配置，<br>生成一个包含对应通道地址的Excel点表模板文件。<br>请确保PLC硬件配置已应用。场站编号将从上方查询区域获取。")
         description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         description_label.setWordWrap(True)
-        
-        io_template_layout.addStretch(1) 
+
+        io_template_layout.addStretch(1)
         io_template_layout.addWidget(description_label)
         io_template_layout.addSpacing(20)
         io_template_layout.addWidget(self.generate_io_template_btn, alignment=Qt.AlignmentFlag.AlignCenter)
-        io_template_layout.addStretch(2) 
+        io_template_layout.addStretch(2)
 
         main_tab_widget.addTab(io_template_tab, "IO点表模板生成") # IO模板生成在最后
 
@@ -360,8 +360,8 @@ class MainWindow(QMainWindow):
         """设置旧版PLC配置组件"""
         self.embedded_plc_config_widget = PLCConfigEmbeddedWidget(
             io_data_loader=self.io_data_loader,
-            devices_data=None, 
-            parent=self 
+            devices_data=None,
+            parent=self
         )
         layout.addWidget(self.embedded_plc_config_widget)
         logger.info("已设置旧版PLC配置组件")
@@ -369,41 +369,41 @@ class MainWindow(QMainWindow):
     def _setup_comparison_plc_config(self, layout: QVBoxLayout):
         """设置对比模式PLC配置组件"""
         from PySide6.QtWidgets import QSplitter
-        
+
         # 创建水平分割器
         splitter = QSplitter(Qt.Horizontal)
-        
+
         # 左侧：旧版组件
         left_frame = QWidget()
         left_layout = QVBoxLayout(left_frame)
         left_layout.setContentsMargins(4, 4, 4, 4)
-        
+
         left_title = QLabel("📝 经典版 PLCConfigEmbeddedWidget")
         left_title.setStyleSheet("font-weight: bold; color: #fa8c16; font-size: 14px;")
         left_layout.addWidget(left_title)
-        
+
         self.embedded_plc_config_widget = PLCConfigEmbeddedWidget(
             io_data_loader=self.io_data_loader,
-            devices_data=None, 
-            parent=self 
+            devices_data=None,
+            parent=self
         )
         left_layout.addWidget(self.embedded_plc_config_widget)
-        
+
         # 右侧：新版组件
         right_frame = QWidget()
         right_layout = QVBoxLayout(right_frame)
         right_layout.setContentsMargins(4, 4, 4, 4)
-        
+
         right_title = QLabel("🚀  PLCConfigAdapter")
         right_title.setStyleSheet("font-weight: bold; color: #52c41a; font-size: 14px;")
         right_layout.addWidget(right_title)
-        
+
         if MODERN_PLC_CONFIG_AVAILABLE:
             try:
                 self.modern_plc_config_widget = PLCConfigAdapter(
                     io_data_loader=self.io_data_loader,
-                    devices_data=None, 
-                    parent=self 
+                    devices_data=None,
+                    parent=self
                 )
                 right_layout.addWidget(self.modern_plc_config_widget)
             except Exception as e:
@@ -415,12 +415,12 @@ class MainWindow(QMainWindow):
             unavailable_label = QLabel("组件不可用")
             unavailable_label.setStyleSheet("color: #8c8c8c; font-size: 12px;")
             right_layout.addWidget(unavailable_label)
-        
+
         # 添加到分割器
         splitter.addWidget(left_frame)
         splitter.addWidget(right_frame)
         splitter.setSizes([700, 700])
-        
+
         layout.addWidget(splitter)
         logger.info("已设置对比模式PLC配置组件")
 
@@ -450,11 +450,11 @@ class MainWindow(QMainWindow):
         # IO点表模板生成按钮信号
         if hasattr(self, 'generate_io_template_btn'):
             self.generate_io_template_btn.clicked.connect(self._trigger_generate_points)
-        
+
         # 新增：生成FAT点表按钮信号
         if hasattr(self, 'generate_fat_table_btn'):
             self.generate_fat_table_btn.clicked.connect(self._handle_generate_fat_table)
-        
+
         # PLC配置重置信号连接
         if hasattr(self, 'embedded_plc_config_widget') and self.embedded_plc_config_widget:
             # 检查组件类型并连接相应的重置信号
@@ -466,7 +466,7 @@ class MainWindow(QMainWindow):
                 # 直接使用PLCConfigWidget的情况
                 self.embedded_plc_config_widget.configurationReset.connect(self._handle_plc_config_reset)
                 logger.info("已连接PLCConfigWidget的重置信号")
-        
+
         # 对比模式下的组件信号连接
         if hasattr(self, 'modern_plc_config_widget') and self.modern_plc_config_widget:
             if hasattr(self.modern_plc_config_widget, 'configuration_reset'):
@@ -481,7 +481,7 @@ class MainWindow(QMainWindow):
             logger.warning("用户尝试在项目编号为空时执行查询。")
             self.status_bar.showMessage("请输入项目编号。")
             return
-            
+
         try:
             # 执行查询 (调用 ProjectService)
             if not self.project_service:
@@ -518,7 +518,7 @@ class MainWindow(QMainWindow):
                 logger.error(f"An unexpected error occurred while resetting PLCConfigEmbeddedWidget: {e}", exc_info=True)
         else:
             logger.info("PLCConfigEmbeddedWidget is not available, skipping its reset.")
-            
+
         QMessageBox.information(self, "操作完成", "所有相关区域已清空。")
 
     def _handle_generate_points(self, site_no: str):
@@ -535,7 +535,7 @@ class MainWindow(QMainWindow):
             logger.warning("PLC configuration is empty. Aborting IO table template generation.")
             QMessageBox.warning(self, "提示", "请先完成PLC模块配置，再生成IO点表模板。")
             return
-        
+
         try:
             if not self.io_data_loader:
                 logger.error("IODataLoader 未初始化，无法生成点表模板。")
@@ -543,7 +543,7 @@ class MainWindow(QMainWindow):
                 return
 
             plc_io_points = self.io_data_loader.get_channel_addresses() # 获取PLC硬件配置生成的点
-            
+
             third_party_points_for_export: Optional[List[Dict[str, Any]]] = None
             if self.tp_config_service:
                 try:
@@ -554,7 +554,7 @@ class MainWindow(QMainWindow):
                             point_dict = {
                                 'template_name': tp_model.template_name,
                                 'point_name': tp_model.variable_name,
-                                'address': tp_model.variable_name, 
+                                'address': tp_model.variable_name,
                                 'data_type': tp_model.data_type,
                                 'description': tp_model.description,
                                 'device_name': tp_model.variable_prefix,
@@ -568,12 +568,12 @@ class MainWindow(QMainWindow):
                 except Exception as e_tp_fetch:
                     logger.error(f"获取或转换第三方设备点位数据以生成模板时出错: {e_tp_fetch}", exc_info=True)
                     # 不中断，允许仅导出PLC数据
-            
+
             if not plc_io_points and not third_party_points_for_export:
                 logger.info("没有已配置的PLC IO点或第三方设备点位可供导出模板。")
                 QMessageBox.information(self, "提示", "没有可导出为模板的IO点数据。")
                 return
-            
+
             default_filename = "IO_点表.xlsx"
             if self.current_site_name:
                 safe_site_name = "".join(c if c.isalnum() or c in ['-', '_', ' '] else '_' for c in self.current_site_name.strip()).replace(' ', '_').strip('_')
@@ -581,17 +581,17 @@ class MainWindow(QMainWindow):
 
             output_base_dir = "IO点表模板"
             output_dir = os.path.join(os.getcwd(), output_base_dir)
-            os.makedirs(output_dir, exist_ok=True) 
+            os.makedirs(output_dir, exist_ok=True)
             file_path = os.path.join(output_dir, default_filename)
             logger.info(f"IO点表模板将保存到: {file_path}")
 
             try:
-                exporter = IOExcelExporter() 
-                success = exporter.export_to_excel(plc_io_data=plc_io_points, 
+                exporter = IOExcelExporter()
+                success = exporter.export_to_excel(plc_io_data=plc_io_points,
                                                    third_party_data=third_party_points_for_export,
-                                                   filename=file_path, 
+                                                   filename=file_path,
                                                    site_name=self.current_site_name,
-                                                   site_no=site_no) 
+                                                   site_no=site_no)
                 if success:
                     QMessageBox.information(self, "成功", f"IO点表模板已成功导出到:\\n{file_path}")
                     self.status_bar.showMessage(f"IO点表模板已导出: {file_path}", 7000)
@@ -599,16 +599,16 @@ class MainWindow(QMainWindow):
                     QMessageBox.warning(self, "导出失败", "IO点表模板导出失败。\\\\n请检查日志获取详细信息。")
                     self.status_bar.showMessage("IO点表模板导出失败。")
 
-            except ImportError as e_import_inner: 
+            except ImportError as e_import_inner:
                 logger.error(f"导出Excel模板所需的库缺失 (openpyxl likely): {e_import_inner}", exc_info=True)
                 QMessageBox.critical(self, "依赖缺失", f"导出Excel功能需要 openpyxl 库。\\\\n请通过 pip install openpyxl 安装它。\\\\n错误详情: {e_import_inner}")
                 self.status_bar.showMessage("导出Excel依赖缺失。")
-            except Exception as e_inner_export: 
+            except Exception as e_inner_export:
                 logger.error(f"生成IO点表模板过程中（导出步骤）出错: {e_inner_export}", exc_info=True)
                 QMessageBox.critical(self, "错误", f"生成IO点表模板的导出步骤失败: {str(e_inner_export)}")
                 self.status_bar.showMessage("IO点表模板导出时出错。")
 
-        except Exception as e_outer_general: 
+        except Exception as e_outer_general:
             logger.error(f"处理生成IO点表模板请求时发生总体错误: {e_outer_general}", exc_info=True)
             QMessageBox.critical(self, "错误", f"生成IO点表模板失败: {str(e_outer_general)}")
             self.status_bar.showMessage("生成IO点表模板失败（常规错误）。")
@@ -619,7 +619,7 @@ class MainWindow(QMainWindow):
             # 更新当前场站名称
             self.current_site_name = site_name
             logger.info(f"_handle_project_selected FOR {site_name} CALLED") # 新增日志
-            logger.info(f"当前选定的场站已更新为: {self.current_site_name}") 
+            logger.info(f"当前选定的场站已更新为: {self.current_site_name}")
 
             # 设置IODataLoader的当前场站名称（用于缓存管理）
             if hasattr(self, 'io_data_loader') and self.io_data_loader:
@@ -629,8 +629,8 @@ class MainWindow(QMainWindow):
             # 执行查询 (调用 DeviceService)
             if not self.device_service:
                 raise Exception("设备服务未初始化")
-            all_devices = self.device_service.get_formatted_devices(site_name) 
-            
+            all_devices = self.device_service.get_formatted_devices(site_name)
+
             logger.info(f"原始 all_devices 列表长度: {len(all_devices) if all_devices else 0}") # 新增日志
             if all_devices: # 仅当all_devices非空时记录详情
                 raw_lk117_count = sum(1 for d in all_devices if d.get('_widget_1635777115287', '').upper() == 'LK117')
@@ -643,8 +643,8 @@ class MainWindow(QMainWindow):
                 logger.info(f"原始数据中 LK610S 条目数: {raw_lk610s_entry_count}, 基于数量的实例总数: {raw_lk610s_instance_count}")
 
             # 更新设备列表
-            self.device_list_area.update_device_list(all_devices) 
-            
+            self.device_list_area.update_device_list(all_devices)
+
             # 更新第三方设备区域的当前场站信息
             if hasattr(self, 'third_party_area') and self.third_party_area:
                 self.third_party_area.set_current_site_name(site_name)
@@ -660,8 +660,8 @@ class MainWindow(QMainWindow):
                     logger.info(f"get_current_devices 返回的列表中 LK117 实例数: {processed_lk117_count}")
                     logger.info(f"get_current_devices 返回的列表中 LK610S 实例数: {processed_lk610s_count}")
                 self.embedded_plc_config_widget.set_devices_data(current_devices_for_plc_config)
-            
-            self.status_bar.showMessage(f"已选择场站: {site_name}，设备列表已更新。") 
+
+            self.status_bar.showMessage(f"已选择场站: {site_name}，设备列表已更新。")
 
         except Exception as e:
             logger.error(f"处理项目选择时出错: {e}", exc_info=True) # 更新日志信息
@@ -670,7 +670,7 @@ class MainWindow(QMainWindow):
     def _handle_upload_io_table(self):
         """处理 '上传IO点表' 按钮点击或信号。"""
         if self.loaded_io_data_by_sheet:
-            reply = QMessageBox.question(self, "确认覆盖", 
+            reply = QMessageBox.question(self, "确认覆盖",
                                          "当前已加载IO点表数据。重新上传将覆盖现有数据，确定吗？",
                                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                          QMessageBox.StandardButton.No)
@@ -681,7 +681,7 @@ class MainWindow(QMainWindow):
 
         # 打开文件对话框
         file_path, _ = QFileDialog.getOpenFileName(self, "选择要上传的IO点表文件", "", "Excel 文件 (*.xlsx *.xls);;所有文件 (*)")
-        
+
         if not file_path:
             self.status_bar.showMessage("未选择文件")
             logger.info("用户取消了选择IO点表文件。")
@@ -699,7 +699,7 @@ class MainWindow(QMainWindow):
             error_dialog.exec()
             logger.warning(f"IO点表文件 '{file_path}' 验证失败: {message}")
             return
-        
+
         logger.info(f"IO点表文件 '{file_path}' 验证通过。准备加载数据...")
         self.status_bar.showMessage(f"文件验证通过: {file_name}。正在加载数据...")
 
@@ -774,8 +774,8 @@ class MainWindow(QMainWindow):
     def _generate_hollysys_all_tables(self, base_io_filename_cleaned: str):
         """为和利时PLC生成所有相关点表（变量表和Modbus表）。"""
         plc_manufacturer = "和利时"
-        logger.info(f"准备为和利时PLC生成点表。")        
-        
+        logger.info(f"准备为和利时PLC生成点表。")
+
         is_safety_system = self._is_safety_plc()
         generator: Any # Type hint for generator
 
@@ -792,7 +792,7 @@ class MainWindow(QMainWindow):
             logger.info("未检测到安全PLC模块，将使用 HollysysGenerator。")
             generator = HollysysGenerator()
 
-        # --- 1. 生成变量表 --- 
+        # --- 1. 生成变量表 ---
         try:
             base_output_dir_vars = os.path.join(os.getcwd(), "PLC点表")
             target_plc_mfg_dir_vars = os.path.join(base_output_dir_vars, plc_manufacturer)
@@ -804,8 +804,8 @@ class MainWindow(QMainWindow):
             else:
                 # 非安全型，恢复原始文件名后缀 (或您期望的后缀)
                 # 根据日志，非安全型变量表的后缀是 "变量表"
-                variable_table_filename_suffix = "变量表" 
-            
+                variable_table_filename_suffix = "变量表"
+
             output_filename_vars = f"{base_io_filename_cleaned}_和利时{variable_table_filename_suffix}.xls"
             save_path_vars = os.path.join(target_plc_mfg_dir_vars, output_filename_vars)
             logger.info(f"和利时PLC{'安全型' if is_safety_system else ''}变量表将保存到: {save_path_vars}")
@@ -816,16 +816,16 @@ class MainWindow(QMainWindow):
             if is_safety_system:
                 # SafetyHollysysGenerator 调用 generate_safety_hollysys_table
                 success_vars, error_message_vars = generator.generate_safety_hollysys_table(
-                    points_by_sheet=self.loaded_io_data_by_sheet, 
+                    points_by_sheet=self.loaded_io_data_by_sheet,
                     output_path=save_path_vars
                 )
             else:
                 # HollysysGenerator 调用 generate_hollysys_table
                 success_vars, error_message_vars = generator.generate_hollysys_table(
-                    points_by_sheet=self.loaded_io_data_by_sheet, 
+                    points_by_sheet=self.loaded_io_data_by_sheet,
                     output_path=save_path_vars
                 )
-            
+
             if success_vars:
                 QMessageBox.information(self, "变量表生成成功", f"和利时PLC{'安全型' if is_safety_system else ''}变量表已成功导出到:\n{save_path_vars}")
                 self.status_bar.showMessage(f"和利时{'安全型' if is_safety_system else ''}变量表已生成: {output_filename_vars}", 7000)
@@ -834,15 +834,15 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "变量表生成失败", detailed_error_msg_vars)
                 logger.error(f"和利时{'安全型' if is_safety_system else ''}变量表生成失败: {detailed_error_msg_vars}")
                 self.status_bar.showMessage(f"和利时{'安全型' if is_safety_system else ''}变量表生成失败。")
-        
-        except Exception as e_vars: 
+
+        except Exception as e_vars:
             logger.error(f"生成和利时PLC{'安全型' if is_safety_system else ''}变量表时发生未知错误: {e_vars}", exc_info=True)
             QMessageBox.critical(self, "变量表生成错误", f"生成和利时PLC{'安全型' if is_safety_system else ''}变量表时发生未知错误:\n{e_vars}")
             self.status_bar.showMessage(f"和利时{'安全型' if is_safety_system else ''}变量表生成时发生错误。")
             # 如果变量表生成失败，对于安全系统，也应考虑是否继续生成Modbus表，目前是继续
             # 对于非安全系统，到此结束
 
-        # --- 2. 只有安全系统才生成Modbus点表 --- 
+        # --- 2. 只有安全系统才生成Modbus点表 ---
         if is_safety_system:
             # 确保 generator 是 SafetyHollysysGenerator 的实例，它有 generate_modbus_excel
             if not isinstance(generator, SafetyHollysysGenerator):
@@ -860,7 +860,7 @@ class MainWindow(QMainWindow):
                 output_filename_modbus = f"{base_io_filename_cleaned}_和利时Modbus表.xls"
                 save_path_modbus = os.path.join(target_plc_mfg_dir_modbus, output_filename_modbus)
                 logger.info(f"和利时PLC安全型Modbus点表将保存到: {save_path_modbus}")
-                
+
                 success_modbus, error_message_modbus = generator.generate_modbus_excel(
                     points_by_sheet_dict=self.loaded_io_data_by_sheet, # 修改参数名
                     output_path=save_path_modbus
@@ -879,7 +879,7 @@ class MainWindow(QMainWindow):
                 logger.error(f"生成和利时PLC安全型Modbus点表时发生属性错误 (方法可能不存在): {e_attr_modbus}", exc_info=True)
                 QMessageBox.critical(self, "Modbus表生成错误", f"尝试调用Modbus生成功能时出错 (可能方法未找到):\n{e_attr_modbus}")
                 self.status_bar.showMessage("和利时安全型Modbus表生成时发生属性错误。")
-            except Exception as e_modbus: 
+            except Exception as e_modbus:
                 logger.error(f"生成和利时PLC安全型Modbus点表时发生未知错误: {e_modbus}", exc_info=True)
                 QMessageBox.critical(self, "Modbus表生成错误", f"生成和利时PLC安全型Modbus点表时发生未知错误:\n{e_modbus}")
                 self.status_bar.showMessage("和利时安全型Modbus表生成时发生错误。")
@@ -897,7 +897,7 @@ class MainWindow(QMainWindow):
         if not self.loaded_io_data_by_sheet:
             QMessageBox.warning(self, "未加载数据", "请先上传并成功加载IO点表数据，然后再生成HMI点表。")
             return
-        
+
         # 从 self.loaded_io_data_by_sheet 中提取所有点位到一个列表中
         all_points: List[UploadedIOPoint] = []
         for sheet_name, points_in_sheet in self.loaded_io_data_by_sheet.items():
@@ -926,16 +926,16 @@ class MainWindow(QMainWindow):
             if hmi_type == "亚控":
                 logger.info(f"准备根据已加载数据生成亚控HMI点表。")
                 logger.info(f"来自 {len(self.loaded_io_data_by_sheet)} 个工作表的总共 {len(all_points)} 个点位将传递给生成器。")
-                
+
                 # KingViewGenerator.generate_kingview_files 的 output_dir 参数现在是目标文件夹
                 # 文件名由生成器内部逻辑或 base_io_filename 决定，并会被保存到 output_dir
                 success, ioserver_path, db_path, error_msg = KingViewGenerator().generate_kingview_files(
-                    points_by_sheet=self.loaded_io_data_by_sheet, 
+                    points_by_sheet=self.loaded_io_data_by_sheet,
                     output_dir=hmi_specific_output_dir, # 传递新的固定输出目录
                     base_io_filename=base_file_name
                 )
                 if success and ioserver_path and db_path:
-                    QMessageBox.information(self, "生成成功", 
+                    QMessageBox.information(self, "生成成功",
                                             f"""亚控HMI点表已成功生成:
  - IO Server 点表: {os.path.basename(ioserver_path)}
  - 数据词典点表: {os.path.basename(db_path)}
@@ -953,7 +953,7 @@ class MainWindow(QMainWindow):
             elif hmi_type == "力控":
                 logger.info(f"准备根据已加载数据生成力控HMI点表。")
                 logger.info(f"来自 {len(self.loaded_io_data_by_sheet)} 个工作表的总共 {len(all_points)} 个点位将传递给生成器。")
-                
+
                 likong_gen = LikongGenerator()
                 # 调用新的 generate_all_csvs 方法
                 all_results = likong_gen.generate_all_csvs(
@@ -973,15 +973,15 @@ class MainWindow(QMainWindow):
                     else:
                         errors_occurred.append(f"生成 '{file_name}' 失败: {err_msg if err_msg else '未知错误'}")
                         logger.error(f"生成力控HMI文件 '{file_name}' 失败: {err_msg if err_msg else '未知错误'}")
-                
+
                 if any_success and not errors_occurred:
-                    QMessageBox.information(self, "生成成功", 
+                    QMessageBox.information(self, "生成成功",
                                             f"""所有力控HMI相关文件已成功生成:
 {', '.join(files_generated_successfully)}
 已保存到目录: {hmi_specific_output_dir}""")
                     self.status_bar.showMessage(f"力控HMI点表生成成功。")
                 elif any_success and errors_occurred:
-                    QMessageBox.warning(self, "部分成功", 
+                    QMessageBox.warning(self, "部分成功",
                                         f"""力控HMI点表生成部分成功:
 成功: {', '.join(files_generated_successfully)}
 失败: {'; '.join(errors_occurred)}
@@ -998,7 +998,7 @@ class MainWindow(QMainWindow):
                 logger.warning(f"请求生成不受支持的HMI类型: {hmi_type}")
                 self.status_bar.showMessage(f"HMI点表生成失败: 类型不支持。")
                 return
-            
+
         except Exception as e:
             logger.error(f"生成 {hmi_type} HMI点表失败: {e}", exc_info=True)
             QMessageBox.critical(self, "生成失败", f"生成 {hmi_type} HMI点表时发生错误: {str(e)}")
@@ -1012,7 +1012,7 @@ class MainWindow(QMainWindow):
                 # 获取表格中的数据
                 devices_data = []
                 table = self.device_list_area.device_table
-                
+
                 if table:
                     for row in range(table.rowCount()):
                         try:
@@ -1027,24 +1027,24 @@ class MainWindow(QMainWindow):
                                 '_widget_1654703913698': table.item(row, 5).text() if table.item(row, 5) else "",  # 单位
                                 '_widget_1641439463480': table.item(row, 6).text() if table.item(row, 6) else ""   # 技术参数(外部)
                             }
-                            
+
                             # 记录原始数据，方便调试
                             logger.debug(f"设备 #{row+1}:")
                             logger.debug(f"  名称: {device['_widget_1635777115211']}")
                             logger.debug(f"  品牌: {device['_widget_1635777115248']}")
                             logger.debug(f"  型号: {device['_widget_1635777115287']}")
                             logger.debug(f"  数量: {device['_widget_1635777485580']}")
-                            
+
                             # 根据数量创建多个设备实例
                             try:
                                 quantity_str = device['_widget_1635777485580']
                                 # 如果数量为空字符串或仅含空白，则默认为1；否则尝试转换为整数
-                                quantity = int(quantity_str) if quantity_str and quantity_str.strip() else 1 
-                                
+                                quantity = int(quantity_str) if quantity_str and quantity_str.strip() else 1
+
                                 if quantity <= 0: # 处理数量为0或负数的情况
                                     logger.warning(f"设备 #{row+1} 型号 {device['_widget_1635777115287']} 原始数量为 '{quantity_str}'，被修正为1个实例")
                                     quantity = 1
-                                
+
                                 # 为所有设备（包括LK117）都根据其数量创建实例
                                 for i in range(quantity):
                                     device_copy = device.copy()
@@ -1056,7 +1056,7 @@ class MainWindow(QMainWindow):
                                     elif "LK610S" in model_upper:
                                         logger.info(f"创建LK610S实例 (源行: {row+1}, 型号: {device_copy['_widget_1635777115287']}, 解析数量: {quantity}, 当前实例号: {i+1}), devices_data已有 {len(devices_data)} 条")
                                     devices_data.append(device_copy)
-                                
+
                                 # 避免为单个非LK117/非LK610S设备或数量为1的设备重复记录下面的debug日志
                                 if not ("LK117" in device['_widget_1635777115287'].upper() or "LK610S" in device['_widget_1635777115287'].upper()) and quantity > 1:
                                     logger.debug(f"  已为设备 #{row+1} 型号 {device['_widget_1635777115287']} (原始数量: {quantity_str}) 创建 {quantity} 个实例")
@@ -1065,11 +1065,11 @@ class MainWindow(QMainWindow):
                                 logger.warning(f"设备 #{row+1} 型号 {device['_widget_1635777115287']} 数量 '{device['_widget_1635777485580']}' 解析失败 ({e_qty})，默认为1个实例. devices_data已有 {len(devices_data)} 条")
                                 device['instance_index'] = 1 # 确保原始device也有instance_index
                                 devices_data.append(device) # 添加原始device作为单个实例
-                                
+
                         except Exception as row_e:
                             logger.warning(f"处理设备表格第 {row+1} 行数据时出错: {row_e}")
                             continue
-                
+
                 logger.info(f"获取到 {len(devices_data)} 个设备实例（考虑数量后）")
                 return devices_data
             else:
@@ -1084,7 +1084,7 @@ class MainWindow(QMainWindow):
         self.loaded_io_data_by_sheet = {}
         self.verified_io_table_path = None
         # 不需要再次选择 PLC 类型，因为这是针对生成特定PLC格式的点表，而不是原始IO模板
-        # self.selected_plc_type_for_upload = None 
+        # self.selected_plc_type_for_upload = None
         logger.info("已清空之前加载的IO点表数据和路径。")
         self.status_bar.showMessage("已清空IO点表数据。")
         # 通知QueryArea更新其状态显示
@@ -1096,7 +1096,7 @@ class MainWindow(QMainWindow):
         if not self.query_area or not hasattr(self.query_area, 'station_input'):
             QMessageBox.critical(self, "错误", "查询区域未正确初始化，无法获取场站编号。")
             return
-            
+
         site_no = self.query_area.station_input.text().strip()
         if not site_no:
             QMessageBox.warning(self, "需要场站编号", "请在查询区域输入有效的场站编号后重试。")
@@ -1108,12 +1108,12 @@ class MainWindow(QMainWindow):
             logger.info(f"_trigger_generate_points: Current PLC config in IODataLoader: {self.io_data_loader.current_plc_config}")
         else:
             logger.warning("_trigger_generate_points: IODataLoader is None!")
-            
+
         if not self.io_data_loader or not self.io_data_loader.current_plc_config:
             logger.warning("Attempted to generate IO template, but PLC configuration is empty or IODataLoader is missing.")
             QMessageBox.warning(self, "PLC配置缺失", "请先在<b>'PLC硬件配置'</b>选项卡中完成并应用模块配置，然后再生成IO点表模板。")
             return
-        
+
         # 如果场站编号和PLC配置都有效，则继续
         self._handle_generate_points(site_no)
 
@@ -1127,7 +1127,7 @@ class MainWindow(QMainWindow):
         if not self.loaded_io_data_by_sheet:
             logger.info("_is_safety_plc: No IO data loaded.")
             return False
-        
+
         if not self.io_data_loader or not hasattr(self.io_data_loader, 'module_info_provider') or not self.io_data_loader.module_info_provider:
             logger.warning("_is_safety_plc: IODataLoader or ModuleInfoProvider is not available. Cannot determine if it's a safety PLC.")
             return False # 无法判断，按非安全处理
@@ -1156,7 +1156,7 @@ class MainWindow(QMainWindow):
 
         # 从已验证的IO点表路径中提取文件名（不含扩展名）作为基础
         original_filename_stem = os.path.splitext(os.path.basename(self.verified_io_table_path))[0]
-        
+
         # 构造FAT点检表的输出文件名，例如：原始文件名_FAT.xlsx
         fat_output_filename = f"{original_filename_stem}_FAT.xlsx"
 
@@ -1172,12 +1172,37 @@ class MainWindow(QMainWindow):
             logger.error(error_msg_mkdir)
             self.status_bar.showMessage("FAT点表目录创建失败。", 5000)
             return
-            
+
         self.status_bar.showMessage("正在生成FAT点表...")
         QApplication.processEvents() # 确保UI更新
 
         # 构造最终的完整输出路径
         final_output_path = os.path.join(output_dir, fat_output_filename)
+
+        # 调用FAT生成函数
+        try:
+            logger.info(f"开始生成FAT点表，输入文件: {self.verified_io_table_path}, 输出文件: {final_output_path}")
+
+            success, generated_file_path, error_message = generate_fat_checklist_from_source(
+                original_file_path=self.verified_io_table_path,
+                output_dir=output_dir,
+                output_filename=fat_output_filename
+            )
+
+            if success and generated_file_path:
+                QMessageBox.information(self, "生成成功", f"FAT点表已生成，文件路径：\n{generated_file_path}")
+                self.status_bar.showMessage("FAT点表生成成功！", 5000)
+                logger.info(f"FAT点表生成成功: {generated_file_path}")
+            else:
+                error_msg = error_message or "未知错误"
+                QMessageBox.critical(self, "生成失败", f"生成FAT点表失败：\n{error_msg}")
+                self.status_bar.showMessage("FAT点表生成失败。", 5000)
+                logger.error(f"FAT点表生成失败: {error_msg}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "生成失败", f"生成FAT点表时发生异常：\n{str(e)}")
+            self.status_bar.showMessage("FAT点表生成异常。", 5000)
+            logger.error(f"FAT点表生成异常: {e}", exc_info=True)
 
     def _handle_generate_communication_table(self):
         """处理点击"生成上下位通讯点表"按钮的事件。"""
@@ -1188,7 +1213,7 @@ class MainWindow(QMainWindow):
 
         # 从已验证的IO点表路径中提取文件名（不含扩展名）作为基础
         original_filename_stem = os.path.splitext(os.path.basename(self.verified_io_table_path))[0]
-        
+
         # 构造上下位通讯点表的输出文件名，例如：原始文件名_上下位通讯点表.xlsx
         communication_output_filename = f"{original_filename_stem}_上下位通讯点表.xlsx"
 
@@ -1204,13 +1229,13 @@ class MainWindow(QMainWindow):
             logger.error(error_msg_mkdir)
             self.status_bar.showMessage("上下位通讯点表目录创建失败。", 5000)
             return
-            
+
         self.status_bar.showMessage("正在生成上下位通讯点表...")
         QApplication.processEvents() # 确保UI更新
 
         # 构造最终的完整输出路径
         final_output_path = os.path.join(output_dir, communication_output_filename)
-        
+
         # 调用生成表头的函数
         try:
             # Import necessary functions and types
@@ -1235,7 +1260,7 @@ class MainWindow(QMainWindow):
                     if points_in_sheet: # Ensure there are points in the sheet
                         all_points.extend(points_in_sheet)
                 logger.info(f"为上下位通讯点表加载了 {len(all_points)} 个点位，来源: {list(points_by_sheet.keys())}")
-            
+
             if not all_points:
                 QMessageBox.warning(self, "无数据点", "从IO点表中未提取到有效数据点，无法生成上下位通讯点表。")
                 logger.warning(f"上下位通讯点表生成失败: 从 {self.verified_io_table_path} 未提取到数据点。")
@@ -1257,7 +1282,7 @@ class MainWindow(QMainWindow):
     def _handle_plc_config_reset(self):
         """
         处理PLC配置重置信号
-        
+
         当用户点击重置配置按钮时，重新从API获取最新的设备数据
         """
         try:
@@ -1265,21 +1290,21 @@ class MainWindow(QMainWindow):
                 logger.warning("没有当前场站，无法重新加载设备数据")
                 QMessageBox.warning(self, "无当前场站", "没有选中的场站，无法重新加载数据")
                 return
-            
+
             site_name = self.current_site_name
             logger.info(f"处理PLC配置重置，重新加载场站 '{site_name}' 的设备数据")
-            
+
             # 显示加载状态
             self.status_bar.showMessage(f"正在重新加载场站 '{site_name}' 的最新数据...")
-            
+
             # 重新调用项目选择处理逻辑，这会触发API查询获取最新数据
             self._handle_project_selected(site_name)
-            
+
             # 显示完成状态
             self.status_bar.showMessage(f"场站 '{site_name}' 的数据已重新加载", 3000)
-            
+
             logger.info(f"PLC配置重置处理完成，场站 '{site_name}' 的数据已更新")
-            
+
         except Exception as e:
             logger.error(f"处理PLC配置重置失败: {e}", exc_info=True)
             QMessageBox.critical(self, "重置处理失败", f"重新加载数据时发生错误：\n{str(e)}")

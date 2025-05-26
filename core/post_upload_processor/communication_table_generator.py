@@ -58,9 +58,12 @@ def generate_communication_table_excel(output_path: str, io_points: List[Uploade
             signal_range_value = ""
             data_range_value = ""
 
-            if point.module_type in ["AI", "AO"]:
+            # 信号范围：只有硬点的AI/AO模块才显示"4~20mA"，软点为空
+            if point.source_type == "main_io" and point.module_type in ["AI", "AO"]:
                 signal_range_value = "4~20mA"
 
+            # 数据范围：只有AI/AO类型的点位才处理量程范围
+            if point.module_type in ["AI", "AO"]:
                 # Handle Data Range for AI/AO
                 low_limit = point.range_low_limit
                 high_limit = point.range_high_limit
@@ -125,7 +128,7 @@ def generate_communication_table_excel(output_path: str, io_points: List[Uploade
 # 4. 第一列为自动递增的序号。
 # 5. 第二列 "过程控制" 来自传入的 io_points 列表中的 hmi_variable_name 属性。
 # 6. 第三列 "检测点名称" 来自 variable_description 属性。
-# 7. 第四列 "信号范围" 对AI/AO模块自动填写为"4~20mA"。
+# 7. 第四列 "信号范围" 只对硬点的AI/AO模块自动填写为"4~20mA"，软点为空。
 # 8. 第五列 "数据范围" 根据 range_low_limit 和 range_high_limit 自动生成。
 # 9. 第六列 "单位" 来自上传文件中的 unit 字段。
 # 10. 第七列 "信号类型" 根据点位类型确定：硬点显示模块类型（AI/AO/DI/DO），软点显示"通讯"。
