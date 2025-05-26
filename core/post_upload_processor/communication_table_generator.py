@@ -1,6 +1,7 @@
 import os
 from typing import List
 from openpyxl import Workbook
+from openpyxl.styles import Border, Side, Alignment
 from .uploaded_file_processor.io_data_model import UploadedIOPoint
 
 
@@ -20,7 +21,26 @@ def generate_communication_table_excel(output_path: str, io_points: List[Uploade
         wb = Workbook()
         ws = wb.active
         ws.title = "上下位通讯点表"
+
+        # 定义边框样式
+        thin_border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+
+        # 定义对齐样式（左对齐）
+        left_alignment = Alignment(horizontal='left', vertical='center')
+
+        # 添加表头
         ws.append(headers)
+
+        # 设置表头样式
+        for col_num in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_num)
+            cell.border = thin_border
+            cell.alignment = left_alignment
 
         # 包含所有类型的点位：主IO点位、中间点位、第三方设备点位
         # 过滤掉无效的点位（没有HMI变量名的点位）
@@ -60,6 +80,18 @@ def generate_communication_table_excel(output_path: str, io_points: List[Uploade
                 if unit_str:
                     unit_value = unit_str
 
+            # 确定信号类型：硬点显示模块类型，软点显示"通讯"
+            signal_type_value = ""
+            if point.source_type == "main_io" and point.module_type:
+                # 主IO硬件点位：显示模块类型（AI、AO、DI、DO）
+                signal_type_value = point.module_type
+            elif point.source_type in ["intermediate_from_main", "third_party"]:
+                # 中间点位和第三方设备点位：显示"通讯"
+                signal_type_value = "通讯"
+            else:
+                # 其他情况：显示模块类型（如果有的话）
+                signal_type_value = point.module_type if point.module_type else ""
+
             row_data = [
                 serial_number,
                 process_control_value,
@@ -67,11 +99,18 @@ def generate_communication_table_excel(output_path: str, io_points: List[Uploade
                 signal_range_value,  # 信号范围
                 data_range_value,    # 数据范围
                 unit_value,  # 单位 - 从上传文件中的单位列获取
-                point.module_type if point and point.module_type else "",  # 信号类型
+                signal_type_value,  # 信号类型 - 硬点显示模块类型，软点显示"通讯"
                 point.power_supply_type if point and point.power_supply_type else "",  # 供电
                 ""   # 备注
             ]
             ws.append(row_data)
+
+            # 设置当前行的样式（边框和左对齐）
+            current_row = index + 2  # +2 因为表头占第1行，数据从第2行开始
+            for col_num in range(1, len(row_data) + 1):
+                cell = ws.cell(row=current_row, column=col_num)
+                cell.border = thin_border
+                cell.alignment = left_alignment
 
         wb.save(output_path)
         return True
@@ -82,11 +121,12 @@ def generate_communication_table_excel(output_path: str, io_points: List[Uploade
 # 中文注释：
 # 1. 该函数会在指定路径生成一个Excel文件，sheet名为"上下位通讯点表"。
 # 2. 包含所有类型的点位：IO通道点位、第三方设备点位和中间点位。
-# 3. 第一列为自动递增的序号。
-# 4. 第二列 "过程控制" 来自传入的 io_points 列表中的 hmi_variable_name 属性。
-# 5. 第三列 "检测点名称" 来自 variable_description 属性。
-# 6. 第四列 "信号范围" 对AI/AO模块自动填写为"4~20mA"。
-# 7. 第五列 "数据范围" 根据 range_low_limit 和 range_high_limit 自动生成。
-# 8. 第六列 "单位" 来自上传文件中的 unit 字段。
-# 9. 第七列 "信号类型" 来自 module_type 属性。
-# 10. 第八列 "供电" 来自 power_supply_type 属性。
+# 3. 所有单元格都设置了边框和左对齐格式。
+# 4. 第一列为自动递增的序号。
+# 5. 第二列 "过程控制" 来自传入的 io_points 列表中的 hmi_variable_name 属性。
+# 6. 第三列 "检测点名称" 来自 variable_description 属性。
+# 7. 第四列 "信号范围" 对AI/AO模块自动填写为"4~20mA"。
+# 8. 第五列 "数据范围" 根据 range_low_limit 和 range_high_limit 自动生成。
+# 9. 第六列 "单位" 来自上传文件中的 unit 字段。
+# 10. 第七列 "信号类型" 根据点位类型确定：硬点显示模块类型（AI/AO/DI/DO），软点显示"通讯"。
+# 11. 第八列 "供电" 来自 power_supply_type 属性。
