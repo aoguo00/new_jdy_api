@@ -53,16 +53,16 @@ from ui.components.third_party_device_area import ThirdPartyDeviceArea
 from ui.dialogs.plc_config_dialog import PLCConfigEmbeddedWidget
 from ui.dialogs.error_display_dialog import ErrorDisplayDialog
 
-# 新增：导入新的现代化PLC配置组件
+# 新增：导入新的PLC配置组件
 try:
     from ui.components.plc_config.plc_config_adapter import PLCConfigAdapter
     MODERN_PLC_CONFIG_AVAILABLE = True
     logger = logging.getLogger(__name__)
-    logger.info("现代化PLC配置组件可用")
+    logger.info("PLC配置组件可用")
 except ImportError as e:
     MODERN_PLC_CONFIG_AVAILABLE = False
     logger = logging.getLogger(__name__)
-    logger.warning(f"现代化PLC配置组件不可用: {e}")
+    logger.warning(f"PLC配置组件不可用: {e}")
 
 # 移除模块管理对话框导入
 # from ui.dialogs.module_manager_dialog import ModuleManagerDialog
@@ -271,7 +271,7 @@ class MainWindow(QMainWindow):
                 self._setup_comparison_plc_config(plc_config_layout)
                 tab_title = "PLC硬件配置 (对比模式)"
             elif use_modern_ui and MODERN_PLC_CONFIG_AVAILABLE:
-                # 使用新版现代化组件
+                # 使用新版组件
                 try:
                     self.embedded_plc_config_widget = PLCConfigAdapter(
                         io_data_loader=self.io_data_loader,
@@ -279,10 +279,10 @@ class MainWindow(QMainWindow):
                         parent=self 
                     )
                     plc_config_layout.addWidget(self.embedded_plc_config_widget)
-                    tab_title = "PLC硬件配置 (现代版)"
-                    logger.info("成功加载现代化PLC配置组件")
+                    tab_title = "PLC硬件配置"
+                    logger.info("成功加载PLC配置组件")
                 except Exception as e:
-                    logger.error(f"加载现代化PLC配置组件失败，回退到旧版: {e}", exc_info=True)
+                    logger.error(f"加载PLC配置组件失败，回退到旧版: {e}", exc_info=True)
                     self._setup_legacy_plc_config(plc_config_layout)
                     tab_title = "PLC硬件配置 (回退到旧版)"
             else:
@@ -290,7 +290,7 @@ class MainWindow(QMainWindow):
                 self._setup_legacy_plc_config(plc_config_layout)
                 tab_title = "PLC硬件配置 (经典版)"
                 if not MODERN_PLC_CONFIG_AVAILABLE:
-                    logger.info("现代化PLC配置组件不可用，使用旧版组件")
+                    logger.info("PLC配置组件不可用，使用旧版组件")
         else:
             # IO数据加载器不可用
             error_label_main = QLabel("错误：PLC配置模块因IO数据服务不可用而无法加载。")
@@ -394,7 +394,7 @@ class MainWindow(QMainWindow):
         right_layout = QVBoxLayout(right_frame)
         right_layout.setContentsMargins(4, 4, 4, 4)
         
-        right_title = QLabel("🚀 现代版 PLCConfigAdapter")
+        right_title = QLabel("🚀  PLCConfigAdapter")
         right_title.setStyleSheet("font-weight: bold; color: #52c41a; font-size: 14px;")
         right_layout.addWidget(right_title)
         
@@ -407,12 +407,12 @@ class MainWindow(QMainWindow):
                 )
                 right_layout.addWidget(self.modern_plc_config_widget)
             except Exception as e:
-                error_label = QLabel(f"现代版组件加载失败: {str(e)}")
+                error_label = QLabel(f"组件加载失败: {str(e)}")
                 error_label.setStyleSheet("color: red; font-size: 12px;")
                 right_layout.addWidget(error_label)
-                logger.error(f"对比模式中现代版组件加载失败: {e}", exc_info=True)
+                logger.error(f"对比模式中组件加载失败: {e}", exc_info=True)
         else:
-            unavailable_label = QLabel("现代版组件不可用")
+            unavailable_label = QLabel("组件不可用")
             unavailable_label.setStyleSheet("color: #8c8c8c; font-size: 12px;")
             right_layout.addWidget(unavailable_label)
         
@@ -459,19 +459,19 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'embedded_plc_config_widget') and self.embedded_plc_config_widget:
             # 检查组件类型并连接相应的重置信号
             if hasattr(self.embedded_plc_config_widget, 'configuration_reset'):
-                # 现代化组件（PLCConfigAdapter）
+                # 组件（PLCConfigAdapter）
                 self.embedded_plc_config_widget.configuration_reset.connect(self._handle_plc_config_reset)
-                logger.info("已连接现代化PLC配置组件的重置信号")
+                logger.info("已连接PLC配置组件的重置信号")
             elif hasattr(self.embedded_plc_config_widget, 'configurationReset'):
                 # 直接使用PLCConfigWidget的情况
                 self.embedded_plc_config_widget.configurationReset.connect(self._handle_plc_config_reset)
                 logger.info("已连接PLCConfigWidget的重置信号")
         
-        # 对比模式下的现代化组件信号连接
+        # 对比模式下的组件信号连接
         if hasattr(self, 'modern_plc_config_widget') and self.modern_plc_config_widget:
             if hasattr(self.modern_plc_config_widget, 'configuration_reset'):
                 self.modern_plc_config_widget.configuration_reset.connect(self._handle_plc_config_reset)
-                logger.info("已连接对比模式现代化PLC配置组件的重置信号")
+                logger.info("已连接对比模式PLC配置组件的重置信号")
 
     def _handle_query(self, project_no: str):
         """处理查询请求"""
