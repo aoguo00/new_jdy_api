@@ -255,13 +255,8 @@ class RackWidget(QWidget):
         grid_layout = QGridLayout(slots_container)
         grid_layout.setSpacing(4)
         
-        # 修复：LK系统显示10个槽位（0-9），LE系统显示11个槽位（0-10）
-        if self.system_type == 'LK':
-            # LK系统：内部槽位1-10映射为显示槽位0-9
-            display_slots = self.slots_count - 1  # 11 - 1 = 10个显示槽位
-        else:
-            # LE系统：显示全部11个槽位（0-10）
-            display_slots = self.slots_count
+        # LK系统和LE系统都显示11个槽位（0-10）
+        display_slots = self.slots_count
         
         # 创建槽位 (假设2行布局)
         rows = 2

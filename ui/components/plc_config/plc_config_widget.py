@@ -497,8 +497,8 @@ class PLCConfigWidget(QWidget):
             # LE_CPU系统：槽位0固定给CPU，用户可用槽位从1开始
             user_slots = slots_per_rack - 1
         else:
-            # LK系统：槽位1固定给DP，用户可用槽位从2开始
-            user_slots = slots_per_rack - 2
+            # LK系统：槽位1固定给DP，用户可用槽位从0开始到10结束，共11个
+            user_slots = slots_per_rack - 1  # 修改这里，从slots_per_rack(12)中减去1，得到11个可用槽位
         
         # 获取当前右侧的模块数量（排除固定模块）
         right_items = self.transfer_widget.get_right_items()
@@ -604,9 +604,15 @@ class PLCConfigWidget(QWidget):
             # 获取配置状态
             config = self._get_current_module_config()
             configured_count = len(config)
-            # 修改：使用可用槽数而不是物理槽数进行显示
-            # 每个机架的可用槽数 = 物理槽数 - 1（槽位0通常被系统占用）
-            available_slots_per_rack = rack_info.get('slots_per_rack', 11) - 1
+            
+            # 修改：根据系统类型确定可用槽位数
+            if system_type == 'LE_CPU':
+                # LE_CPU系统：槽位0固定给CPU，用户可用槽位从1开始
+                available_slots_per_rack = rack_info.get('slots_per_rack', 12) - 1
+            else:
+                # LK系统：槽位1固定给DP，用户可用槽位从0开始到10结束，共11个
+                available_slots_per_rack = rack_info.get('slots_per_rack', 12) - 1
+            
             total_available_slots = rack_count * available_slots_per_rack
             
             # 获取IO通道数
@@ -677,9 +683,21 @@ class PLCConfigWidget(QWidget):
                     # LK系统：槽位1固定为PROFIBUS-DP
                     config[(rack_id, 1)] = 'PROFIBUS-DP'
                     
-                    # 用户模块从槽位2开始
+                    # LK系统用户模块：槽位0以及槽位2~10可以添加模块
+                    # 首先处理槽位0
+                    for module in rack_modules:
+                        if len(config) <= 0:  # 确保只添加第一个模块到槽位0
+                            model_name = module.model if hasattr(module, 'model') and module.model else module.title.split('(')[0].strip()
+                            config[(rack_id, 0)] = model_name
+                            break
+                    
+                    # 然后处理槽位2~10
                     slot_index = 2
                     for module in rack_modules:
+                        # 跳过已添加到槽位0的模块
+                        if (rack_id, 0) in config and config[(rack_id, 0)] == (module.model if hasattr(module, 'model') and module.model else module.title.split('(')[0].strip()):
+                            continue
+                            
                         if slot_index < slots_per_rack:
                             model_name = module.model if hasattr(module, 'model') and module.model else module.title.split('(')[0].strip()
                             config[(rack_id, slot_index)] = model_name
@@ -931,8 +949,8 @@ class PLCConfigWidget(QWidget):
                                 if 'LE5118' not in m.key.upper() and 
                                 'LE5118' not in (m.title.replace(' 🔒', '') if hasattr(m, 'title') else '').upper()])
             else:
-                # LK系统：槽位1固定给DP，用户可用槽位从2开始
-                user_slots = slots_per_rack - 2
+                # LK系统：槽位1固定给DP，用户可用槽位从0开始到10结束，共11个
+                user_slots = slots_per_rack - 1  # 修改这里，从slots_per_rack(12)中减去1，得到11个可用槽位
                 used_slots = len(current_rack_modules)
             
             available_slots = user_slots - used_slots
@@ -1400,43 +1418,6 @@ class PLCConfigWidget(QWidget):
         self.rack_widget.update_configuration(config)
         
         logger.debug("机架显示已更新")
-    
-    def _update_system_info(self):
-        """更新系统信息"""
-        if not hasattr(self, 'system_info') or not self.system_info:
-            return
-        
-        try:
-            # 获取系统信息
-            rack_info = self.io_data_loader.get_rack_info()
-            system_type = rack_info.get('system_type', '未知')
-            rack_count = rack_info.get('rack_count', 0)
-            
-            # 获取配置状态
-            config = self._get_current_module_config()
-            configured_count = len(config)
-            # 修改：使用可用槽数而不是物理槽数进行显示
-            # 每个机架的可用槽数 = 物理槽数 - 1（槽位0通常被系统占用）
-            available_slots_per_rack = rack_info.get('slots_per_rack', 11) - 1
-            total_available_slots = rack_count * available_slots_per_rack
-            
-            # 获取IO通道数
-            io_count = self._calculate_io_count()
-            
-            # 检查保存状态
-            current_site = getattr(self.io_data_loader, 'current_site_name', None)
-            is_saved = False
-            if current_site and hasattr(self.io_data_loader, 'persistence_manager'):
-                is_saved = self.io_data_loader.persistence_manager.has_site_config(current_site)
-            
-            # 更新显示
-            self.system_info.update_system_info(system_type, rack_count)
-            self.system_info.update_config_status(configured_count, total_available_slots)
-            self.system_info.update_io_count(io_count)
-            self.system_info.update_save_status(is_saved, current_site if current_site else "")
-            
-        except Exception as e:
-            logger.error(f"更新系统信息失败: {e}", exc_info=True)
     
     def _calculate_io_count(self) -> int:
         """计算IO通道总数 - 基于旧版PLCConfigEmbeddedWidget的统计逻辑"""
