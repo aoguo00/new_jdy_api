@@ -24,7 +24,7 @@ HEADER_TO_ATTRIBUTE_MAP: Dict[str, str] = {
     "变量名称（HMI）": "hmi_variable_name",
     "变量描述": "variable_description",
     "数据类型": "data_type",
-    "读写属性": "read_write_property",
+    "单位": "unit",
     "保存历史": "save_history",
     "掉电保护": "power_off_protection",
     "量程低限": "range_low_limit",
@@ -210,10 +210,10 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
     """
     all_parsed_points: List[UploadedIOPoint] = []
     sheet_title = sheet.title # 获取工作表标题以备后用
-    
+
     header_row_cells = sheet[1]
     header_row = [_clean_str(cell.value) for cell in header_row_cells if cell.value is not None]
-    
+
     current_file_header_to_attr_map: Dict[str, str] = {}
     for excel_header, attr_name in HEADER_TO_ATTRIBUTE_MAP.items():
         if excel_header in header_row:
@@ -232,7 +232,7 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
                     raw_row_data[attribute_name] = cell.value
                     if cell.value is not None and str(cell.value).strip() != "":
                         is_empty_row = False
-            else: 
+            else:
                 if cell.value is not None and str(cell.value).strip() != "":
                     is_empty_row = False
 
@@ -246,11 +246,11 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
         for field_name in UploadedIOPoint.__annotations__.keys():
             if field_name not in main_point_data:
                 main_point_data[field_name] = None
-        
+
         # 添加来源信息
         main_point_data['source_sheet_name'] = sheet_title
         main_point_data['source_type'] = "main_io"
-        
+
         try:
             main_point = UploadedIOPoint(**main_point_data) # type: ignore
             if _is_value_empty(main_point.hmi_variable_name):
@@ -258,7 +258,7 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
                 if not _is_value_empty(main_point.channel_tag) and not _is_value_empty(main_point.plc_absolute_address):
                     # site_number_str = main_point.site_number if main_point.site_number else "" # 场站编号暂时不用于HMI命名
                     channel_tag_str = main_point.channel_tag # 通道位号应该是必须的
-                    
+
                     # 新的HMI名称生成规则："YLDW" + 通道位号 (已移除场站编号)
                     if channel_tag_str: # 确保通道位号存在才进行拼接
                         main_point.hmi_variable_name = f"YLDW{channel_tag_str}"
@@ -267,12 +267,12 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
                     else:
                         # 如果通道位号缺失，记录警告
                         default_hmi_name_if_missing_parts = f"TEMP_RESERVED_Row{row_idx}" # 使用行号作为备用标识
-                        main_point.hmi_variable_name = default_hmi_name_if_missing_parts 
+                        main_point.hmi_variable_name = default_hmi_name_if_missing_parts
                         main_point.variable_description = f"预留点位_Row{row_idx}" # 描述也使用行号
                         # logger.warning(f"主IO表行 {row_idx}: HMI名称为空，且通道位号缺失，预留点HMI名称按临时规则生成为: {main_point.hmi_variable_name}")
-                else: 
+                else:
                     logger.warning(f"主IO表行 {row_idx}: HMI名称为空，且通道位号或PLC地址也可能不足以构成预留点，点位可能无效。HMI: {main_point.hmi_variable_name}, PLC: {main_point.plc_absolute_address}, CH: {main_point.channel_tag}")
-            
+
             if not (_is_value_empty(main_point.hmi_variable_name) and _is_value_empty(main_point.plc_absolute_address) and _is_value_empty(main_point.hmi_communication_address)):
                 all_parsed_points.append(main_point)
             else:
@@ -289,15 +289,15 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
                     if not _is_value_empty(getattr(main_point, req_attr_key_for_main, None)):
                         is_valid_intermediate_point = True
                         break
-                
+
                 if is_valid_intermediate_point:
                     intermediate_point_dict = {
                         'serial_number': main_point.serial_number,
                         'module_name': main_point.module_name,
-                        'module_type': main_point.module_type, 
+                        'module_type': main_point.module_type,
                         'site_name': main_point.site_name,
                         'site_number': main_point.site_number,
-                        'channel_tag': main_point.channel_tag, 
+                        'channel_tag': main_point.channel_tag,
                         'data_type': definition['data_type'],
                         'plc_absolute_address': _clean_str(ip_plc_addr_val),
                         'hmi_communication_address': _clean_str(ip_comm_addr_val),
@@ -307,14 +307,14 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
                     for field_name in UploadedIOPoint.__annotations__.keys():
                         if field_name not in intermediate_point_dict:
                             intermediate_point_dict[field_name] = None
-                    
+
                     # --- HMI 名称处理逻辑 (使用新的 hmi_generation_suffix 字段) ---
                     generated_hmi_name = None
                     # 优先使用 main_point.hmi_variable_name，因为此时它已经被正确设置了（无论是来自Excel还是生成的预留点名称）
                     if not _is_value_empty(main_point.hmi_variable_name):
                         base_name = main_point.hmi_variable_name
-                        hmi_suffix = definition.get('hmi_generation_suffix') 
-                        
+                        hmi_suffix = definition.get('hmi_generation_suffix')
+
                         if hmi_suffix: # 确保hmi_generation_suffix在定义中存在
                             # 直接拼接，父点HMI名 + 后缀
                             generated_hmi_name = f"{base_name}{hmi_suffix}"
@@ -322,7 +322,7 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
                             # 如果 INTERMEDIATE_POINT_DEFINITIONS 中没有定义 hmi_generation_suffix (理论上不应发生，因为我们刚添加了)
                             logger.error(f"主IO表行 {row_idx}: 中间点类型 '{definition['point_type_name']}' 严重错误 - 缺少 'hmi_generation_suffix' 定义。将尝试使用desc_suffix备用。")
                             generated_hmi_name = f"{base_name}{definition['desc_suffix']}" # 使用描述后缀作为非常规备用
-                            
+
                     else:
                         # 此情况表示 main_point.hmi_variable_name 在主点处理后仍然为空。
                         # 这理论上不应该发生，因为我们已经为HMI名称为空的预留点生成了名称。
@@ -330,23 +330,23 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
                         default_error_name_prefix = "ERROR_HMI_MAIN_EMPTY"
                         generated_hmi_name = f"{default_error_name_prefix}_{definition.get('hmi_generation_suffix', definition['desc_suffix'])}_{main_point.channel_tag or f'Row{row_idx}'}"
                         logger.error(f"主IO表行 {row_idx}: 主点HMI名称为空或无效 ('{main_point.hmi_variable_name}')，导致中间点 '{definition['point_type_name']}' HMI名称生成异常: {generated_hmi_name}")
-                    
+
                     intermediate_point_dict['hmi_variable_name'] = generated_hmi_name
                     # --- HMI 名称处理逻辑结束 ---
 
                     # --- 变量描述处理逻辑 ---
                     # 变量描述仍然基于主点的描述 和 definition['desc_suffix']
                     desc_base = _clean_str(main_point.variable_description)
-                    
+
                     # 如果主IO点的描述为空，则尝试使用主IO点的HMI名称作为描述的基础
                     if _is_value_empty(desc_base) and not _is_value_empty(main_point.hmi_variable_name):
                         desc_base = main_point.hmi_variable_name
-                    
+
                     # 如果两者都为空（例如，一个完全空的预留点行，且主HMI名也因故未生成），则给一个通用描述基础
                     if _is_value_empty(desc_base):
                         # 使用主点位号或行号构建一个基础描述，避免完全为空
-                        desc_base = f"通道_{main_point.channel_tag or f'Row{row_idx}'}" 
-                    
+                        desc_base = f"通道_{main_point.channel_tag or f'Row{row_idx}'}"
+
                     current_desc_suffix = definition['desc_suffix']
                     # 避免重复添加描述后缀，例如主描述已经是 "XXX_SLL设定"
                     if desc_base and current_desc_suffix and desc_base.endswith(current_desc_suffix):
@@ -387,11 +387,11 @@ def _parse_third_party_df_to_uploaded_points(df: pd.DataFrame, sheet_name: str) 
                 point_data_dict[attr_name] = cleaned_value
                 if not _is_value_empty(cleaned_value):
                     has_data = True
-        
-        if not has_data: 
+
+        if not has_data:
             logger.debug(f"第三方表 '{sheet_name}' 行 {index + 2} 数据全为空或无效，跳过。")
             continue
-        
+
         # 添加来源信息
         point_data_dict['source_sheet_name'] = sheet_name
         point_data_dict['source_type'] = "third_party"
@@ -410,7 +410,7 @@ def _parse_third_party_df_to_uploaded_points(df: pd.DataFrame, sheet_name: str) 
             logger.error(f"在第三方工作表 '{sheet_name}' 创建 UploadedIOPoint 实例时出错 (行 {index + 2}): {e}. 数据: {point_data_dict}")
         except Exception as ex:
             logger.error(f"在第三方工作表 '{sheet_name}' 处理行 {index + 2} 时发生未知错误: {ex}. 数据: {point_data_dict}", exc_info=True)
-            
+
     logger.info(f"成功从第三方工作表 '{sheet_name}' 读取并处理了 {len(processed_data)} 条IO点数据。")
     return processed_data
 
@@ -435,7 +435,7 @@ def load_workbook_data(file_path: str) -> Tuple[Dict[str, List[UploadedIOPoint]]
 
     try:
         opxl_workbook = openpyxl.load_workbook(file_path, data_only=True)
-        
+
         try:
             pd_excel_file = pd.ExcelFile(file_path)
             all_sheet_names_from_pandas = pd_excel_file.sheet_names
@@ -458,12 +458,12 @@ def load_workbook_data(file_path: str) -> Tuple[Dict[str, List[UploadedIOPoint]]
 
         for sheet_name in all_sheet_names_from_pandas:
             if sheet_name == MAIN_IO_SHEET_NAME:
-                continue 
+                continue
 
             logger.info(f"尝试将工作表 '{sheet_name}' 作为第三方设备表加载 (使用pandas读取，然后转换为UploadedIOPoint)...")
             try:
                 # 确保即使 df 为空，_parse_third_party_df_to_uploaded_points 也能安全处理并返回空列表
-                df = pd.read_excel(pd_excel_file, sheet_name=sheet_name, header=0, dtype=str) 
+                df = pd.read_excel(pd_excel_file, sheet_name=sheet_name, header=0, dtype=str)
                 third_party_points = _parse_third_party_df_to_uploaded_points(df, sheet_name)
                 if third_party_points: # 只有当列表非空时才添加
                     points_by_sheet[sheet_name] = third_party_points
@@ -471,43 +471,43 @@ def load_workbook_data(file_path: str) -> Tuple[Dict[str, List[UploadedIOPoint]]
                     logger.info(f"第三方工作表 '{sheet_name}' 解析得到 {len(third_party_points)} 个点位。")
                 else:
                     # 检查是否真的为空，还是读取问题
-                    df_check_actual_rows = pd.read_excel(pd_excel_file, sheet_name=sheet_name) 
+                    df_check_actual_rows = pd.read_excel(pd_excel_file, sheet_name=sheet_name)
                     if df_check_actual_rows.empty:
                          logger.info(f"工作表 '{sheet_name}' (第三方) 为空或只有表头，已跳过。")
-                    else: 
+                    else:
                          logger.warning(f"工作表 '{sheet_name}' (第三方) 初始pandas读取(dtype=str)为空，但重读有内容。可能是非字符串数据导致。已作为空列表处理。")
-            
+
             except Exception as e_read_tp:
                 logger.warning(f"处理第三方工作表 '{sheet_name}' 时出错: {e_read_tp}。将跳过此表。", exc_info=True)
-        
+
         logger.info(f"Excel文件 '{file_path}' 加载完成。总共从 {len(points_by_sheet)} 个工作表解析得到 {total_points_count} 个IO点对象。")
         return points_by_sheet, None
 
     except FileNotFoundError:
         logger.error(f"Excel文件未找到: {file_path}")
         return {}, f"Excel文件未找到: {file_path}"
-    except Exception as e_global: 
+    except Exception as e_global:
         logger.error(f"打开或处理Excel文件 '{file_path}' 时发生全局错误: {e_global}", exc_info=True)
         return {}, f"打开或处理Excel文件时发生错误: {e_global}"
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
-    
+
     test_file_path = "test_unified_io_table.xlsx"
     logger.info(f"准备创建统一化解析测试Excel文件: {test_file_path}")
     wb_test = openpyxl.Workbook()
-    
+
     ws_io = wb_test.active
     if ws_io is not None:
         ws_io.title = MAIN_IO_SHEET_NAME
         io_headers = list(HEADER_TO_ATTRIBUTE_MAP.keys())
         ws_io.append(io_headers)
-        
-        ai_point_data = [""] * len(io_headers) 
+
+        ai_point_data = [""] * len(io_headers)
         def set_val(header_name, value):
             if header_name in io_headers:
                 ai_point_data[io_headers.index(header_name)] = value
-        
+
         set_val("序号", "1")
         set_val("模块名称", "AI_Module_01")
         set_val("模块类型", "AI")
@@ -520,8 +520,8 @@ if __name__ == '__main__':
         set_val("上位机通讯地址", "40100")
         set_val("通道位号", "CH01")
         set_val("SLL设定点位", "MAIN_AI_001_SLL_SP")
-        set_val("SLL设定点位_PLC地址", "%MD102")   
-        set_val("SL设定点位_通讯地址", "40104")    
+        set_val("SLL设定点位_PLC地址", "%MD102")
+        set_val("SL设定点位_通讯地址", "40104")
         set_val("SH设定点位", "MAIN_AI_001_SH_SP")
         set_val("SH设定点位_PLC地址", "%MD106")
         set_val("SH设定点位_通讯地址", "40106")
@@ -532,14 +532,14 @@ if __name__ == '__main__':
         ws_io.append(ai_point_data)
 
         di_point_data = [""] * len(io_headers)
-        set_val("序号", "2"); set_val("模块类型", "DI"); set_val("变量名称（HMI）", "MAIN_DI_001"); 
+        set_val("序号", "2"); set_val("模块类型", "DI"); set_val("变量名称（HMI）", "MAIN_DI_001");
         set_val("数据类型", "BOOL"); set_val("PLC绝对地址", "%MX12.0"); set_val("场站编号", "S001")
         ws_io.append(di_point_data)
 
         reserved_ai_data = [""] * len(io_headers)
-        set_val("序号", "3"); set_val("模块类型", "AI"); set_val("PLC绝对地址", "%MD200"); 
+        set_val("序号", "3"); set_val("模块类型", "AI"); set_val("PLC绝对地址", "%MD200");
         set_val("数据类型", "REAL"); set_val("通道位号", "CH02_RES");set_val("场站编号", "S001")
-        set_val("SL设定点位_PLC地址", "%MD202") 
+        set_val("SL设定点位_PLC地址", "%MD202")
         ws_io.append(reserved_ai_data)
         logger.info(f"'{MAIN_IO_SHEET_NAME}' 已准备数据。")
 
@@ -559,7 +559,7 @@ if __name__ == '__main__':
         logger.info(f"测试Excel文件 '{test_file_path}' 已成功创建/覆盖。")
     except Exception as e_save:
         logger.error(f"保存测试Excel文件时出错: {e_save}")
-    
+
     logger.info(f"开始测试 load_workbook_data 函数，文件: {test_file_path}")
     loaded_data_dict, error_msg = load_workbook_data(test_file_path)
 
@@ -580,11 +580,11 @@ if __name__ == '__main__':
                     f"Comm='{point.hmi_communication_address}', "
                     f"SiteNo='{point.site_number}', "
                     f"Channel='{point.channel_tag}', "
-                    f"SourceSheet='{point.source_sheet_name}', " 
+                    f"SourceSheet='{point.source_sheet_name}', "
                     f"SourceType='{point.source_type}'"
                 )
         logger.info(f"总共加载 {total_loaded_points} 个点位。")
-        
+
         # 预期点位数量 (主IO表: 3主点 + 5(AI_001的中间点) + 1(预留AI的中间点) = 9点)
         # (第三方设备A: TP_BOOL_01, TP_REAL_01 = 2点; TP_NO_ADDR会被跳过)
         # (空第三方: 0点)
@@ -600,9 +600,9 @@ if __name__ == '__main__':
         # 那么 "空第三方" 可能不会出现在 loaded_data_dict 的键中。
         # 根据当前修改，如果df为空，third_party_points会是空列表，然后`if third_party_points:`会为false，所以"空第三方"不会被加入字典。
         # 因此，预期工作表数量应该是2个（IO点表，第三方设备A）。
-        
+
         # 更新预期工作表数量，因为空表不会被加入字典
-        expected_sheets_count_in_dict = 2 
+        expected_sheets_count_in_dict = 2
         if len(loaded_data_dict) == expected_sheets_count_in_dict:
             logger.info(f"解析的工作表数量 ({len(loaded_data_dict)}) 符合预期 ({expected_sheets_count_in_dict})。")
             if MAIN_IO_SHEET_NAME not in loaded_data_dict:

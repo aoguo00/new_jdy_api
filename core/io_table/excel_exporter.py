@@ -14,7 +14,7 @@ try:
 except ImportError:
     # 如果导入失败，定义一个占位符，以便类型提示不会引发错误
     # 实际的错误处理将在 IOExcelExporter 的 export_to_excel 方法中进行
-    Worksheet = Any 
+    Worksheet = Any
     Font = Any
     Alignment = Any
     PatternFill = Any
@@ -69,7 +69,7 @@ class BaseSheetExporter:
         "变量名称（HMI）": 25,
         "变量描述": 35,
         "数据类型": 12,
-        "读写属性": 10,
+        "单位": 10,
         "保存历史": 10,
         "掉电保护": 10,
         "量程低限": 12,
@@ -111,7 +111,7 @@ class BaseSheetExporter:
         "维护使能开关点位_通讯地址": 26,
         "PLC绝对地址": 20,
         "上位机通讯地址": 20,
-        
+
         # 第三方设备表的列宽配置
         "MODBUS地址": 15,
     }
@@ -169,6 +169,11 @@ class PLCSheetExporter(BaseSheetExporter):
         "SHH设定值"
     }
 
+    # Columns that require user input specifically for AI/AO modules (AI/AO模块特有的需要用户输入的列的表头名称)
+    AI_AO_SPECIFIC_HIGHLIGHT_HEADERS = {
+        "单位"
+    }
+
     # MODULE_PROCESSING_RULES 配置字典详解：
     # -------------------------------------
     # 该字典定义了不同PLC模块类型（如 "AI", "AO", "DI", "DO"）在生成IO点表时
@@ -224,7 +229,7 @@ class PLCSheetExporter(BaseSheetExporter):
                 ("维护值设定点位", "_whz"),
                 ("维护使能开关点位", "_whzzt"),
             ],
-            "address_mapping": [ 
+            "address_mapping": [
                 ('sll_set_plc_addr', "SLL设定点位_PLC地址", "SLL设定点位_通讯地址"),
                 ('sl_set_plc_addr', "SL设定点位_PLC地址", "SL设定点位_通讯地址"),
                 ('sh_set_plc_addr', "SH设定点位_PLC地址", "SH设定点位_通讯地址"),
@@ -242,23 +247,23 @@ class PLCSheetExporter(BaseSheetExporter):
                 # ("maint_val_set", "allocate_real_address", "maint_val_set_plc_addr"),
                 # ("maint_enable", "allocate_bool_address", "maint_enable_plc_addr"),
             ],
-            "excel_formulas": [], 
+            "excel_formulas": [],
             "address_mapping": [
                 # ('maint_val_set_plc_addr', "维护值设定点位_PLC地址", "维护值设定点位_通讯地址"),
                 # ('maint_enable_plc_addr', "维护使能开关点位_PLC地址", "维护使能开关点位_通讯地址"),
             ]
         },
         "DI": {
-            "plc_allocations": [], 
+            "plc_allocations": [],
             "excel_formulas": [],
             "address_mapping": []
         },
         "DO": {
-            "plc_allocations": [], 
+            "plc_allocations": [],
             "excel_formulas": [],
             "address_mapping": []
         },
-        "_COMMON_": { 
+        "_COMMON_": {
              "address_mapping": [
                  ('plc_absolute_addr', "PLC绝对地址", "上位机通讯地址")
              ]
@@ -268,7 +273,7 @@ class PLCSheetExporter(BaseSheetExporter):
     def __init__(self):
         self.headers_plc = [
             "序号", "模块名称", "模块类型", "供电类型（有源/无源）", "线制", "通道位号", # 0-5
-            "场站名", "场站编号", "变量名称（HMI）", "变量描述", "数据类型", "读写属性", # 6-11
+            "场站名", "场站编号", "变量名称（HMI）", "变量描述", "数据类型", "单位", # 6-11
             "保存历史", "掉电保护", "量程低限", "量程高限", "SLL设定值", "SLL设定点位", # 12-17
             "SLL设定点位_PLC地址", "SLL设定点位_通讯地址", "SL设定值", "SL设定点位", # 18-21
             "SL设定点位_PLC地址", "SL设定点位_通讯地址", "SH设定值", "SH设定点位", # 22-25
@@ -285,9 +290,9 @@ class PLCSheetExporter(BaseSheetExporter):
         """
         根据PLC地址计算Modbus通讯地址。
         规则:
-        - %MDx: Modbus地址 = (x // 2) + 3000 + 40000 + 1 
+        - %MDx: Modbus地址 = (x // 2) + 3000 + 40000 + 1
           (其中40000是特定项目的偏移量，3000是MD区映射到Modbus的基地址，+1是Modbus地址从1开始的调整)
-        - %MXm.n: Modbus地址 = (m * 8) + n + 3000 + 1 
+        - %MXm.n: Modbus地址 = (m * 8) + n + 3000 + 1
           (3000是MX区映射到Modbus的基地址，+1是调整)
         如果PLC地址为空或无法识别，则返回空字符串。
         """
@@ -299,7 +304,7 @@ class PLCSheetExporter(BaseSheetExporter):
             try:
                 val = int(md_match.group(1))
                 # 规则: (x // 2) + 3000 (MD基地址) + 40000 (特定项目偏移) + 1 (Modbus从1开始)
-                return str((val // 2) + 3000 + 40000 + 1) 
+                return str((val // 2) + 3000 + 40000 + 1)
             except ValueError:
                 logger.warning(f"无法解析%MD地址中的数字: {plc_address}")
                 return ""
@@ -320,9 +325,9 @@ class PLCSheetExporter(BaseSheetExporter):
                 return ""
         # else:
             # logger.debug(f"MX地址匹配失败: {plc_address}")
-        
+
         # 这条日志现在应该只在两种类型都不匹配时执行
-        logger.debug(f"未识别的PLC地址格式 (非MD也非MX)，无法转换为Modbus地址: {plc_address}") 
+        logger.debug(f"未识别的PLC地址格式 (非MD也非MX)，无法转换为Modbus地址: {plc_address}")
         return ""
 
     def _initialize_row_data(self, point_data: Dict[str, Any], idx: int, site_name: Optional[str], site_no: Optional[str]) -> tuple[List[Any], str, str]:
@@ -339,23 +344,23 @@ class PLCSheetExporter(BaseSheetExporter):
         # 2. 模块类型 (来自原始数据)
         channel_io_type = point_data.get('type', '')
         final_row_data[2] = channel_io_type
-        
+
         # 3. 供电类型（有源/无源）- 用户填写，高亮
         # 4. 线制 - 用户填写，高亮
-        
+
         # 5. 通道位号 (来自原始数据)
         final_row_data[5] = point_data.get('address', '')
         # 6. 场站名 (来自传入参数)
         final_row_data[6] = site_name if site_name else ""
         # 7. 场站编号 (来自传入参数)
         final_row_data[7] = site_no if site_no else ""
-        
+
         # 8. 变量名称（HMI）- 用户填写，高亮，Excel公式会引用此列
-        final_row_data[8] = "" 
+        final_row_data[8] = ""
 
         # 9. 变量描述 - 用户填写，高亮
         final_row_data[9] = point_data.get('description', '') # 允许预填，但仍标记为用户输入
-        
+
         # 10. 数据类型 (根据模块类型推断)
         data_type_value = ""
         if channel_io_type in ["AI", "AO"]:
@@ -363,14 +368,14 @@ class PLCSheetExporter(BaseSheetExporter):
         elif channel_io_type in ["DI", "DO"]:
             data_type_value = "BOOL"
         final_row_data[10] = data_type_value
-        
-        # 11. 读写属性 (硬编码为 R/W)
-        final_row_data[11] = "R/W"
+
+        # 11. 单位 - AI/AO模块用户填写，高亮
+        final_row_data[11] = ""
         # 12. 保存历史 (硬编码为 是)
-        final_row_data[12] = "是"  
+        final_row_data[12] = "是"
         # 13. 掉电保护 (硬编码为 是)
-        final_row_data[13] = "是"  
-        
+        final_row_data[13] = "是"
+
         # 14. 量程低限 - AI模块用户填写，高亮
         # 15. 量程高限 - AI模块用户填写，高亮
         # 16. SLL设定值 - AI模块用户填写，高亮
@@ -433,12 +438,12 @@ class PLCSheetExporter(BaseSheetExporter):
         # Excel 列标是 get_column_letter(索引 + 1)
         # Excel 数据行号是 idx (enumerate的起始值) + 1 (因为表头占了第1行)
         # (注意：openpyxl.utils.get_column_letter 是1-indexed)
-        hmi_name_column_index = self.headers_plc.index("变量名称（HMI）") 
+        hmi_name_column_index = self.headers_plc.index("变量名称（HMI）")
         hmi_name_column_letter = get_column_letter(hmi_name_column_index + 1)
         # populate_sheet 中 enumerate 从 1 开始计数，所以 idx 直接对应 Excel 数据区的行号
         # 表头是第1行，数据从第2行开始。如果 idx 是 enumerate(..., 1) 的结果，
         # 那么第一条数据行的 Excel 行号是 idx + 1 (因为表头占了第一行)。
-        excel_data_row_number = idx + 1 
+        excel_data_row_number = idx + 1
         hmi_name_cell_ref = f"{hmi_name_column_letter}{excel_data_row_number}"
 
         for target_column_header, suffix in formula_rules:
@@ -458,9 +463,9 @@ class PLCSheetExporter(BaseSheetExporter):
         """
         module_rules = self.MODULE_PROCESSING_RULES.get(channel_io_type, {})
         specific_address_mapping = module_rules.get("address_mapping", [])
-        
+
         common_address_mapping = self.MODULE_PROCESSING_RULES.get("_COMMON_", {}).get("address_mapping", [])
-        
+
         # 合并特定模块的映射和通用映射
         # 注意：如果特定模块的映射与通用映射有冲突（不太可能，因为键名不同），特定模块的会覆盖（如果简单合并列表）
         # 这里我们选择分别迭代，或者确保键名不冲突所以顺序不重要
@@ -474,16 +479,16 @@ class PLCSheetExporter(BaseSheetExporter):
             try:
                 plc_col_idx = self.headers_plc.index(plc_col_header)
                 comm_col_idx = self.headers_plc.index(comm_col_header)
-                
+
                 final_row_data[plc_col_idx] = plc_addr
                 final_row_data[comm_col_idx] = self._get_modbus_address(plc_addr)
             except ValueError:
                 logger.warning(f"在表头中未找到列: '{plc_col_header}' 或 '{comm_col_header}' (模块类型: {channel_io_type}，用于地址填充)")
 
-    def _apply_row_styles(self, 
-                          ws: Worksheet, 
-                          current_row_num: int, 
-                          channel_io_type: str, 
+    def _apply_row_styles(self,
+                          ws: Worksheet,
+                          current_row_num: int,
+                          channel_io_type: str,
                           user_input_fill: Optional[PatternFill],
                           thin_border_style: Optional[Border],
                           left_alignment: Optional[Alignment]):
@@ -498,7 +503,7 @@ class PLCSheetExporter(BaseSheetExporter):
         """
         for col_idx, header_title in enumerate(self.headers_plc):
             cell = ws.cell(row=current_row_num, column=col_idx + 1)
-            
+
             # 1. 应用高亮 (如果user_input_fill已定义)
             if user_input_fill:
                 should_highlight = False
@@ -506,18 +511,20 @@ class PLCSheetExporter(BaseSheetExporter):
                     should_highlight = True
                 elif header_title in self.AI_SPECIFIC_HIGHLIGHT_HEADERS and channel_io_type == "AI":
                     should_highlight = True
-                
+                elif header_title in self.AI_AO_SPECIFIC_HIGHLIGHT_HEADERS and channel_io_type in ["AI", "AO"]:
+                    should_highlight = True
+
                 if should_highlight:
                     cell.fill = user_input_fill
-            
+
             # 2. 应用边框 (如果thin_border_style已定义)
             if thin_border_style:
                 cell.border = thin_border_style
-        
+
         # 3. 应用左对齐到整行 (如果left_alignment已定义)
         # 注意: openpyxl 中对整行应用样式通常是遍历该行的所有单元格
-        if left_alignment: 
-            for cell_in_row in ws[current_row_num]: 
+        if left_alignment:
+            for cell_in_row in ws[current_row_num]:
                 cell_in_row.alignment = left_alignment
 
     def populate_sheet(self, ws: Worksheet, plc_io_data: List[Dict[str, Any]], site_name: Optional[str], site_no: Optional[str]):
@@ -527,7 +534,7 @@ class PLCSheetExporter(BaseSheetExporter):
         """
         if not openpyxl: return # 确保openpyxl已加载
 
-        # --- 初始化样式对象 --- 
+        # --- 初始化样式对象 ---
         left_alignment = None
         thin_border_style = None
         highlight_fill_color = "FFE4E1E1" # 用户输入高亮颜色 (浅灰色)
@@ -541,7 +548,7 @@ class PLCSheetExporter(BaseSheetExporter):
         if PatternFill and PatternFill is not Any:
             user_input_fill = PatternFill(start_color=highlight_fill_color, end_color=highlight_fill_color, fill_type="solid")
 
-        # --- 1. 写入表头并应用样式 --- 
+        # --- 1. 写入表头并应用样式 ---
         ws.append(self.headers_plc)
         for cell in ws[1]: # 表头行
             cell.font = Font(bold=True) # 加粗
@@ -550,12 +557,12 @@ class PLCSheetExporter(BaseSheetExporter):
             if thin_border_style:
                 cell.border = thin_border_style # 应用边框
 
-        # --- 2. 初始化PLC地址分配器 --- 
+        # --- 2. 初始化PLC地址分配器 ---
         address_allocator = PLCAddressAllocator()
 
-        # --- 3. 遍历IO点数据，逐行处理和填充 --- 
+        # --- 3. 遍历IO点数据，逐行处理和填充 ---
         for idx, point_data in enumerate(plc_io_data, 1): # idx从1开始，对应Excel中的行号（数据区）
-            
+
             # 3.1 初始化行数据并填充基础信息
             final_row_data, channel_io_type, data_type_value = self._initialize_row_data(point_data, idx, site_name, site_no)
 
@@ -564,23 +571,23 @@ class PLCSheetExporter(BaseSheetExporter):
 
             # 3.3 为AI模块填充Excel公式 (如果适用)
             self._populate_module_formulas(final_row_data, idx, channel_io_type)
-            
+
             # 3.4 将分配的PLC地址和计算出的通讯地址填充到行数据中
             self._fill_addresses_into_row(final_row_data, allocated_plc_addresses, channel_io_type)
 
-            # --- 3.X 追加已填充完毕的行数据到工作表 --- 
+            # --- 3.X 追加已填充完毕的行数据到工作表 ---
             ws.append(final_row_data)
 
-            # --- 3.Y 应用高亮和边框样式到刚添加的行 --- 
+            # --- 3.Y 应用高亮和边框样式到刚添加的行 ---
             current_excel_row = ws.max_row # 获取当前写入的行号 (即追加数据后的最大行号)
-            self._apply_row_styles(ws, 
-                                 current_excel_row, 
-                                 channel_io_type, 
-                                 user_input_fill, 
-                                 thin_border_style, 
+            self._apply_row_styles(ws,
+                                 current_excel_row,
+                                 channel_io_type,
+                                 user_input_fill,
+                                 thin_border_style,
                                  left_alignment)
-        
-        # --- 4. 调整所有列的宽度 --- 
+
+        # --- 4. 调整所有列的宽度 ---
         self._adjust_column_widths(ws, self.headers_plc)
         return address_allocator # 返回最终的地址分配器实例
 
@@ -592,7 +599,7 @@ class ThirdPartySheetExporter(BaseSheetExporter):
     def __init__(self):
         super().__init__() # 调用父类的构造函数，如果BaseSheetExporter有__init__
         self.headers_tp = [
-            "场站名", "变量名称", "变量描述", "数据类型", 
+            "场站名", "变量名称", "变量描述", "数据类型",
             "SLL设定值", "SL设定值", "SH设定值", "SHH设定值",  # 新增和调整顺序后的设定值列
             "PLC地址", "MODBUS地址"
         ]
@@ -605,7 +612,7 @@ class ThirdPartySheetExporter(BaseSheetExporter):
         if not openpyxl: return
 
         left_alignment = None
-        if Alignment and Alignment is not Any: 
+        if Alignment and Alignment is not Any:
             left_alignment = Alignment(horizontal='left', vertical='center')
 
         ws.append(self.headers_tp)
@@ -621,7 +628,7 @@ class ThirdPartySheetExporter(BaseSheetExporter):
             # points_in_template 中的每个点期望有 'data_type' 字段
             data_type = tp_point.get('data_type', '').upper()
 
-            if data_type == "REAL" or data_type == "INT" or data_type == "DINT": 
+            if data_type == "REAL" or data_type == "INT" or data_type == "DINT":
                 plc_address = address_allocator.allocate_real_address()
             elif data_type == "BOOL":
                 plc_address = address_allocator.allocate_bool_address()
@@ -634,7 +641,7 @@ class ThirdPartySheetExporter(BaseSheetExporter):
                 except Exception as e:
                     logger.error(f"为PLC地址 '{plc_address}' 计算MODBUS地址时出错: {e}")
                     modbus_address = "计算错误"
-            
+
             row_data_tp = [
                 site_name if site_name else "",
                 tp_point.get('point_name', ''), # 假设原始数据包含 point_name
@@ -645,13 +652,13 @@ class ThirdPartySheetExporter(BaseSheetExporter):
                 tp_point.get('sh_setpoint', ""),  # SH设定值
                 tp_point.get('shh_setpoint', ""), # SHH设定值
                 plc_address,
-                modbus_address  
+                modbus_address
             ]
             ws.append(row_data_tp)
             if left_alignment:
-                for cell_in_row in ws[ws.max_row]: 
+                for cell_in_row in ws[ws.max_row]:
                     cell_in_row.alignment = left_alignment
-        
+
         self._adjust_column_widths(ws, self.headers_tp)
 
 
@@ -686,7 +693,7 @@ class IOExcelExporter:
                 from openpyxl.worksheet.worksheet import Worksheet as OpxlWorksheet
                 from openpyxl.styles import Font as OpxlFont, Alignment as OpxlAlignment, PatternFill as OpxlPatternFill, Border as OpxlBorder, Side as OpxlSide
                 from openpyxl.utils import get_column_letter as opxl_get_column_letter
-                
+
                 # 更新全局变量
                 openpyxl = opxl_main
                 Worksheet = OpxlWorksheet
@@ -733,21 +740,21 @@ class IOExcelExporter:
                 safe_sheet_name = template_name.replace('[', '').replace(']', '').replace('*', '').replace('?', '').replace(':', '').replace('/', '').replace('\\\\', '')
                 safe_sheet_name = safe_sheet_name[:31] # Excel sheet name length limit
                 logger.info(f"尝试为模板 '{template_name}' 创建Sheet，安全名称为: '{safe_sheet_name}'")
-                
+
                 ws_tp = wb.create_sheet(title=safe_sheet_name)
-                
+
                 # 决定使用哪个地址分配器实例
                 allocator_for_tp = shared_address_allocator if shared_address_allocator else PLCAddressAllocator()
                 # 传递地址分配器和地址转换函数
                 self.third_party_sheet_exporter.populate_sheet(
-                    ws_tp, 
-                    points_in_template, 
-                    site_name, 
-                    allocator_for_tp, 
+                    ws_tp,
+                    points_in_template,
+                    site_name,
+                    allocator_for_tp,
                     self.plc_sheet_exporter._get_modbus_address # 传递方法引用
                 )
                 logger.info(f"Sheet '{safe_sheet_name}' for template '{template_name}' populated. Current sheets: {wb.sheetnames}")
-        
+
         if not wb.sheetnames:
             logger.error("没有创建任何Sheet页。可能 plc_io_data 和 third_party_data 都为空或处理失败。")
             # openpyxl 在没有可见sheet时保存会出错，确保至少有一个sheet页或明确不保存

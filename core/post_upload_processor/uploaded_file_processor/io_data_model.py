@@ -30,8 +30,8 @@ class UploadedIOPoint:
     variable_description: Optional[str] = None  # 变量描述
     # 原始表头：数据类型
     data_type: Optional[str] = None  # 数据类型
-    # 原始表头：读写属性
-    read_write_property: Optional[str] = None  # 读写属性
+    # 原始表头：单位
+    unit: Optional[str] = None  # 单位
     # 原始表头：保存历史
     save_history: Optional[str] = None  # 保存历史
     # 原始表头：掉电保护
@@ -118,9 +118,9 @@ class UploadedIOPoint:
     # 新增字段，用于记录点位的来源信息
     source_sheet_name: Optional[str] = None
     """点位来源的原始Excel工作表名称。"""
-    
+
     source_type: Optional[str] = None
     """点位来源类型 (例如: "main_io", "intermediate_from_main", "third_party")。"""
 
     # 你可以根据需要添加额外的方法，例如从字典创建实例的工厂方法
-    # 或者验证数据的方法等 
+    # 或者验证数据的方法等
