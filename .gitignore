@@ -13,5 +13,11 @@ venv/
 
 # Logs
 *.log
+
+# PyInstaller
+build/
+dist/
+*.spec
+
 # Other
 .DS_Store 
