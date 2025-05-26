@@ -40,11 +40,11 @@ def generate_communication_table_excel(output_path: str, io_points: List[Uploade
 
             if point.module_type in ["AI", "AO"]:
                 signal_range_value = "4~20mA"
-                
+
                 # Handle Data Range for AI/AO
                 low_limit = point.range_low_limit
                 high_limit = point.range_high_limit
-                
+
                 if low_limit is not None and str(low_limit).strip() != "" and \
                    high_limit is not None and str(high_limit).strip() != "":
                     data_range_value = f"{str(low_limit).strip()}~{str(high_limit).strip()}"
@@ -53,19 +53,26 @@ def generate_communication_table_excel(output_path: str, io_points: List[Uploade
                 elif high_limit is not None and str(high_limit).strip() != "":
                     data_range_value = str(high_limit).strip()
 
+            # 获取单位信息，确保处理None和空字符串的情况
+            unit_value = ""
+            if point.unit is not None:
+                unit_str = str(point.unit).strip()
+                if unit_str:
+                    unit_value = unit_str
+
             row_data = [
                 serial_number,
                 process_control_value,
                 detection_point_name,
                 signal_range_value,  # 信号范围
                 data_range_value,    # 数据范围
-                "",  # 单位
+                unit_value,  # 单位 - 从上传文件中的单位列获取
                 point.module_type if point and point.module_type else "",  # 信号类型
                 point.power_supply_type if point and point.power_supply_type else "",  # 供电
                 ""   # 备注
             ]
             ws.append(row_data)
-        
+
         wb.save(output_path)
         return True
     except Exception as e:
@@ -76,4 +83,9 @@ def generate_communication_table_excel(output_path: str, io_points: List[Uploade
 # 1. 该函数会在指定路径生成一个Excel文件，sheet名为"上下位通讯点表"。
 # 2. 第一列为自动递增的序号。
 # 3. 第二列 "过程控制" 来自传入的 io_points 列表中的 hmi_variable_name 属性。
-# 4. 其他列暂时留空，后续可以扩展内容写入逻辑。 
+# 4. 第三列 "检测点名称" 来自 variable_description 属性。
+# 5. 第四列 "信号范围" 对AI/AO模块自动填写为"4~20mA"。
+# 6. 第五列 "数据范围" 根据 range_low_limit 和 range_high_limit 自动生成。
+# 7. 第六列 "单位" 来自上传文件中的 unit 字段。
+# 8. 第七列 "信号类型" 来自 module_type 属性。
+# 9. 第八列 "供电" 来自 power_supply_type 属性。
