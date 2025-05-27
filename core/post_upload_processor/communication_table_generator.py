@@ -15,7 +15,7 @@ def generate_communication_table_excel(output_path: str, io_points: List[Uploade
     """
     # 表头字段，按截图顺序
     headers: List[str] = [
-        "序号", "过程控制", "检测点名称", "信号范围", "数据范围", "单位", "信号类型", "供电", "备注"
+        "序号", "过程控制", "检测点名称", "信号范围", "数据范围", "单位", "信号类型", "供电", "备注", "PLC绝对地址", "上位机通讯地址"
     ]
     try:
         wb = Workbook()
@@ -83,17 +83,30 @@ def generate_communication_table_excel(output_path: str, io_points: List[Uploade
                 if unit_str:
                     unit_value = unit_str
 
-            # 确定信号类型：硬点显示模块类型，软点显示"通讯"
+            # 确定信号类型：硬点显示模块类型，软点为空
             signal_type_value = ""
             if point.source_type == "main_io" and point.module_type:
                 # 主IO硬件点位：显示模块类型（AI、AO、DI、DO）
                 signal_type_value = point.module_type
             elif point.source_type in ["intermediate_from_main", "third_party"]:
-                # 中间点位和第三方设备点位：显示"通讯"
-                signal_type_value = "通讯"
+                # 中间点位和第三方设备点位：为空
+                signal_type_value = ""
             else:
                 # 其他情况：显示模块类型（如果有的话）
                 signal_type_value = point.module_type if point.module_type else ""
+
+            # 获取PLC绝对地址和上位机通讯地址
+            plc_address_value = ""
+            if point.plc_absolute_address is not None:
+                plc_addr_str = str(point.plc_absolute_address).strip()
+                if plc_addr_str:
+                    plc_address_value = plc_addr_str
+
+            hmi_comm_address_value = ""
+            if point.hmi_communication_address is not None:
+                hmi_comm_addr_str = str(point.hmi_communication_address).strip()
+                if hmi_comm_addr_str:
+                    hmi_comm_address_value = hmi_comm_addr_str
 
             row_data = [
                 serial_number,
@@ -102,9 +115,11 @@ def generate_communication_table_excel(output_path: str, io_points: List[Uploade
                 signal_range_value,  # 信号范围
                 data_range_value,    # 数据范围
                 unit_value,  # 单位 - 从上传文件中的单位列获取
-                signal_type_value,  # 信号类型 - 硬点显示模块类型，软点显示"通讯"
+                signal_type_value,  # 信号类型 - 硬点显示模块类型，软点为空
                 point.power_supply_type if point and point.power_supply_type else "",  # 供电
-                ""   # 备注
+                "",   # 备注
+                plc_address_value,  # PLC绝对地址
+                hmi_comm_address_value  # 上位机通讯地址
             ]
             ws.append(row_data)
 
@@ -131,5 +146,8 @@ def generate_communication_table_excel(output_path: str, io_points: List[Uploade
 # 7. 第四列 "信号范围" 只对硬点的AI/AO模块自动填写为"4~20mA"，软点为空。
 # 8. 第五列 "数据范围" 根据 range_low_limit 和 range_high_limit 自动生成。
 # 9. 第六列 "单位" 来自上传文件中的 unit 字段。
-# 10. 第七列 "信号类型" 根据点位类型确定：硬点显示模块类型（AI/AO/DI/DO），软点显示"通讯"。
+# 10. 第七列 "信号类型" 根据点位类型确定：硬点显示模块类型（AI/AO/DI/DO），软点为空。
 # 11. 第八列 "供电" 来自 power_supply_type 属性。
+# 12. 第九列 "备注" 当前为空。
+# 13. 第十列 "PLC绝对地址" 来自 plc_absolute_address 属性。
+# 14. 第十一列 "上位机通讯地址" 来自 hmi_communication_address 属性。
