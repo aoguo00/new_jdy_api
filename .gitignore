@@ -21,3 +21,10 @@ dist/
 
 # Other
 .DS_Store 
+
+# 点表目录
+FAT点表/
+HMI点表/
+IO点表模板/
+PLC点表/
+上下位通讯点表/ 
