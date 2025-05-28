@@ -75,7 +75,7 @@ class MainWindow(QMainWindow):
     """主窗口类"""
     def __init__(self, db_path: str):
         super().__init__()
-        self.setWindowTitle("工控系统点表软件V1.0")
+        self.setWindowTitle("工控系统点表管理软件V1.0")
 
         screen = self.screen()
         # self.resize(screen.size()) # Maximizing anyway
