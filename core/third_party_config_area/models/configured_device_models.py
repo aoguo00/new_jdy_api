@@ -28,9 +28,20 @@ class ConfiguredDevicePointModel(BaseModel):
     @property
     def variable_name(self) -> str:
         """完整的变量名 (例如 DEV01_AI)"""
-        # 简单的下划线连接，如果规则复杂需要调整
-        connector = "_" if self.variable_prefix and self.var_suffix else ""
-        return f"{self.variable_prefix}{connector}{self.var_suffix}"
+        # 处理*号作为变量占位符的情况
+        if '*' in self.variable_prefix:
+            # 根据*号分割变量前缀
+            prefix_parts = self.variable_prefix.split('*')
+            if len(prefix_parts) >= 2:
+                # 前缀部分 + 模板变量 + 后缀部分
+                return f"{prefix_parts[0]}{self.var_suffix}{prefix_parts[1]}"
+            else:
+                # 如果只有前半部分，则按前半部分+模板变量处理
+                return f"{prefix_parts[0]}{self.var_suffix}"
+        else:
+            # 原始下划线连接方式
+            connector = "_" if self.variable_prefix and self.var_suffix else ""
+            return f"{self.variable_prefix}{connector}{self.var_suffix}"
 
     @computed_field
     @property

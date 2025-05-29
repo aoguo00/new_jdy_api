@@ -85,17 +85,19 @@ class DevicePointDialog(QDialog):
         self.template_combo.currentIndexChanged.connect(self.template_selected)
         info_layout.addRow("设备模板:", self.template_combo)
 
-        # 变量前缀输入框
+        # 变量输入框
         self.variable_prefix_input = QLineEdit()
-        self.variable_prefix_input.setPlaceholderText("请输入变量名前缀 (例如 PT0101)，不需要请留空！")
+        self.variable_prefix_input.setPlaceholderText("请输入变量名前缀 (例如 PT0101 或使用 a*b 格式，*代表模板变量位置)")
+        # 使用textEdited信号来处理用户输入，不会触发程序性修改的循环
+        self.variable_prefix_input.textEdited.connect(self.handle_prefix_input)
         self.variable_prefix_input.textChanged.connect(self.update_preview)
-        info_layout.addRow("变量前缀:", self.variable_prefix_input)
+        info_layout.addRow("变量:", self.variable_prefix_input)
 
-        # 描述前缀输入框
+        # 描述输入框
         self.description_prefix_input = QLineEdit()
         self.description_prefix_input.setPlaceholderText("请输入描述前缀 (例如 温度传感器)，不需要请留空！")
         self.description_prefix_input.textChanged.connect(self.update_preview)
-        info_layout.addRow("描述前缀:", self.description_prefix_input)
+        info_layout.addRow("描述:", self.description_prefix_input)
 
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
@@ -174,6 +176,15 @@ class DevicePointDialog(QDialog):
             self.template_selected(0)
         elif self.template_combo.count() == 0:
             QMessageBox.information(self, "提示", "模板库为空，请先通过'管理设备模板'添加模板。")
+            
+        # 添加新功能提示
+        QMessageBox.information(self, "变量输入说明", 
+                           "变量支持新的格式：\n\n"
+                           "1. 普通格式: 直接输入前缀，例如'PT0101'，生成'PT0101_模板变量'\n\n"
+                           "2. 占位符格式: 使用*号指定模板变量位置，例如:\n"
+                           "   - 输入'1*1'，模板变量为'_whz'，生成'1_whz1'\n"
+                           "   - 输入'a*b'，模板变量为'_temp'，生成'a_tempb'\n"
+                           "   - 输入'a*'，模板变量为'_temp'，生成'a_temp'")
 
     def load_template_list(self):
         """加载模板列表"""
@@ -291,7 +302,19 @@ class DevicePointDialog(QDialog):
                 row = self.preview_table.rowCount()
                 self.preview_table.insertRow(row)
                 
-                full_var_name = f"{variable_prefix}_{point_model.var_suffix}" if variable_prefix and point_model.var_suffix else (variable_prefix or point_model.var_suffix or "")
+                # 新的变量前缀处理逻辑，使用*号作为变量占位符
+                if '*' in variable_prefix:
+                    # 根据*号分割变量前缀
+                    prefix_parts = variable_prefix.split('*')
+                    if len(prefix_parts) >= 2:
+                        # 前缀部分 + 模板变量 + 后缀部分
+                        full_var_name = f"{prefix_parts[0]}{point_model.var_suffix}{prefix_parts[1]}"
+                    else:
+                        # 如果只有前半部分，则按前半部分+模板变量处理
+                        full_var_name = f"{prefix_parts[0]}{point_model.var_suffix}"
+                else:
+                    # 保留原来的处理逻辑，作为向后兼容
+                    full_var_name = f"{variable_prefix}_{point_model.var_suffix}" if variable_prefix and point_model.var_suffix else (variable_prefix or point_model.var_suffix or "")
                 
                 desc_parts = []
                 if description_prefix:
@@ -379,3 +402,9 @@ class DevicePointDialog(QDialog):
         except Exception as e: 
             logger.error(f"保存设备点表配置 (变量前缀:'{variable_prefix}', 描述前缀:'{description_prefix}', 模板:'{template_name}') 时发生错误: {e}", exc_info=True)
             QMessageBox.critical(self, "错误", f"保存配置时发生未知错误: {str(e)}")
+
+    def handle_prefix_input(self):
+        """处理变量前缀输入"""
+        # 移除自动删除*号的代码，让用户可以正常输入*号
+        # 在update_preview方法中处理*号的解析逻辑，而不是在输入时干预
+        pass

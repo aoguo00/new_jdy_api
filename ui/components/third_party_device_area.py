@@ -95,13 +95,38 @@ class ThirdPartyDeviceArea(QGroupBox):
                 self.third_party_table.insertRow(row)
                 self.third_party_table.setItem(row, 0, QTableWidgetItem(device_summary['template']))
                 
-                variable_prefix_text = device_summary.get('variable_prefix', '')
+                # 获取原始前缀
+                variable_prefix = device_summary.get('variable_prefix', '')
                 description_prefix_text = device_summary.get('description_prefix', '') 
                 
-                item_var_prefix = QTableWidgetItem(variable_prefix_text)
-                item_var_prefix.setData(Qt.ItemDataRole.UserRole, description_prefix_text) # 存储 description_prefix
+                # 生成一个示例完整变量名用于显示
+                # 使用一个示例模板变量名
+                example_var_suffix = "_var"
                 
-                self.third_party_table.setItem(row, 1, item_var_prefix) # 使用新的键 'variable_prefix'
+                # 如果是带*的格式，进行相应处理
+                display_variable_name = variable_prefix
+                if '*' in variable_prefix:
+                    prefix_parts = variable_prefix.split('*')
+                    if len(prefix_parts) >= 2:
+                        display_variable_name = f"{prefix_parts[0]}{example_var_suffix}{prefix_parts[1]}"
+                    else:
+                        display_variable_name = f"{prefix_parts[0]}{example_var_suffix}"
+                elif variable_prefix:
+                    # 传统格式，使用下划线连接
+                    display_variable_name = f"{variable_prefix}_{example_var_suffix}"
+                else:
+                    # 如果前缀为空，直接使用示例变量名
+                    display_variable_name = example_var_suffix
+                
+                # 在表格中显示处理后的变量名
+                item_var_prefix = QTableWidgetItem(display_variable_name)
+                # 保存原始前缀和描述前缀作为用户数据，用于删除操作
+                item_var_prefix.setData(Qt.ItemDataRole.UserRole, {
+                    'variable_prefix': variable_prefix,
+                    'description_prefix': description_prefix_text
+                }) 
+                
+                self.third_party_table.setItem(row, 1, item_var_prefix)
                 self.third_party_table.setItem(row, 2, QTableWidgetItem(str(device_summary['count'])))
                 self.third_party_table.setItem(row, 3, QTableWidgetItem(device_summary['status']))
         except Exception as e:
@@ -118,19 +143,23 @@ class ThirdPartyDeviceArea(QGroupBox):
 
         current_row = selected_rows[0].row()
         template_name_item = self.third_party_table.item(current_row, 0)
-        variable_prefix_item = self.third_party_table.item(current_row, 1) # 第二列现在是 variable_prefix
+        variable_prefix_item = self.third_party_table.item(current_row, 1) # 第二列现在是显示名
 
         if not template_name_item or not variable_prefix_item:
             QMessageBox.warning(self, "错误", "无法获取选中配置的详细信息。")
             return
 
         template_name = template_name_item.text()
-        variable_prefix = variable_prefix_item.text() # 获取 variable_prefix
-        description_prefix = variable_prefix_item.data(Qt.ItemDataRole.UserRole) # 从用户数据获取 description_prefix
+        # 从用户数据中获取原始的变量前缀和描述前缀
+        user_data = variable_prefix_item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(user_data, dict):
+            variable_prefix = user_data.get('variable_prefix', '')
+            description_prefix = user_data.get('description_prefix', '')
+        else:
+            # 兼容旧数据格式
+            variable_prefix = variable_prefix_item.text()
+            description_prefix = user_data if user_data else ""
         
-        if description_prefix is None: 
-            description_prefix = "" 
-
         reply = QMessageBox.question(
             self, "确认删除",
             f"确定要删除模板为 '{template_name}' (变量前缀: '{variable_prefix}', 描述前缀: '{description_prefix}') 的配置吗？\n此操作将删除其所有相关点位，且不可恢复。",
