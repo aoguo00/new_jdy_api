@@ -308,13 +308,20 @@ class DevicePointDialog(QDialog):
                     prefix_parts = variable_prefix.split('*')
                     if len(prefix_parts) >= 2:
                         # 前缀部分 + 模板变量 + 后缀部分
-                        full_var_name = f"{prefix_parts[0]}{point_model.var_suffix}{prefix_parts[1]}"
+                        # 如果模板变量为空，则只连接前缀和后缀
+                        if not point_model.var_suffix:
+                            full_var_name = f"{prefix_parts[0]}{prefix_parts[1]}"
+                        else:
+                            full_var_name = f"{prefix_parts[0]}{point_model.var_suffix}{prefix_parts[1]}"
                     else:
-                        # 如果只有前半部分，则按前半部分+模板变量处理
-                        full_var_name = f"{prefix_parts[0]}{point_model.var_suffix}"
+                        # 如果只有前半部分(如a*)，且模板变量为空，则仅显示前缀
+                        if not point_model.var_suffix:
+                            full_var_name = prefix_parts[0]
+                        else:
+                            full_var_name = f"{prefix_parts[0]}{point_model.var_suffix}"
                 else:
-                    # 保留原来的处理逻辑，作为向后兼容
-                    full_var_name = f"{variable_prefix}_{point_model.var_suffix}" if variable_prefix and point_model.var_suffix else (variable_prefix or point_model.var_suffix or "")
+                    # 修改处理逻辑，不自动添加下划线
+                    full_var_name = f"{variable_prefix}{point_model.var_suffix}" if variable_prefix and point_model.var_suffix else (variable_prefix or point_model.var_suffix or "")
                 
                 desc_parts = []
                 if description_prefix:

@@ -99,24 +99,17 @@ class ThirdPartyDeviceArea(QGroupBox):
                 variable_prefix = device_summary.get('variable_prefix', '')
                 description_prefix_text = device_summary.get('description_prefix', '') 
                 
-                # 生成一个示例完整变量名用于显示
-                # 使用一个示例模板变量名
-                example_var_suffix = "_var"
-                
-                # 如果是带*的格式，进行相应处理
+                # 直接显示变量前缀，不添加示例后缀
                 display_variable_name = variable_prefix
+                # 特殊处理带*的格式
                 if '*' in variable_prefix:
                     prefix_parts = variable_prefix.split('*')
                     if len(prefix_parts) >= 2:
-                        display_variable_name = f"{prefix_parts[0]}{example_var_suffix}{prefix_parts[1]}"
+                        # 当有前后两部分时，显示为：前缀+后缀，不再添加[*]标记
+                        display_variable_name = f"{prefix_parts[0]}{prefix_parts[1]}"
                     else:
-                        display_variable_name = f"{prefix_parts[0]}{example_var_suffix}"
-                elif variable_prefix:
-                    # 传统格式，使用下划线连接
-                    display_variable_name = f"{variable_prefix}_{example_var_suffix}"
-                else:
-                    # 如果前缀为空，直接使用示例变量名
-                    display_variable_name = example_var_suffix
+                        # 当只有前半部分时(如a*)，直接显示前缀部分
+                        display_variable_name = prefix_parts[0]
                 
                 # 在表格中显示处理后的变量名
                 item_var_prefix = QTableWidgetItem(display_variable_name)
