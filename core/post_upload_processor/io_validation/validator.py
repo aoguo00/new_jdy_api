@@ -423,6 +423,31 @@ class AlwaysRequiredRule(ValidationRule):
             ))
         return errors
 
+class HmiNameUniquenessRule:
+    """规则：主IO点表中所有非预留点的"变量名称（HMI）"必须唯一。"""
+    def validate_sheet(self, df: pd.DataFrame, sheet_name: str) -> List[str]:
+        errors = []
+        if C.HMI_NAME_COL not in df.columns:
+            return errors
+        # 只检查非预留点（即HMI名称非空）
+        hmi_names = df[C.HMI_NAME_COL]
+        # 记录所有非空HMI及其行号
+        name_to_rows = {}
+        for idx, name in hmi_names.items():
+            if pd.isna(name) or (isinstance(name, str) and not name.strip()):
+                continue
+            name_str = str(name).strip()
+            if name_str not in name_to_rows:
+                name_to_rows[name_str] = []
+            name_to_rows[name_str].append(idx + 2)  # Excel行号=DataFrame索引+2
+        # 检查重复
+        for name, rows in name_to_rows.items():
+            if len(rows) > 1:
+                errors.append(
+                    f'验证失败 (工作表:"{sheet_name}"): "{C.HMI_NAME_COL}" 变量名 "{name}" 在以下Excel行号重复: {rows}，请确保唯一。'
+                )
+        return errors
+
 # --- 规则注册表 (更新) --- #
 
 MAIN_IO_RULES: List[ValidationRule] = [
@@ -463,6 +488,7 @@ MAIN_IO_RULES: List[ValidationRule] = [
     #     C.SH_SET_COL: C.SH_SET_COL,
     #     C.SHH_SET_COL: C.SHH_SET_COL 
     # }),
+    # 唯一性校验（sheet级别，需在sheet校验函数中单独调用）
 ]
 
 THIRD_PARTY_RULES: List[ValidationRule] = [
@@ -500,6 +526,9 @@ def _validate_main_io_sheet(df: pd.DataFrame, sheet_name: str) -> List[str]:
         for col_name in missing_cols_main:
             errors.append(f'验证失败：主工作表"{sheet_name}"中缺少必需的列"{col_name}"。')
         return errors # 缺少列则不进行行校验
+
+    # 新增：HMI唯一性校验
+    errors.extend(HmiNameUniquenessRule().validate_sheet(df, sheet_name))
 
     for index, row in df.iterrows():
         excel_row_number = index + 2 # Excel行号从1开始，Dataframe索引从0开始，表头占1行

@@ -26,7 +26,8 @@ from core.post_upload_processor.io_validation.validator import (
     _validate_third_party_sheet,
     validate_io_table,
     BoolSetpointEmptyRule,
-    AlwaysRequiredRule
+    AlwaysRequiredRule,
+    HmiNameUniquenessRule
 )
 
 # 全局常量定义，方便测试用例使用
@@ -503,6 +504,25 @@ class TestValidationRules(unittest.TestCase):
         self.assertTrue(any(f'"{C.TP_INPUT_SHH_SET_COL}"' in e for e in errors_multiple), "应包含 SHH 的错误")
         self.assertHasError(errors_multiple, "不应填写数据") # 检查通用错误信息
         self.assertHasError(errors_multiple, "BoolInvalidMultiple") # 检查点位名称
+
+    def test_hmi_name_uniqueness_rule(self):
+        """测试主IO点表HMI名称唯一性校验。"""
+        df = pd.DataFrame({
+            C.HMI_NAME_COL: ["A", "B", "C", "A", None, "  ", "D"],
+            C.DESCRIPTION_COL: ["a", "b", "c", "d", "e", "f", "g"]
+        })
+        # 行号应为2,3,4,5,6,7,8
+        sheet_name = "IO点表"
+        rule = HmiNameUniquenessRule()
+        errors = rule.validate_sheet(df, sheet_name)
+        self.assertEqual(len(errors), 1, "有重复HMI时应有1个报错")
+        self.assertIn('变量名 "A"', errors[0])
+        self.assertIn('2', errors[0])
+        self.assertIn('5', errors[0])
+        # 唯一时无报错
+        df2 = pd.DataFrame({C.HMI_NAME_COL: ["A", "B", "C", None, "  ", "D"]})
+        errors2 = rule.validate_sheet(df2, sheet_name)
+        self.assertEqual(errors2, [], "所有HMI唯一时应无报错")
 
 # --- 添加更多测试用例的地方 ---
 
