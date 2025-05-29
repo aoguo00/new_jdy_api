@@ -1,6 +1,9 @@
 import logging
 from typing import List, Dict, Any, Optional, Callable
 import re # 新增导入
+import os
+import configparser
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -26,10 +29,35 @@ except ImportError:
 
 class PLCAddressAllocator:
     """负责PLC地址的分配和管理。"""
-    def __init__(self, start_md_address=320, start_mx_byte=20, start_mx_bit=0):
-        self.current_md_address = start_md_address
-        self.current_mx_byte = start_mx_byte
-        self.current_mx_bit = start_mx_bit
+    def __init__(self, start_md_address=None, start_mx_byte=None, start_mx_bit=None):
+        # 从配置文件读取默认值
+        config = configparser.ConfigParser()
+        app_base_path = Path(__file__).resolve().parents[2]  # 回到项目根目录
+        config_path = app_base_path / 'config.ini'
+        
+        default_md_address = 320
+        default_mx_byte = 20
+        default_mx_bit = 0
+        
+        if config_path.exists():
+            try:
+                config.read(config_path, encoding='utf-8')
+                if 'PLC' in config:
+                    default_md_address = config.getint('PLC', 'start_md_address', fallback=default_md_address)
+                    default_mx_byte = config.getint('PLC', 'start_mx_byte', fallback=default_mx_byte)
+                    default_mx_bit = config.getint('PLC', 'start_mx_bit', fallback=default_mx_bit)
+                    logger.info(f"从配置文件读取PLC地址起始值: MD={default_md_address}, MX字节={default_mx_byte}, MX位={default_mx_bit}")
+                else:
+                    logger.warning("配置文件中未找到[PLC]部分，将使用默认PLC地址起始值")
+            except Exception as e:
+                logger.error(f"读取PLC地址配置时出错: {e}，将使用默认值")
+        else:
+            logger.warning(f"配置文件{config_path}不存在，将使用默认PLC地址起始值")
+        
+        # 使用参数值或从配置读取的默认值
+        self.current_md_address = start_md_address if start_md_address is not None else default_md_address
+        self.current_mx_byte = start_mx_byte if start_mx_byte is not None else default_mx_byte
+        self.current_mx_bit = start_mx_bit if start_mx_bit is not None else default_mx_bit
         logger.info(f"PLCAddressAllocator initialized: MD starts at {self.current_md_address}, MX starts at {self.current_mx_byte}.{self.current_mx_bit}")
 
     def allocate_real_address(self) -> str:
