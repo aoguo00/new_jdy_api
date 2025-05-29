@@ -160,3 +160,38 @@ class ConfigService:
         except Exception as e:
             logger.error(f"服务层获取配置摘要失败: {e}", exc_info=True)
             return []
+
+    def get_configured_points_by_template_and_prefix(self, template_name: str, variable_prefix: str, description_prefix: str) -> List[Dict]:
+        """
+        获取特定模板名称、变量前缀和描述前缀的所有配置点位。
+
+        Args:
+            template_name (str): 模板名称
+            variable_prefix (str): 变量前缀
+            description_prefix (str): 描述前缀
+
+        Returns:
+            List[Dict]: 配置点位列表，每个点位包含变量后缀等信息
+        """
+        try:
+            # 调用DAO方法获取配置点位
+            configured_points = self.config_dao.get_configured_points_by_template_and_prefixes(
+                template_name, variable_prefix, description_prefix
+            )
+            
+            # 将模型对象转换为字典列表，方便UI使用
+            result = []
+            for point in configured_points:
+                result.append({
+                    'var_suffix': point.var_suffix,
+                    'desc_suffix': point.desc_suffix,
+                    'data_type': point.data_type,
+                    'sll_setpoint': point.sll_setpoint,
+                    'sl_setpoint': point.sl_setpoint,
+                    'sh_setpoint': point.sh_setpoint,
+                    'shh_setpoint': point.shh_setpoint
+                })
+            return result
+        except Exception as e:
+            logger.error(f"获取配置点位失败 (模板: '{template_name}', 变量前缀: '{variable_prefix}', 描述前缀: '{description_prefix}'): {e}", exc_info=True)
+            return []

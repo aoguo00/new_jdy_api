@@ -268,12 +268,34 @@ class ConfiguredDeviceDAO:
             return []
 
     def does_configuration_exist(self, template_name: str, variable_prefix: str, description_prefix: str) -> bool:
-        """检查具有指定模板名称、变量前缀和描述前缀的配置是否已在数据库中至少存在一个点位。"""
-        sql = CONFIGURED_DEVICE_SQL['CHECK_CONFIGURATION_EXISTS']
+        """检查具有指定模板名称、变量前缀和描述前缀的配置是否已在数据库中存在。"""
+        sql = CONFIGURED_DEVICE_SQL['CHECK_CONFIGURATION_EXISTS_BY_TEMPLATE_AND_PREFIXES']
         params = (template_name, variable_prefix, description_prefix)
         try:
-            result = self.db_service.fetch_one(sql, params)
-            return bool(result) # 如果查询到任何行，则存在
+            row = self.db_service.fetch_one(sql, params)
+            exists = row and row.get('count', 0) > 0
+            return exists
         except Exception as e:
-            logger.error(f"检查配置是否存在 (模板 \'{template_name}\', 变量前缀 \'{variable_prefix}\', 描述前缀 \'{description_prefix}\') 失败: {e}", exc_info=True)
-            return False 
+            logger.error(f"检查配置是否存在 (模板='{template_name}', 变量前缀='{variable_prefix}', 描述前缀='{description_prefix}') 失败: {e}", exc_info=True)
+            return False
+
+    def get_configured_points_by_template_and_prefixes(self, template_name: str, variable_prefix: str, description_prefix: str) -> List[ConfiguredDevicePointModel]:
+        """
+        获取特定模板名称、变量前缀和描述前缀的所有配置点位。
+
+        Args:
+            template_name (str): 模板名称
+            variable_prefix (str): 变量前缀
+            description_prefix (str): 描述前缀
+
+        Returns:
+            List[ConfiguredDevicePointModel]: 配置点位列表
+        """
+        sql = CONFIGURED_DEVICE_SQL['GET_CONFIGURED_POINTS_BY_TEMPLATE_AND_PREFIXES']
+        params = (template_name, variable_prefix, description_prefix)
+        try:
+            rows = self.db_service.fetch_all(sql, params)
+            return [ConfiguredDevicePointModel.model_validate(row, from_attributes=True) for row in rows]
+        except Exception as e:
+            logger.error(f"获取配置点位 (模板='{template_name}', 变量前缀='{variable_prefix}', 描述前缀='{description_prefix}') 失败: {e}", exc_info=True)
+            return [] 

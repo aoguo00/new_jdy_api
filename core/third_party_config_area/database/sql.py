@@ -129,5 +129,19 @@ CONFIGURED_DEVICE_SQL = {
     FROM configured_device_points
     WHERE template_name = ? AND variable_prefix = ? AND description_prefix = ?
     LIMIT 1
+    ''',
+
+    'CHECK_CONFIGURATION_EXISTS_BY_TEMPLATE_AND_PREFIXES': '''
+    SELECT COUNT(*) as count
+    FROM configured_device_points
+    WHERE template_name = ? AND variable_prefix = ? AND description_prefix = ?
+    ''',
+    
+    'GET_CONFIGURED_POINTS_BY_TEMPLATE_AND_PREFIXES': '''
+    SELECT id, template_name, variable_prefix, description_prefix, var_suffix, desc_suffix, data_type, 
+           sll_setpoint, sl_setpoint, sh_setpoint, shh_setpoint, created_at
+    FROM configured_device_points
+    WHERE template_name = ? AND variable_prefix = ? AND description_prefix = ?
+    ORDER BY var_suffix
     '''
 } 
