@@ -46,10 +46,24 @@ class ConfiguredDevicePointModel(BaseModel):
     @computed_field
     @property
     def description(self) -> str:
-        """完整的描述 (例如 DEV01 温度传感器)"""
-        desc_parts = []
-        if self.description_prefix:
-            desc_parts.append(self.description_prefix)
-        if self.desc_suffix:
-            desc_parts.append(self.desc_suffix)
-        return "".join(desc_parts).strip() 
+        """完整的描述，支持*占位符"""
+        # 处理*号作为描述占位符的情况
+        if self.description_prefix and '*' in self.description_prefix:
+            # 根据*号分割描述前缀
+            desc_prefix_parts = self.description_prefix.split('*')
+            if len(desc_prefix_parts) >= 2:
+                # 前缀部分 + 模板描述 + 后缀部分
+                # 如果模板描述为空，则只连接前缀和后缀
+                if not self.desc_suffix:
+                    return f"{desc_prefix_parts[0]}{desc_prefix_parts[1]}"
+                else:
+                    return f"{desc_prefix_parts[0]}{self.desc_suffix}{desc_prefix_parts[1]}"
+            else:
+                # 如果只有前半部分(如a*)，且模板描述为空，则仅显示前缀
+                if not self.desc_suffix:
+                    return desc_prefix_parts[0]
+                else:
+                    return f"{desc_prefix_parts[0]}{self.desc_suffix}"
+        else:
+            # 原始直接拼接方式
+            return f"{self.description_prefix}{self.desc_suffix}" if self.description_prefix and self.desc_suffix else (self.description_prefix or self.desc_suffix or "") 

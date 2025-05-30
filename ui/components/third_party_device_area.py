@@ -54,9 +54,9 @@ class ThirdPartyDeviceArea(QGroupBox):
     def setup_table(self):
         """设置表格控件"""
         self.third_party_table = QTableWidget()
-        self.third_party_table.setColumnCount(7)
+        self.third_party_table.setColumnCount(8)  # 增加一列用于显示描述
         self.third_party_table.setHorizontalHeaderLabels([
-            "设备模板", "变量名", "数据类型", 
+            "设备模板", "变量名", "描述", "数据类型", 
             "SLL设定值", "SL设定值", "SH设定值", "SHH设定值"
         ])
         self.third_party_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -90,13 +90,14 @@ class ThirdPartyDeviceArea(QGroupBox):
         
         # 设置各列宽度
         col_widths = {
-            0: 300,  # 设备模板列 - 较宽
-            1: 350,  # 变量名列 - 较宽
-            2: 130,  # 数据类型列 - 中等宽度
-            3: 100,  # SLL设定值列 - 较窄
-            4: 100,  # SL设定值列 - 较窄
-            5: 100,  # SH设定值列 - 较窄
-            6: 100   # SHH设定值列 - 较窄
+            0: 140,  # 设备模板列
+            1: 240,  # 变量名列
+            2: 300,  # 描述列 - 新增
+            3: 100,  # 数据类型列
+            4: 100,  # SLL设定值列
+            5: 100,  # SL设定值列
+            6: 100,  # SH设定值列
+            7: 100   # SHH设定值列
         }
         
         # 应用列宽设置
@@ -210,7 +211,7 @@ class ThirdPartyDeviceArea(QGroupBox):
         
         # 设置跨列显示
         self.third_party_table.setItem(group_row, 0, group_item)
-        self.third_party_table.setSpan(group_row, 0, 1, 7)  # 合并整行
+        self.third_party_table.setSpan(group_row, 0, 1, 8)  # 合并整行（8列）
         
         # 保存用户数据用于删除操作
         group_item.setData(Qt.ItemDataRole.UserRole, {
@@ -234,8 +235,8 @@ class ThirdPartyDeviceArea(QGroupBox):
         empty_item.setBackground(QBrush(template_color))
         self.third_party_table.setItem(row, 0, empty_item)
         
-        # 添加空的数据类型和设定值列
-        for col in range(1, 7):
+        # 添加空的描述、数据类型和设定值列
+        for col in range(1, 8):  # 扩展到8列
             item = QTableWidgetItem("")
             item.setBackground(QBrush(template_color))
             self.third_party_table.setItem(row, col, item)
@@ -254,9 +255,15 @@ class ThirdPartyDeviceArea(QGroupBox):
         
         for point in configured_points:
             var_suffix = point.get('var_suffix', '')
+            desc_suffix = point.get('desc_suffix', '')  # 获取描述后缀
             
             # 生成完整变量名
             full_var_name = self.generate_full_variable_name(variable_prefix, var_suffix)
+            
+            # 优先使用服务返回的完整描述，如果没有则生成
+            full_description = point.get('full_description', '')
+            if not full_description:
+                full_description = self.generate_full_description(description_prefix_text, desc_suffix)
             
             # 添加一行到表格
             row = self.third_party_table.rowCount()
@@ -266,6 +273,7 @@ class ThirdPartyDeviceArea(QGroupBox):
             items = [
                 QTableWidgetItem(template_name),
                 QTableWidgetItem(full_var_name),
+                QTableWidgetItem(full_description),  # 显示完整描述
                 QTableWidgetItem(point.get('data_type', '')),
                 QTableWidgetItem(point.get('sll_setpoint', '')),
                 QTableWidgetItem(point.get('sl_setpoint', '')),
@@ -282,8 +290,28 @@ class ThirdPartyDeviceArea(QGroupBox):
             items[1].setData(Qt.ItemDataRole.UserRole, {
                 'variable_prefix': variable_prefix,
                 'description_prefix': description_prefix_text,
-                'template_name': template_name
+                'template_name': template_name,
+                'full_description': full_description  # 保存完整描述，便于后续使用
             })
+    
+    def generate_full_description(self, description_prefix, description_suffix):
+        """根据描述占位符和后缀生成完整的描述文本"""
+        # 使用与变量名相同的占位符逻辑处理描述
+        if description_prefix and '*' in description_prefix:
+            prefix_parts = description_prefix.split('*')
+            if len(prefix_parts) >= 2:
+                if description_suffix:
+                    return f"{prefix_parts[0]}{description_suffix}{prefix_parts[1]}"
+                else:
+                    return f"{prefix_parts[0]}{prefix_parts[1]}"
+            else:
+                if description_suffix:
+                    return f"{prefix_parts[0]}{description_suffix}"
+                else:
+                    return prefix_parts[0]
+        else:
+            # 直接拼接（没有占位符的情况）
+            return f"{description_prefix}{description_suffix}" if description_prefix else description_suffix
     
     def generate_full_variable_name(self, variable_prefix, var_suffix):
         """根据变量占位符和后缀生成完整的变量名"""
@@ -311,7 +339,7 @@ class ThirdPartyDeviceArea(QGroupBox):
         separator_item = QTableWidgetItem("")
         separator_item.setFlags(Qt.ItemFlag.NoItemFlags)  # 禁用此行
         self.third_party_table.setItem(separator_row, 0, separator_item)
-        self.third_party_table.setSpan(separator_row, 0, 1, 7)  # 合并整行
+        self.third_party_table.setSpan(separator_row, 0, 1, 8)  # 合并整行（8列）
     
     #---------------------------------
     # 用户交互与操作处理

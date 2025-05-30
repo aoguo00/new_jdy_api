@@ -182,6 +182,9 @@ class ConfigService:
             # 将模型对象转换为字典列表，方便UI使用
             result = []
             for point in configured_points:
+                # 使用模型的计算属性获取完整描述
+                full_description = point.description
+                
                 result.append({
                     'var_suffix': point.var_suffix,
                     'desc_suffix': point.desc_suffix,
@@ -189,7 +192,8 @@ class ConfigService:
                     'sll_setpoint': point.sll_setpoint,
                     'sl_setpoint': point.sl_setpoint,
                     'sh_setpoint': point.sh_setpoint,
-                    'shh_setpoint': point.shh_setpoint
+                    'shh_setpoint': point.shh_setpoint,
+                    'full_description': full_description  # 添加完整描述字段
                 })
             return result
         except Exception as e:

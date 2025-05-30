@@ -95,7 +95,7 @@ class DevicePointDialog(QDialog):
 
         # 描述输入框
         self.description_prefix_input = QLineEdit()
-        self.description_prefix_input.setPlaceholderText("请输入自定义描述，不需要请留空！")
+        self.description_prefix_input.setPlaceholderText("请输入自定义描述，支持使用*作为占位符")
         self.description_prefix_input.textChanged.connect(self.update_preview)
         info_layout.addRow("描述:", self.description_prefix_input)
 
@@ -114,7 +114,7 @@ class DevicePointDialog(QDialog):
 
         self.point_table = QTableWidget()
         point_table_headers = [
-            "变量名后缀", "描述后缀", "数据类型",
+            "自定义变量名", "自定义描述描述", "数据类型",
             "SLL设定值", "SL设定值", "SH设定值", "SHH设定值"
         ]
         self._setup_table_widget(self.point_table, point_table_headers)
@@ -178,13 +178,14 @@ class DevicePointDialog(QDialog):
             QMessageBox.information(self, "提示", "模板库为空，请先通过'管理设备模板'添加模板。")
             
         # 添加新功能提示
-        QMessageBox.information(self, "变量输入说明", 
-                           "变量支持新的格式：\n\n"
+        QMessageBox.information(self, "变量和描述输入说明", 
+                           "变量和描述都支持新的格式：\n\n"
                            "1. 普通格式: 直接输入前缀，例如'PT0101'，生成'PT0101_模板变量'\n\n"
                            "2. 占位符格式: 使用*号指定模板变量位置，例如:\n"
                            "   - 输入'1*1'，模板变量为'_whz'，生成'1_whz1'\n"
                            "   - 输入'a*b'，模板变量为'_temp'，生成'a_tempb'\n"
-                           "   - 输入'a*'，模板变量为'_temp'，生成'a_temp'")
+                           "   - 输入'a*'，模板变量为'_temp'，生成'a_temp'\n\n"
+                           "描述字段也可以使用相同的*占位符功能。")
 
     def load_template_list(self):
         """加载模板列表"""
@@ -323,12 +324,26 @@ class DevicePointDialog(QDialog):
                     # 修改处理逻辑，不自动添加下划线
                     full_var_name = f"{variable_prefix}{point_model.var_suffix}" if variable_prefix and point_model.var_suffix else (variable_prefix or point_model.var_suffix or "")
                 
-                desc_parts = []
-                if description_prefix:
-                    desc_parts.append(description_prefix)
-                if point_model.desc_suffix:
-                    desc_parts.append(point_model.desc_suffix)
-                full_desc = "".join(desc_parts).strip()
+                # 新的描述前缀处理逻辑，使用*号作为描述占位符
+                if description_prefix and '*' in description_prefix:
+                    # 根据*号分割描述前缀
+                    desc_prefix_parts = description_prefix.split('*')
+                    if len(desc_prefix_parts) >= 2:
+                        # 前缀部分 + 模板描述 + 后缀部分
+                        # 如果模板描述为空，则只连接前缀和后缀
+                        if not point_model.desc_suffix:
+                            full_desc = f"{desc_prefix_parts[0]}{desc_prefix_parts[1]}"
+                        else:
+                            full_desc = f"{desc_prefix_parts[0]}{point_model.desc_suffix}{desc_prefix_parts[1]}"
+                    else:
+                        # 如果只有前半部分(如a*)，且模板描述为空，则仅显示前缀
+                        if not point_model.desc_suffix:
+                            full_desc = desc_prefix_parts[0]
+                        else:
+                            full_desc = f"{desc_prefix_parts[0]}{point_model.desc_suffix}"
+                else:
+                    # 原处理逻辑：直接拼接
+                    full_desc = f"{description_prefix}{point_model.desc_suffix}" if description_prefix and point_model.desc_suffix else (description_prefix or point_model.desc_suffix or "")
                 
                 self.preview_table.setItem(row, 0, QTableWidgetItem(full_var_name))
                 self.preview_table.setItem(row, 1, QTableWidgetItem(full_desc))

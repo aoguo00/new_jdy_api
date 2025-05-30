@@ -70,13 +70,13 @@ class TemplateManageDialogUI:
         self.point_table = QTableWidget()
         self.point_table.setColumnCount(7)
         self.point_table.setHorizontalHeaderLabels([
-            "变量名后缀", "描述后缀", "类型", 
+            "自定义变量名", "自定义描述", "类型", 
             "SLL设定值", "SL设定值", "SH设定值", "SHH设定值"
         ])
         header_points = self.point_table.horizontalHeader()
         # 列索引:
-        # 0: 变量名后缀
-        # 1: 描述后缀
+        # 0: 自定义变量名
+        # 1: 自定义描述
         # 2: 类型
         # 3: SLL设定值
         # 4: SL设定值
@@ -493,9 +493,9 @@ class TemplateManageDialog(QDialog):
         form = QFormLayout()
 
         var_suffix_input = QLineEdit(var_suffix)
-        form.addRow("变量名后缀:", var_suffix_input)
+        form.addRow("自定义变量名:", var_suffix_input)
         desc_suffix_input = QLineEdit(desc_suffix)
-        form.addRow("描述后缀:", desc_suffix_input)
+        form.addRow("自定义描述:", desc_suffix_input)
         
         type_combo = QComboBox()
         type_combo.addItems(["BOOL", "REAL"]) 
