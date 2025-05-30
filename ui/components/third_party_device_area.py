@@ -6,6 +6,7 @@ from datetime import datetime
 import logging
 from PySide6.QtCore import Qt
 from typing import Optional # 确保导入 Optional
+from PySide6.QtGui import QColor, QBrush, QFont
 
 # 更新的服务和模型导入
 # from core.services import DeviceConfigurationService, TemplateService # 旧导入
@@ -27,6 +28,7 @@ class ThirdPartyDeviceArea(QGroupBox):
         self.config_service = config_service # 使用注入的ConfigService
         self.template_service = template_service # 使用注入的TemplateService
         self.current_site_name: Optional[str] = None # 新增：存储当前场站名称
+        self.template_colors = {} # 存储每个模板的颜色
 
         self.setup_ui()
         self.setup_connections()
@@ -52,7 +54,7 @@ class ThirdPartyDeviceArea(QGroupBox):
 
         button_layout = QVBoxLayout()
         self.third_party_btn = QPushButton("第三方设备点表配置")
-        self.delete_selected_config_btn = QPushButton("删除选中配置") # 新增按钮
+        self.delete_selected_config_btn = QPushButton("删除选中模板所有点位") # 修改按钮文本更明确
         self.clear_config_btn = QPushButton("清空所有配置") # 修改文本以示区分
 
         button_layout.addWidget(self.third_party_btn)
@@ -91,7 +93,11 @@ class ThirdPartyDeviceArea(QGroupBox):
             # 从配置服务获取摘要数据
             device_stats = self.config_service.get_configuration_summary()
             
-            for device_summary in device_stats:
+            # 生成模板颜色
+            self.generate_template_colors(device_stats)
+            
+            # 按模板分组显示
+            for device_index, device_summary in enumerate(device_stats):
                 # 获取原始前缀和模板名称
                 template_name = device_summary['template']
                 variable_prefix = device_summary.get('variable_prefix', '')
@@ -101,27 +107,57 @@ class ThirdPartyDeviceArea(QGroupBox):
                 configured_points = self.config_service.get_configured_points_by_template_and_prefix(
                     template_name, variable_prefix, description_prefix_text)
                 
+                # 添加模板分组标题行
+                group_row = self.third_party_table.rowCount()
+                self.third_party_table.insertRow(group_row)
+                
+                # 创建模板组标题项
+                group_item = QTableWidgetItem(f"▼ 模板: {template_name} (前缀: {variable_prefix})")
+                group_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                
+                # 设置标题行字体和背景
+                font = QFont()
+                font.setBold(True)
+                group_item.setFont(font)
+                
+                # 获取模板颜色
+                template_color = self.template_colors.get(template_name, QColor(240, 240, 240))
+                group_item.setBackground(QBrush(template_color.darker(120)))
+                
+                # 设置跨列显示
+                self.third_party_table.setItem(group_row, 0, group_item)
+                self.third_party_table.setSpan(group_row, 0, 1, 7)  # 合并整行
+                
+                # 保存用户数据用于删除操作
+                group_item.setData(Qt.ItemDataRole.UserRole, {
+                    'variable_prefix': variable_prefix,
+                    'description_prefix': description_prefix_text,
+                    'is_group_header': True,  # 标记为组标题
+                    'template_name': template_name,
+                    'points_count': len(configured_points) if configured_points else 0
+                })
+                
                 # 如果没有配置点位，显示一个空行
                 if not configured_points:
                     row = self.third_party_table.rowCount()
                     self.third_party_table.insertRow(row)
-                    self.third_party_table.setItem(row, 0, QTableWidgetItem(template_name))
-                    self.third_party_table.setItem(row, 1, QTableWidgetItem(variable_prefix))
+                    self.third_party_table.setItem(row, 0, QTableWidgetItem("(无点位)"))
+                    empty_item = self.third_party_table.item(row, 0)
+                    empty_item.setBackground(QBrush(template_color))
                     
                     # 添加空的数据类型和设定值列
-                    self.third_party_table.setItem(row, 2, QTableWidgetItem(""))
-                    self.third_party_table.setItem(row, 3, QTableWidgetItem(""))
-                    self.third_party_table.setItem(row, 4, QTableWidgetItem(""))
-                    self.third_party_table.setItem(row, 5, QTableWidgetItem(""))
-                    self.third_party_table.setItem(row, 6, QTableWidgetItem(""))
+                    for col in range(1, 7):
+                        item = QTableWidgetItem("")
+                        item.setBackground(QBrush(template_color))
+                        self.third_party_table.setItem(row, col, item)
                     
                     # 保存用户数据用于删除操作
-                    item = self.third_party_table.item(row, 1)
-                    if item:
-                        item.setData(Qt.ItemDataRole.UserRole, {
-                            'variable_prefix': variable_prefix,
-                            'description_prefix': description_prefix_text
-                        })
+                    empty_item.setData(Qt.ItemDataRole.UserRole, {
+                        'variable_prefix': variable_prefix,
+                        'description_prefix': description_prefix_text,
+                        'template_name': template_name,
+                        'is_empty': True
+                    })
                 else:
                     # 为每个点位创建一行
                     for point in configured_points:
@@ -147,33 +183,65 @@ class ThirdPartyDeviceArea(QGroupBox):
                         # 添加一行到表格
                         row = self.third_party_table.rowCount()
                         self.third_party_table.insertRow(row)
-                        self.third_party_table.setItem(row, 0, QTableWidgetItem(template_name))
-                        self.third_party_table.setItem(row, 1, QTableWidgetItem(full_var_name))
                         
-                        # 添加数据类型和设定值
-                        data_type = point.get('data_type', '')
-                        sll_setpoint = point.get('sll_setpoint', '')
-                        sl_setpoint = point.get('sl_setpoint', '')
-                        sh_setpoint = point.get('sh_setpoint', '')
-                        shh_setpoint = point.get('shh_setpoint', '')
+                        # 创建项并设置背景色
+                        items = [
+                            QTableWidgetItem(template_name),
+                            QTableWidgetItem(full_var_name),
+                            QTableWidgetItem(point.get('data_type', '')),
+                            QTableWidgetItem(point.get('sll_setpoint', '')),
+                            QTableWidgetItem(point.get('sl_setpoint', '')),
+                            QTableWidgetItem(point.get('sh_setpoint', '')),
+                            QTableWidgetItem(point.get('shh_setpoint', ''))
+                        ]
                         
-                        self.third_party_table.setItem(row, 2, QTableWidgetItem(data_type))
-                        self.third_party_table.setItem(row, 3, QTableWidgetItem(sll_setpoint))
-                        self.third_party_table.setItem(row, 4, QTableWidgetItem(sl_setpoint))
-                        self.third_party_table.setItem(row, 5, QTableWidgetItem(sh_setpoint))
-                        self.third_party_table.setItem(row, 6, QTableWidgetItem(shh_setpoint))
+                        # 设置相同背景色以分组
+                        for col, item in enumerate(items):
+                            item.setBackground(QBrush(template_color))
+                            self.third_party_table.setItem(row, col, item)
                         
                         # 保存用户数据用于删除操作
-                        item = self.third_party_table.item(row, 1)
-                        if item:
-                            item.setData(Qt.ItemDataRole.UserRole, {
-                                'variable_prefix': variable_prefix,
-                                'description_prefix': description_prefix_text
-                            })
+                        items[1].setData(Qt.ItemDataRole.UserRole, {
+                            'variable_prefix': variable_prefix,
+                            'description_prefix': description_prefix_text,
+                            'template_name': template_name
+                        })
+                
+                # 添加一个空行作为组间分隔符（如果不是最后一个组）
+                if device_index < len(device_stats) - 1:
+                    separator_row = self.third_party_table.rowCount()
+                    self.third_party_table.insertRow(separator_row)
+                    separator_item = QTableWidgetItem("")
+                    separator_item.setFlags(Qt.ItemFlag.NoItemFlags)  # 禁用此行
+                    self.third_party_table.setItem(separator_row, 0, separator_item)
+                    self.third_party_table.setSpan(separator_row, 0, 1, 7)  # 合并整行
         except Exception as e:
             logger.error(f"更新第三方设备列表时发生错误: {e}", exc_info=True)
             # 可选择通知用户，尽管这通常是后台更新
             # QMessageBox.warning(self, "更新错误", "无法刷新第三方设备列表。") 
+
+    def generate_template_colors(self, device_stats):
+        """为每个模板生成一个唯一的背景色"""
+        base_colors = [
+            QColor(230, 240, 250),  # 浅蓝
+            QColor(240, 250, 230),  # 浅绿
+            QColor(250, 240, 230),  # 浅橙
+            QColor(250, 230, 240),  # 浅粉
+            QColor(230, 250, 250),  # 浅青
+            QColor(250, 250, 230),  # 浅黄
+            QColor(240, 230, 250),  # 浅紫
+            QColor(245, 245, 245)   # 浅灰
+        ]
+        
+        # 重置颜色映射
+        self.template_colors = {}
+        
+        # 为每个模板分配颜色
+        for i, device_summary in enumerate(device_stats):
+            template_name = device_summary['template']
+            if template_name not in self.template_colors:
+                color_index = i % len(base_colors)
+                self.template_colors[template_name] = base_colors[color_index]
 
     def delete_selected_device_config(self):
         """删除表格中当前选中的第三方设备配置。"""
@@ -183,32 +251,50 @@ class ThirdPartyDeviceArea(QGroupBox):
             return
 
         current_row = selected_rows[0].row()
-        template_name_item = self.third_party_table.item(current_row, 0)
-        variable_name_item = self.third_party_table.item(current_row, 1) # 第二列现在是完整变量名
-
-        if not template_name_item or not variable_name_item:
+        first_item = self.third_party_table.item(current_row, 0)
+        
+        if not first_item:
             QMessageBox.warning(self, "错误", "无法获取选中配置的详细信息。")
             return
-
-        template_name = template_name_item.text()
-        # 从用户数据中获取原始的变量前缀和描述前缀
-        user_data = variable_name_item.data(Qt.ItemDataRole.UserRole)
-        if isinstance(user_data, dict):
-            variable_prefix = user_data.get('variable_prefix', '')
-            description_prefix = user_data.get('description_prefix', '')
-        else:
-            # 兼容旧数据格式
-            QMessageBox.warning(self, "错误", "无法获取变量前缀信息，请重新选择。")
+            
+        # 获取用户数据
+        user_data = None
+        # 先检查第一列
+        if first_item and first_item.data(Qt.ItemDataRole.UserRole):
+            user_data = first_item.data(Qt.ItemDataRole.UserRole)
+        # 如果第一列没有数据，检查第二列
+        elif self.third_party_table.item(current_row, 1) and self.third_party_table.item(current_row, 1).data(Qt.ItemDataRole.UserRole):
+            user_data = self.third_party_table.item(current_row, 1).data(Qt.ItemDataRole.UserRole)
+            
+        if not isinstance(user_data, dict):
+            QMessageBox.warning(self, "错误", "无法获取配置信息，请重新选择。")
             return
+            
+        # 获取模板信息
+        template_name = user_data.get('template_name', '')
+        variable_prefix = user_data.get('variable_prefix', '')
+        description_prefix = user_data.get('description_prefix', '')
+        points_count = user_data.get('points_count', 0)
+        is_group_header = user_data.get('is_group_header', False)
         
-        # 显示当前变量名和将要删除的整个配置组
-        current_variable_name = variable_name_item.text()
+        # 如果是分组标题行，直接使用组信息
+        if not template_name and first_item:
+            template_name = first_item.text()
+            
+        # 构建确认信息，强调将删除整个模板组
+        confirm_message = (
+            f"您选择了模板 '{template_name}' (变量前缀: '{variable_prefix}')\n\n"
+            f"此操作将删除该模板下的所有点位配置"
+        )
+        
+        if points_count > 0:
+            confirm_message += f"，共计 {points_count} 个点位"
+        
+        confirm_message += "。\n\n确定要删除此模板的所有配置吗？此操作不可恢复。"
         
         reply = QMessageBox.question(
-            self, "确认删除",
-            f"您选择了变量 '{current_variable_name}'\n\n"
-            f"此操作将删除模板 '{template_name}' 下所有变量前缀为 '{variable_prefix}' 的配置。\n"
-            f"确定要删除整个配置组吗？此操作不可恢复。",
+            self, "确认删除整个模板配置",
+            confirm_message,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
