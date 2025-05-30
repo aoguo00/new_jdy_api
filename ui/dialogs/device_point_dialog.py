@@ -87,7 +87,7 @@ class DevicePointDialog(QDialog):
 
         # 变量输入框
         self.variable_prefix_input = QLineEdit()
-        self.variable_prefix_input.setPlaceholderText("请输入变量名前缀 (例如 PT0101 或使用 a*b 格式，*代表模板变量位置)")
+        self.variable_prefix_input.setPlaceholderText("请输入变量名 (例如 PT0101 或使用 a*b 格式，*代表模板变量位置)")
         # 使用textEdited信号来处理用户输入，不会触发程序性修改的循环
         self.variable_prefix_input.textEdited.connect(self.handle_prefix_input)
         self.variable_prefix_input.textChanged.connect(self.update_preview)
@@ -95,7 +95,7 @@ class DevicePointDialog(QDialog):
 
         # 描述输入框
         self.description_prefix_input = QLineEdit()
-        self.description_prefix_input.setPlaceholderText("请输入描述前缀 (例如 温度传感器)，不需要请留空！")
+        self.description_prefix_input.setPlaceholderText("请输入自定义描述，不需要请留空！")
         self.description_prefix_input.textChanged.connect(self.update_preview)
         info_layout.addRow("描述:", self.description_prefix_input)
 
