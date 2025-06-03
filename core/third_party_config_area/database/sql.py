@@ -11,7 +11,7 @@ TEMPLATE_SQL = {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''',
-    
+
     'CREATE_POINTS_TABLE': '''
     CREATE TABLE IF NOT EXISTS third_device_template_points (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,26 +26,26 @@ TEMPLATE_SQL = {
         FOREIGN KEY(template_id) REFERENCES third_device_templates(id) ON DELETE CASCADE
     )
     ''',
-    
+
     'INSERT_TEMPLATE': '''
     INSERT INTO third_device_templates (name)
     VALUES (?)
     ''',
-    
+
     'UPDATE_TEMPLATE': '''
-    UPDATE third_device_templates 
+    UPDATE third_device_templates
     SET name = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
     ''',
-    
+
     'DELETE_TEMPLATE': '''
     DELETE FROM third_device_templates WHERE id = ?
     ''',
 
     'DELETE_POINTS_BY_TEMPLATE_ID': '''
     DELETE FROM third_device_template_points WHERE template_id = ?
-    ''', 
-    
+    ''',
+
     'INSERT_POINT': '''
     INSERT INTO third_device_template_points
     (template_id, var_suffix, desc_suffix, data_type, sll_setpoint, sl_setpoint, sh_setpoint, shh_setpoint)
@@ -57,13 +57,13 @@ TEMPLATE_SQL = {
     FROM third_device_templates
     WHERE id = ?
     ''',
-    
+
     'GET_ALL_TEMPLATES': '''
     SELECT id, name, created_at, updated_at
     FROM third_device_templates
     ORDER BY name
     ''',
-    
+
     'GET_TEMPLATE_BY_NAME': '''
     SELECT id, name, created_at, updated_at
     FROM third_device_templates
@@ -82,8 +82,8 @@ CONFIGURED_DEVICE_SQL = {
     CREATE TABLE IF NOT EXISTS configured_device_points (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         template_name TEXT NOT NULL, -- 使用的模板名称 (快照)
-        variable_prefix TEXT NOT NULL, -- 应用模板时指定的变量前缀
-        description_prefix TEXT NOT NULL DEFAULT '', -- 应用模板时指定的描述前缀
+        variable_prefix TEXT NOT NULL, -- 应用模板时指定的自定义变量
+        description_prefix TEXT NOT NULL DEFAULT '', -- 应用模板时指定的自定义描述
         var_suffix TEXT NOT NULL,    -- 来自模板的点位变量名后缀 (快照)
         desc_suffix TEXT NOT NULL,   -- 来自模板的点位描述后缀 (快照)
         data_type TEXT NOT NULL,     -- 来自模板的点位数据类型 (快照)
@@ -125,7 +125,7 @@ CONFIGURED_DEVICE_SQL = {
     ''',
 
     'CHECK_CONFIGURATION_EXISTS': '''
-    SELECT 1 
+    SELECT 1
     FROM configured_device_points
     WHERE template_name = ? AND variable_prefix = ? AND description_prefix = ?
     LIMIT 1
@@ -136,12 +136,12 @@ CONFIGURED_DEVICE_SQL = {
     FROM configured_device_points
     WHERE template_name = ? AND variable_prefix = ? AND description_prefix = ?
     ''',
-    
+
     'GET_CONFIGURED_POINTS_BY_TEMPLATE_AND_PREFIXES': '''
-    SELECT id, template_name, variable_prefix, description_prefix, var_suffix, desc_suffix, data_type, 
+    SELECT id, template_name, variable_prefix, description_prefix, var_suffix, desc_suffix, data_type,
            sll_setpoint, sl_setpoint, sh_setpoint, shh_setpoint, created_at
     FROM configured_device_points
     WHERE template_name = ? AND variable_prefix = ? AND description_prefix = ?
     ORDER BY var_suffix
     '''
-} 
+}

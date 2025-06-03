@@ -14,7 +14,7 @@ from ..models.configured_device_models import ConfiguredDevicePointModel
 
 logger = logging.getLogger(__name__)
 
-# --- Template DAO --- 
+# --- Template DAO ---
 class TemplateDAO:
     """设备模板DAO，封装模板和点位的数据库交互。"""
 
@@ -25,11 +25,11 @@ class TemplateDAO:
     # --- 辅助转换方法 (保持不变, 内部不直接引用 db_service) ---
     def _row_to_template_model(self, row: Optional[Dict[str, Any]], points: List[TemplatePointModel] = None) -> Optional[DeviceTemplateModel]:
         if not row: return None
-        try: 
+        try:
             model = DeviceTemplateModel.model_validate(row, from_attributes=True)
             model.points = points or [] # Assign points after validation
             return model
-        except Exception as e: 
+        except Exception as e:
             logger.error(f"数据库行转换为DeviceTemplateModel失败: {row}, 错误: {e}", exc_info=True)
             return None
 
@@ -38,16 +38,16 @@ class TemplateDAO:
 
     def _row_to_point_model(self, row: Optional[Dict[str, Any]]) -> Optional[TemplatePointModel]:
         if not row: return None
-        try: 
+        try:
             return TemplatePointModel.model_validate(row, from_attributes=True)
-        except Exception as e: 
+        except Exception as e:
             logger.error(f"数据库行转换为TemplatePointModel失败: {row}, 错误: {e}", exc_info=True)
             return None
 
     def _rows_to_point_list(self, rows: List[Dict[str, Any]]) -> List[TemplatePointModel]:
         return [model for model in (self._row_to_point_model(row) for row in rows) if model is not None]
 
-    # --- 模板操作 (更新对 db_service 的调用) --- 
+    # --- 模板操作 (更新对 db_service 的调用) ---
     def create_template_with_points(self, template_data: DeviceTemplateModel) -> Optional[DeviceTemplateModel]:
         """创建模板及其点位（事务性操作，已移除模板前缀处理）。"""
         try:
@@ -59,7 +59,7 @@ class TemplateDAO:
                 template_id = cursor.lastrowid
                 if not template_id:
                     raise Exception("创建模板后未能获取 template_id")
-                
+
                 if template_data.points:
                     sql_point = TEMPLATE_SQL['INSERT_POINT']
                     point_params_list = [
@@ -68,10 +68,10 @@ class TemplateDAO:
                         for p in template_data.points
                     ]
                     cursor.executemany(sql_point, point_params_list)
-                
+
             logger.info(f"模板 '{template_data.name}' 及 {len(template_data.points)} 个点位创建成功，ID: {template_id}")
             return self.get_template_by_id(template_id)
-        
+
         except sqlite3.IntegrityError as ie:
             if "UNIQUE constraint failed: third_device_templates.name" in str(ie):
                 logger.warning(f"创建模板失败：名称 '{template_data.name}' 已存在。")
@@ -185,7 +185,7 @@ class TemplateDAO:
             logger.error(f"获取模板ID {template_id} 的点位失败: {e}", exc_info=True)
             return []
 
-# --- Configured Device DAO --- 
+# --- Configured Device DAO ---
 class ConfiguredDeviceDAO:
     """已配置设备点表DAO，封装数据库交互。"""
     def __init__(self, db_service: 'DatabaseService'): # Use new type hint
@@ -195,11 +195,11 @@ class ConfiguredDeviceDAO:
     def save_configured_points(self, points: List[ConfiguredDevicePointModel]) -> bool:
         """批量保存已配置的设备点位。如果发生唯一性约束冲突，则抛出ValueError。"""
         if not points:
-            return True 
-        
+            return True
+
         sql = CONFIGURED_DEVICE_SQL['INSERT_CONFIGURED_POINTS_BATCH']
         params_list = [
-            (p.template_name, p.variable_prefix, p.description_prefix, 
+            (p.template_name, p.variable_prefix, p.description_prefix,
              p.var_suffix, p.desc_suffix, p.data_type,
              p.sll_setpoint, p.sl_setpoint, p.sh_setpoint, p.shh_setpoint)
             for p in points
@@ -214,7 +214,7 @@ class ConfiguredDeviceDAO:
             first_point = points[0] if points else None
             vp = first_point.variable_prefix if first_point else ''
             dp = first_point.description_prefix if first_point else ''
-            raise ValueError(f"保存点位失败：变量名冲突。在配置 (模板: {first_point.template_name if first_point else ''}, 变量前缀: '{vp}', 描述前缀: '{dp}') 下可能存在重复的变量后缀。") from ie
+            raise ValueError(f"保存点位失败：变量名冲突。在配置 (模板: {first_point.template_name if first_point else ''}, 自定义变量: '{vp}', 自定义描述: '{dp}') 下可能存在重复的变量后缀。") from ie
         except Exception as e:
             logger.error(f"批量保存配置点位失败: {e}", exc_info=True)
             return False # 对于其他未知错误，返回False
@@ -240,24 +240,25 @@ class ConfiguredDeviceDAO:
             logger.error(f"删除所有配置点位失败: {e}", exc_info=True)
             return False
 
-    def delete_configured_points_by_template_and_prefixes(self, template_name: str, variable_prefix: str, description_prefix: str) -> bool:
-        """根据模板名称、变量前缀和描述前缀删除一组已配置的设备点位。"""
+    def delete_configured_points_by_template_and_prefixes(self, template_name: str, variable_prefix: str, description_prefix: str) -> tuple[bool, int]:
+        """根据模板名称、自定义变量和自定义描述删除一组已配置的设备点位。
+
+        Returns:
+            tuple[bool, int]: (操作是否成功, 删除的记录数)
+        """
         sql = CONFIGURED_DEVICE_SQL['DELETE_CONFIGURED_POINTS_BY_TEMPLATE_AND_PREFIXES']
         params = (template_name, variable_prefix, description_prefix)
         try:
             cursor = self.db_service.execute(sql, params)
-            if cursor and cursor.rowcount > 0:
-                logger.info(f"成功删除模板 \'{template_name}\' (变量前缀=\'{variable_prefix}\', 描述前缀=\'{description_prefix}\') 的 {cursor.rowcount} 条配置点位。")
-                return True
-            # 如果 rowcount 是 0，表示没有匹配的点位被删除，这通常不应视为错误，而是操作成功但无效果
-            logger.info(f"模板 \'{template_name}\' (变量前缀=\'{variable_prefix}\', 描述前缀=\'{description_prefix}\') 没有找到匹配的点位进行删除。")
-            return True # 保持与旧逻辑一致，删除0行也算成功
+            deleted_count = cursor.rowcount if cursor else 0
+            logger.debug(f"删除操作完成: 模板='{template_name}', 自定义变量='{variable_prefix}', 自定义描述='{description_prefix}', 删除记录数={deleted_count}")
+            return True, deleted_count
         except Exception as e:
-            logger.error(f"删除配置点位 (模板 \'{template_name}\', 变量前缀 \'{variable_prefix}\', 描述前缀 \'{description_prefix}\') 失败: {e}", exc_info=True)
-            return False
+            logger.error(f"删除配置点位 (模板 \'{template_name}\', 自定义变量 \'{variable_prefix}\', 自定义描述 \'{description_prefix}\') 失败: {e}", exc_info=True)
+            return False, 0
 
     def get_configuration_summary_raw(self) -> List[Dict[str, Any]]:
-        """获取原始的配置摘要信息（按模板名称、变量前缀和描述前缀分组）。"""
+        """获取原始的配置摘要信息（按模板名称、自定义变量和自定义描述分组）。"""
         sql = CONFIGURED_DEVICE_SQL['GET_CONFIGURATION_SUMMARY_RAW']
         try:
             rows = self.db_service.fetch_all(sql)
@@ -268,7 +269,7 @@ class ConfiguredDeviceDAO:
             return []
 
     def does_configuration_exist(self, template_name: str, variable_prefix: str, description_prefix: str) -> bool:
-        """检查具有指定模板名称、变量前缀和描述前缀的配置是否已在数据库中存在。"""
+        """检查具有指定模板名称、自定义变量和自定义描述的配置是否已在数据库中存在。"""
         sql = CONFIGURED_DEVICE_SQL['CHECK_CONFIGURATION_EXISTS_BY_TEMPLATE_AND_PREFIXES']
         params = (template_name, variable_prefix, description_prefix)
         try:
@@ -276,7 +277,7 @@ class ConfiguredDeviceDAO:
             exists = row and row.get('count', 0) > 0
             return exists
         except Exception as e:
-            logger.error(f"检查配置是否存在 (模板='{template_name}', 变量前缀='{variable_prefix}', 描述前缀='{description_prefix}') 失败: {e}", exc_info=True)
+            logger.error(f"检查配置是否存在 (模板='{template_name}', 自定义变量='{variable_prefix}', 自定义描述='{description_prefix}') 失败: {e}", exc_info=True)
             return False
 
     def get_configured_points_by_template_and_prefixes(self, template_name: str, variable_prefix: str, description_prefix: str) -> List[ConfiguredDevicePointModel]:
@@ -297,5 +298,5 @@ class ConfiguredDeviceDAO:
             rows = self.db_service.fetch_all(sql, params)
             return [ConfiguredDevicePointModel.model_validate(row, from_attributes=True) for row in rows]
         except Exception as e:
-            logger.error(f"获取配置点位 (模板='{template_name}', 变量前缀='{variable_prefix}', 描述前缀='{description_prefix}') 失败: {e}", exc_info=True)
-            return [] 
+            logger.error(f"获取配置点位 (模板='{template_name}', 自定义变量='{variable_prefix}', 自定义描述='{description_prefix}') 失败: {e}", exc_info=True)
+            return []

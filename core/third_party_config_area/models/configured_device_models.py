@@ -30,7 +30,7 @@ class ConfiguredDevicePointModel(BaseModel):
         """完整的变量名 (例如 DEV01_AI)"""
         # 处理*号作为变量占位符的情况
         if '*' in self.variable_prefix:
-            # 根据*号分割变量前缀
+            # 根据*号分割自定义变量
             prefix_parts = self.variable_prefix.split('*')
             if len(prefix_parts) >= 2:
                 # 前缀部分 + 模板变量 + 后缀部分
@@ -49,7 +49,7 @@ class ConfiguredDevicePointModel(BaseModel):
         """完整的描述，支持*占位符"""
         # 处理*号作为描述占位符的情况
         if self.description_prefix and '*' in self.description_prefix:
-            # 根据*号分割描述前缀
+            # 根据*号分割自定义描述
             desc_prefix_parts = self.description_prefix.split('*')
             if len(desc_prefix_parts) >= 2:
                 # 前缀部分 + 模板描述 + 后缀部分
@@ -66,4 +66,4 @@ class ConfiguredDevicePointModel(BaseModel):
                     return f"{desc_prefix_parts[0]}{self.desc_suffix}"
         else:
             # 原始直接拼接方式
-            return f"{self.description_prefix}{self.desc_suffix}" if self.description_prefix and self.desc_suffix else (self.description_prefix or self.desc_suffix or "") 
+            return f"{self.description_prefix}{self.desc_suffix}" if self.description_prefix and self.desc_suffix else (self.description_prefix or self.desc_suffix or "")
