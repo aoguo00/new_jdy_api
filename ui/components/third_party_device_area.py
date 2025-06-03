@@ -257,8 +257,11 @@ class ThirdPartyDeviceArea(QGroupBox):
             var_suffix = point.get('var_suffix', '')
             desc_suffix = point.get('desc_suffix', '')  # 获取描述后缀
             
-            # 生成完整变量名
-            full_var_name = self.generate_full_variable_name(variable_prefix, var_suffix)
+            # 使用服务返回的完整变量名（来自模型的计算属性）
+            full_var_name = point.get('full_variable_name', '')
+            if not full_var_name:
+                # 如果服务没有返回，则使用本地生成逻辑作为备用
+                full_var_name = self.generate_full_variable_name(variable_prefix, var_suffix)
             
             # 优先使用服务返回的完整描述，如果没有则生成
             full_description = point.get('full_description', '')
@@ -329,7 +332,7 @@ class ThirdPartyDeviceArea(QGroupBox):
                 else:
                     return prefix_parts[0]
         else:
-            # 直接拼接（没有占位符的情况）
+            # 直接拼接，不做任何额外处理
             return f"{variable_prefix}{var_suffix}"
     
     def add_group_separator(self):

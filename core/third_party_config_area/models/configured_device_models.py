@@ -39,9 +39,8 @@ class ConfiguredDevicePointModel(BaseModel):
                 # 如果只有前半部分，则按前半部分+模板变量处理
                 return f"{prefix_parts[0]}{self.var_suffix}"
         else:
-            # 原始下划线连接方式
-            connector = "_" if self.variable_prefix and self.var_suffix else ""
-            return f"{self.variable_prefix}{connector}{self.var_suffix}"
+            # 直接拼接，不做任何额外处理
+            return f"{self.variable_prefix}{self.var_suffix}"
 
     @computed_field
     @property

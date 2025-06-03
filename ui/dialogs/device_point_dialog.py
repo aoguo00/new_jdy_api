@@ -303,13 +303,12 @@ class DevicePointDialog(QDialog):
                 row = self.preview_table.rowCount()
                 self.preview_table.insertRow(row)
 
-                # 新的变量前缀处理逻辑，使用*号作为变量占位符
+                # 使用统一的变量名生成逻辑（与模型保持一致）
                 if '*' in variable_prefix:
                     # 根据*号分割变量前缀
                     prefix_parts = variable_prefix.split('*')
                     if len(prefix_parts) >= 2:
                         # 前缀部分 + 模板变量 + 后缀部分
-                        # 如果模板变量为空，则只连接前缀和后缀
                         if not point_model.var_suffix:
                             full_var_name = f"{prefix_parts[0]}{prefix_parts[1]}"
                         else:
@@ -321,8 +320,8 @@ class DevicePointDialog(QDialog):
                         else:
                             full_var_name = f"{prefix_parts[0]}{point_model.var_suffix}"
                 else:
-                    # 修改处理逻辑，不自动添加下划线
-                    full_var_name = f"{variable_prefix}{point_model.var_suffix}" if variable_prefix and point_model.var_suffix else (variable_prefix or point_model.var_suffix or "")
+                    # 直接拼接，不做任何额外处理
+                    full_var_name = f"{variable_prefix}{point_model.var_suffix}"
 
                 # 新的描述前缀处理逻辑，使用*号作为描述占位符
                 if description_prefix and '*' in description_prefix:
