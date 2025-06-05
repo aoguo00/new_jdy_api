@@ -151,12 +151,23 @@ class PLCConfigController(QObject):
             tuple[bool, str]: (是否有效, 错误信息)
         """
         try:
-            # 1. 检查是否有CPU模块
+            # 1. 检查是否有CPU模块 - LE_CPU系统特殊处理
             cpu_modules = [m for m in selected_modules if m.module_type.upper() == 'CPU']
-            if len(cpu_modules) == 0:
-                return False, "配置中必须包含至少一个CPU模块"
-            elif len(cpu_modules) > 1:
-                return False, "配置中只能包含一个CPU模块"
+
+            # 获取系统类型（需要从外部传入或通过其他方式获取）
+            # 这里暂时通过检查CPU模块型号来判断系统类型
+            is_le_cpu_system = any('LE5118' in m.model.upper() for m in cpu_modules)
+
+            if is_le_cpu_system:
+                # LE_CPU系统：CPU模块是内置的，不需要在配置中显式包含
+                # 验证通过，继续其他检查
+                pass
+            else:
+                # LK系统：需要显式配置CPU模块
+                if len(cpu_modules) == 0:
+                    return False, "LK系统配置中必须包含至少一个CPU模块"
+                elif len(cpu_modules) > 1:
+                    return False, "配置中只能包含一个CPU模块"
             
             # 2. 检查模块兼容性
             for module in selected_modules:
@@ -181,9 +192,13 @@ class PLCConfigController(QObject):
     
     def _is_module_compatible(self, module: PLCModule) -> bool:
         """检查模块兼容性"""
-        # 这里可以添加具体的兼容性检查逻辑
-        # 例如：检查模块系列、制造商等
-        return module.manufacturer == "和利时" and module.series == "LK"
+        # 检查制造商
+        if module.manufacturer != "和利时":
+            return False
+
+        # 检查系列兼容性 - 支持LK和LE系列
+        compatible_series = ["LK", "LE"]
+        return module.series in compatible_series
     
     def add_validation_callback(self, callback: Callable[[List[PLCModule]], tuple[bool, str]]):
         """添加自定义验证回调"""

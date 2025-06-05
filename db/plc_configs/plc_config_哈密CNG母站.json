@@ -1,0 +1,70 @@
+{
+  "site_name": "哈密CNG母站",
+  "save_time": "2025-06-05T11:47:43.415109",
+  "version": "1.1",
+  "config": {
+    "0,0": "LE5118",
+    "0,1": "LE5211",
+    "0,2": "LE5223",
+    "0,3": "LE5403",
+    "0,4": "LE5311"
+  },
+  "system_info": {
+    "system_type": "LE_CPU",
+    "rack_count": 1,
+    "racks_data": [
+      {
+        "rack_id": 1,
+        "rack_name": "机架1",
+        "total_slots": 11,
+        "available_slots": 11,
+        "start_slot": 0,
+        "modules": [],
+        "system_type": "LE_CPU"
+      }
+    ]
+  },
+  "io_count": 80,
+  "addresses_count": 80,
+  "processed_devices_count": 5,
+  "rack_configurations": {
+    "0": [
+      {
+        "key": "LE5211_1",
+        "title": "LE5211",
+        "model": "LE5211",
+        "module_type": "DI",
+        "channels": 16,
+        "description": "LE5211 - DI (16通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LE5223_1",
+        "title": "LE5223",
+        "model": "LE5223",
+        "module_type": "DO",
+        "channels": 16,
+        "description": "LE5223 - DO (16通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LE5403_1",
+        "title": "LE5403",
+        "model": "LE5403",
+        "module_type": "COM",
+        "channels": 0,
+        "description": "LE5403 - COM",
+        "is_fixed": false
+      },
+      {
+        "key": "LE5311_1",
+        "title": "LE5311",
+        "model": "LE5311",
+        "module_type": "AI",
+        "channels": 8,
+        "description": "LE5311 - AI (8通道)",
+        "is_fixed": false
+      }
+    ]
+  }
+}

@@ -1,0 +1,954 @@
+{
+  "site_name": "哈密CNG母站",
+  "save_time": "2025-06-05T11:47:43.415109",
+  "version": "1.1",
+  "config": {
+    "0,0": "LE5118",
+    "0,1": "LE5211",
+    "0,2": "LE5223",
+    "0,3": "LE5403",
+    "0,4": "LE5311"
+  },
+  "system_info": {
+    "system_type": "LE_CPU",
+    "rack_count": 1,
+    "racks_data": [
+      {
+        "rack_id": 1,
+        "rack_name": "机架1",
+        "total_slots": 11,
+        "available_slots": 11,
+        "start_slot": 0,
+        "modules": [],
+        "system_type": "LE_CPU"
+      }
+    ]
+  },
+  "io_count": 80,
+  "addresses_count": 80,
+  "processed_devices_count": 5,
+  "rack_configurations": {
+    "0": [
+      {
+        "key": "LE5211_1",
+        "title": "LE5211",
+        "model": "LE5211",
+        "module_type": "DI",
+        "channels": 16,
+        "description": "LE5211 - DI (16通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LE5223_1",
+        "title": "LE5223",
+        "model": "LE5223",
+        "module_type": "DO",
+        "channels": 16,
+        "description": "LE5223 - DO (16通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LE5403_1",
+        "title": "LE5403",
+        "model": "LE5403",
+        "module_type": "COM",
+        "channels": 0,
+        "description": "LE5403 - COM",
+        "is_fixed": false
+      },
+      {
+        "key": "LE5311_1",
+        "title": "LE5311",
+        "model": "LE5311",
+        "module_type": "AI",
+        "channels": 8,
+        "description": "LE5311 - AI (8通道)",
+        "is_fixed": false
+      }
+    ]
+  },
+  "addresses": [
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 0,
+      "address": "1_0_DI_0",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 1,
+      "address": "1_0_DI_1",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 2,
+      "address": "1_0_DI_2",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 3,
+      "address": "1_0_DI_3",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 4,
+      "address": "1_0_DI_4",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 5,
+      "address": "1_0_DI_5",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 6,
+      "address": "1_0_DI_6",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 7,
+      "address": "1_0_DI_7",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 8,
+      "address": "1_0_DI_8",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 9,
+      "address": "1_0_DI_9",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 10,
+      "address": "1_0_DI_10",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 11,
+      "address": "1_0_DI_11",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 12,
+      "address": "1_0_DI_12",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 13,
+      "address": "1_0_DI_13",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 14,
+      "address": "1_0_DI_14",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 15,
+      "address": "1_0_DI_15",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 16,
+      "address": "1_0_DI_16",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 17,
+      "address": "1_0_DI_17",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 18,
+      "address": "1_0_DI_18",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 19,
+      "address": "1_0_DI_19",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 20,
+      "address": "1_0_DI_20",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 21,
+      "address": "1_0_DI_21",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 22,
+      "address": "1_0_DI_22",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DI",
+      "channel": 23,
+      "address": "1_0_DI_23",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 0,
+      "address": "1_0_DO_0",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 1,
+      "address": "1_0_DO_1",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 2,
+      "address": "1_0_DO_2",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 3,
+      "address": "1_0_DO_3",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 4,
+      "address": "1_0_DO_4",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 5,
+      "address": "1_0_DO_5",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 6,
+      "address": "1_0_DO_6",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 7,
+      "address": "1_0_DO_7",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 8,
+      "address": "1_0_DO_8",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 9,
+      "address": "1_0_DO_9",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 10,
+      "address": "1_0_DO_10",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 11,
+      "address": "1_0_DO_11",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 12,
+      "address": "1_0_DO_12",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 13,
+      "address": "1_0_DO_13",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 14,
+      "address": "1_0_DO_14",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 0,
+      "model": "LE5118",
+      "type": "DO",
+      "channel": 15,
+      "address": "1_0_DO_15",
+      "is_io_channel": true,
+      "module_type": "CPU"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 0,
+      "address": "1_1_DI_0",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 1,
+      "address": "1_1_DI_1",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 2,
+      "address": "1_1_DI_2",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 3,
+      "address": "1_1_DI_3",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 4,
+      "address": "1_1_DI_4",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 5,
+      "address": "1_1_DI_5",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 6,
+      "address": "1_1_DI_6",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 7,
+      "address": "1_1_DI_7",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 8,
+      "address": "1_1_DI_8",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 9,
+      "address": "1_1_DI_9",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 10,
+      "address": "1_1_DI_10",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 11,
+      "address": "1_1_DI_11",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 12,
+      "address": "1_1_DI_12",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 13,
+      "address": "1_1_DI_13",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 14,
+      "address": "1_1_DI_14",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 1,
+      "model": "LE5211",
+      "type": "DI",
+      "channel": 15,
+      "address": "1_1_DI_15",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 0,
+      "address": "1_2_DO_0",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 1,
+      "address": "1_2_DO_1",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 2,
+      "address": "1_2_DO_2",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 3,
+      "address": "1_2_DO_3",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 4,
+      "address": "1_2_DO_4",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 5,
+      "address": "1_2_DO_5",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 6,
+      "address": "1_2_DO_6",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 7,
+      "address": "1_2_DO_7",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 8,
+      "address": "1_2_DO_8",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 9,
+      "address": "1_2_DO_9",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 10,
+      "address": "1_2_DO_10",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 11,
+      "address": "1_2_DO_11",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 12,
+      "address": "1_2_DO_12",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 13,
+      "address": "1_2_DO_13",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 14,
+      "address": "1_2_DO_14",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LE5223",
+      "type": "DO",
+      "channel": 15,
+      "address": "1_2_DO_15",
+      "is_io_channel": true,
+      "module_type": "DO"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 4,
+      "model": "LE5311",
+      "type": "AI",
+      "channel": 0,
+      "address": "1_4_AI_0",
+      "is_io_channel": true,
+      "module_type": "AI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 4,
+      "model": "LE5311",
+      "type": "AI",
+      "channel": 1,
+      "address": "1_4_AI_1",
+      "is_io_channel": true,
+      "module_type": "AI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 4,
+      "model": "LE5311",
+      "type": "AI",
+      "channel": 2,
+      "address": "1_4_AI_2",
+      "is_io_channel": true,
+      "module_type": "AI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 4,
+      "model": "LE5311",
+      "type": "AI",
+      "channel": 3,
+      "address": "1_4_AI_3",
+      "is_io_channel": true,
+      "module_type": "AI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 4,
+      "model": "LE5311",
+      "type": "AI",
+      "channel": 4,
+      "address": "1_4_AI_4",
+      "is_io_channel": true,
+      "module_type": "AI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 4,
+      "model": "LE5311",
+      "type": "AI",
+      "channel": 5,
+      "address": "1_4_AI_5",
+      "is_io_channel": true,
+      "module_type": "AI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 4,
+      "model": "LE5311",
+      "type": "AI",
+      "channel": 6,
+      "address": "1_4_AI_6",
+      "is_io_channel": true,
+      "module_type": "AI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 4,
+      "model": "LE5311",
+      "type": "AI",
+      "channel": 7,
+      "address": "1_4_AI_7",
+      "is_io_channel": true,
+      "module_type": "AI"
+    }
+  ],
+  "processed_devices": [
+    {
+      "id": 1,
+      "instance_index": 1,
+      "name": "一体化控制器",
+      "brand": "和利时",
+      "model": "LE5118",
+      "description": "40点CPU模块，DC24V供电，自带40点I/O，DI 24×DC24V，DO 16×晶体管输出，1个RS485,1个以太网",
+      "quantity": "1",
+      "unit": "块",
+      "ext_params": "40点CPU模块，DC24V供电，自带40点I/O，DI 24×DC24V，DO 16×晶体管输出，1个RS485,1个以太网",
+      "type": "CPU",
+      "io_type": "CPU",
+      "channels": 40,
+      "predefined_description": "LE系列CPU模块, DC24V供电, 自带40点I/O (DI24, DO16晶体管)",
+      "sub_channels": {
+        "DI": 24,
+        "DO": 16
+      },
+      "power_supply": "DC24V"
+    },
+    {
+      "id": 2,
+      "instance_index": 1,
+      "name": "8通道模拟量输入模块",
+      "brand": "和利时",
+      "model": "LE5311",
+      "description": "8通道，4～20mA/0～20mA/0～10V",
+      "quantity": "1",
+      "unit": "块",
+      "ext_params": "8通道，4～20mA/0～20mA/0～10V",
+      "type": "AI",
+      "io_type": "AI",
+      "channels": 8,
+      "predefined_description": "8通道模拟量输入模块"
+    },
+    {
+      "id": 3,
+      "instance_index": 1,
+      "name": "16通道DI模块",
+      "brand": "和利时",
+      "model": "LE5211",
+      "description": "16通道",
+      "quantity": "1",
+      "unit": "块",
+      "ext_params": "16通道",
+      "type": "DI",
+      "io_type": "DI",
+      "channels": 16,
+      "predefined_description": "16通道数字量输入模块"
+    },
+    {
+      "id": 4,
+      "instance_index": 1,
+      "name": "16通道DO模块",
+      "brand": "和利时",
+      "model": "LE5223",
+      "description": "16通道",
+      "quantity": "1",
+      "unit": "块",
+      "ext_params": "16通道",
+      "type": "DO",
+      "io_type": "DO",
+      "channels": 16,
+      "predefined_description": "16通道数字量输出模块"
+    },
+    {
+      "id": 5,
+      "instance_index": 1,
+      "name": "以太网模块",
+      "brand": "和利时",
+      "model": "LE5403",
+      "description": "1个以太网口",
+      "quantity": "1",
+      "unit": "块",
+      "ext_params": "1个以太网口",
+      "type": "COM",
+      "io_type": "COM",
+      "channels": 0,
+      "predefined_description": "以太网通讯模块"
+    }
+  ]
+}

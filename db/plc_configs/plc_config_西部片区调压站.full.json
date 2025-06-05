@@ -1,18 +1,18 @@
 {
   "site_name": "西部片区调压站",
-  "save_time": "2025-05-27T10:42:29.670756",
+  "save_time": "2025-06-05T11:48:26.294377",
   "version": "1.1",
   "config": {
     "0,1": "PROFIBUS-DP",
     "0,2": "LK411",
-    "0,3": "LK411",
+    "0,3": "LK610",
     "0,4": "LK610",
     "0,5": "LK610",
     "0,6": "LK610",
-    "0,7": "LK610",
+    "0,7": "LK238",
     "0,8": "LK710",
-    "0,9": "LK710",
-    "0,10": "LK238"
+    "0,9": "LK411",
+    "0,10": "LK710"
   },
   "system_info": {
     "system_type": "LK",
@@ -44,24 +44,6 @@
         "is_fixed": false
       },
       {
-        "key": "LK411_2",
-        "title": "LK411",
-        "model": "LK411",
-        "module_type": "AI",
-        "channels": 8,
-        "description": "LK411 - AI (8通道)",
-        "is_fixed": false
-      },
-      {
-        "key": "LK610_1",
-        "title": "LK610",
-        "model": "LK610",
-        "module_type": "DI",
-        "channels": 16,
-        "description": "LK610 - DI (16通道)",
-        "is_fixed": false
-      },
-      {
         "key": "LK610_2",
         "title": "LK610",
         "model": "LK610",
@@ -89,21 +71,12 @@
         "is_fixed": false
       },
       {
-        "key": "LK710_1",
-        "title": "LK710",
-        "model": "LK710",
-        "module_type": "DO",
+        "key": "LK610_1",
+        "title": "LK610",
+        "model": "LK610",
+        "module_type": "DI",
         "channels": 16,
-        "description": "LK710 - DO (16通道)",
-        "is_fixed": false
-      },
-      {
-        "key": "LK710_2",
-        "title": "LK710",
-        "model": "LK710",
-        "module_type": "DO",
-        "channels": 16,
-        "description": "LK710 - DO (16通道)",
+        "description": "LK610 - DI (16通道)",
         "is_fixed": false
       },
       {
@@ -113,6 +86,33 @@
         "module_type": "COM",
         "channels": 0,
         "description": "LK238 - COM",
+        "is_fixed": false
+      },
+      {
+        "key": "LK710_1",
+        "title": "LK710",
+        "model": "LK710",
+        "module_type": "DO",
+        "channels": 16,
+        "description": "LK710 - DO (16通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK411_2",
+        "title": "LK411",
+        "model": "LK411",
+        "module_type": "AI",
+        "channels": 8,
+        "description": "LK411 - AI (8通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK710_2",
+        "title": "LK710",
+        "model": "LK710",
+        "module_type": "DO",
+        "channels": 16,
+        "description": "LK710 - DO (16通道)",
         "is_fixed": false
       }
     ]
@@ -201,82 +201,162 @@
     {
       "rack_id": 0,
       "slot_id": 2,
-      "model": "LK411",
-      "type": "AI",
+      "model": "LK610",
+      "type": "DI",
       "channel": 0,
-      "address": "1_2_AI_0",
+      "address": "1_2_DI_0",
       "is_io_channel": true,
-      "module_type": "AI"
+      "module_type": "DI"
     },
     {
       "rack_id": 0,
       "slot_id": 2,
-      "model": "LK411",
-      "type": "AI",
+      "model": "LK610",
+      "type": "DI",
       "channel": 1,
-      "address": "1_2_AI_1",
+      "address": "1_2_DI_1",
       "is_io_channel": true,
-      "module_type": "AI"
+      "module_type": "DI"
     },
     {
       "rack_id": 0,
       "slot_id": 2,
-      "model": "LK411",
-      "type": "AI",
+      "model": "LK610",
+      "type": "DI",
       "channel": 2,
-      "address": "1_2_AI_2",
+      "address": "1_2_DI_2",
       "is_io_channel": true,
-      "module_type": "AI"
+      "module_type": "DI"
     },
     {
       "rack_id": 0,
       "slot_id": 2,
-      "model": "LK411",
-      "type": "AI",
+      "model": "LK610",
+      "type": "DI",
       "channel": 3,
-      "address": "1_2_AI_3",
+      "address": "1_2_DI_3",
       "is_io_channel": true,
-      "module_type": "AI"
+      "module_type": "DI"
     },
     {
       "rack_id": 0,
       "slot_id": 2,
-      "model": "LK411",
-      "type": "AI",
+      "model": "LK610",
+      "type": "DI",
       "channel": 4,
-      "address": "1_2_AI_4",
+      "address": "1_2_DI_4",
       "is_io_channel": true,
-      "module_type": "AI"
+      "module_type": "DI"
     },
     {
       "rack_id": 0,
       "slot_id": 2,
-      "model": "LK411",
-      "type": "AI",
+      "model": "LK610",
+      "type": "DI",
       "channel": 5,
-      "address": "1_2_AI_5",
+      "address": "1_2_DI_5",
       "is_io_channel": true,
-      "module_type": "AI"
+      "module_type": "DI"
     },
     {
       "rack_id": 0,
       "slot_id": 2,
-      "model": "LK411",
-      "type": "AI",
+      "model": "LK610",
+      "type": "DI",
       "channel": 6,
-      "address": "1_2_AI_6",
+      "address": "1_2_DI_6",
       "is_io_channel": true,
-      "module_type": "AI"
+      "module_type": "DI"
     },
     {
       "rack_id": 0,
       "slot_id": 2,
-      "model": "LK411",
-      "type": "AI",
+      "model": "LK610",
+      "type": "DI",
       "channel": 7,
-      "address": "1_2_AI_7",
+      "address": "1_2_DI_7",
       "is_io_channel": true,
-      "module_type": "AI"
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LK610",
+      "type": "DI",
+      "channel": 8,
+      "address": "1_2_DI_8",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LK610",
+      "type": "DI",
+      "channel": 9,
+      "address": "1_2_DI_9",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LK610",
+      "type": "DI",
+      "channel": 10,
+      "address": "1_2_DI_10",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LK610",
+      "type": "DI",
+      "channel": 11,
+      "address": "1_2_DI_11",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LK610",
+      "type": "DI",
+      "channel": 12,
+      "address": "1_2_DI_12",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LK610",
+      "type": "DI",
+      "channel": 13,
+      "address": "1_2_DI_13",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LK610",
+      "type": "DI",
+      "channel": 14,
+      "address": "1_2_DI_14",
+      "is_io_channel": true,
+      "module_type": "DI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 2,
+      "model": "LK610",
+      "type": "DI",
+      "channel": 15,
+      "address": "1_2_DI_15",
+      "is_io_channel": true,
+      "module_type": "DI"
     },
     {
       "rack_id": 0,
@@ -760,166 +840,6 @@
     },
     {
       "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 0,
-      "address": "1_6_DI_0",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 1,
-      "address": "1_6_DI_1",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 2,
-      "address": "1_6_DI_2",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 3,
-      "address": "1_6_DI_3",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 4,
-      "address": "1_6_DI_4",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 5,
-      "address": "1_6_DI_5",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 6,
-      "address": "1_6_DI_6",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 7,
-      "address": "1_6_DI_7",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 8,
-      "address": "1_6_DI_8",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 9,
-      "address": "1_6_DI_9",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 10,
-      "address": "1_6_DI_10",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 11,
-      "address": "1_6_DI_11",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 12,
-      "address": "1_6_DI_12",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 13,
-      "address": "1_6_DI_13",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 14,
-      "address": "1_6_DI_14",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
-      "slot_id": 6,
-      "model": "LK610",
-      "type": "DI",
-      "channel": 15,
-      "address": "1_6_DI_15",
-      "is_io_channel": true,
-      "module_type": "DI"
-    },
-    {
-      "rack_id": 0,
       "slot_id": 7,
       "model": "LK710",
       "type": "DO",
@@ -1081,160 +1001,240 @@
     {
       "rack_id": 0,
       "slot_id": 8,
+      "model": "LK411",
+      "type": "AI",
+      "channel": 0,
+      "address": "1_8_AI_0",
+      "is_io_channel": true,
+      "module_type": "AI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 8,
+      "model": "LK411",
+      "type": "AI",
+      "channel": 1,
+      "address": "1_8_AI_1",
+      "is_io_channel": true,
+      "module_type": "AI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 8,
+      "model": "LK411",
+      "type": "AI",
+      "channel": 2,
+      "address": "1_8_AI_2",
+      "is_io_channel": true,
+      "module_type": "AI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 8,
+      "model": "LK411",
+      "type": "AI",
+      "channel": 3,
+      "address": "1_8_AI_3",
+      "is_io_channel": true,
+      "module_type": "AI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 8,
+      "model": "LK411",
+      "type": "AI",
+      "channel": 4,
+      "address": "1_8_AI_4",
+      "is_io_channel": true,
+      "module_type": "AI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 8,
+      "model": "LK411",
+      "type": "AI",
+      "channel": 5,
+      "address": "1_8_AI_5",
+      "is_io_channel": true,
+      "module_type": "AI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 8,
+      "model": "LK411",
+      "type": "AI",
+      "channel": 6,
+      "address": "1_8_AI_6",
+      "is_io_channel": true,
+      "module_type": "AI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 8,
+      "model": "LK411",
+      "type": "AI",
+      "channel": 7,
+      "address": "1_8_AI_7",
+      "is_io_channel": true,
+      "module_type": "AI"
+    },
+    {
+      "rack_id": 0,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 0,
-      "address": "1_8_DO_0",
+      "address": "1_9_DO_0",
       "is_io_channel": true,
       "module_type": "DO"
     },
     {
       "rack_id": 0,
-      "slot_id": 8,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 1,
-      "address": "1_8_DO_1",
+      "address": "1_9_DO_1",
       "is_io_channel": true,
       "module_type": "DO"
     },
     {
       "rack_id": 0,
-      "slot_id": 8,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 2,
-      "address": "1_8_DO_2",
+      "address": "1_9_DO_2",
       "is_io_channel": true,
       "module_type": "DO"
     },
     {
       "rack_id": 0,
-      "slot_id": 8,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 3,
-      "address": "1_8_DO_3",
+      "address": "1_9_DO_3",
       "is_io_channel": true,
       "module_type": "DO"
     },
     {
       "rack_id": 0,
-      "slot_id": 8,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 4,
-      "address": "1_8_DO_4",
+      "address": "1_9_DO_4",
       "is_io_channel": true,
       "module_type": "DO"
     },
     {
       "rack_id": 0,
-      "slot_id": 8,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 5,
-      "address": "1_8_DO_5",
+      "address": "1_9_DO_5",
       "is_io_channel": true,
       "module_type": "DO"
     },
     {
       "rack_id": 0,
-      "slot_id": 8,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 6,
-      "address": "1_8_DO_6",
+      "address": "1_9_DO_6",
       "is_io_channel": true,
       "module_type": "DO"
     },
     {
       "rack_id": 0,
-      "slot_id": 8,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 7,
-      "address": "1_8_DO_7",
+      "address": "1_9_DO_7",
       "is_io_channel": true,
       "module_type": "DO"
     },
     {
       "rack_id": 0,
-      "slot_id": 8,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 8,
-      "address": "1_8_DO_8",
+      "address": "1_9_DO_8",
       "is_io_channel": true,
       "module_type": "DO"
     },
     {
       "rack_id": 0,
-      "slot_id": 8,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 9,
-      "address": "1_8_DO_9",
+      "address": "1_9_DO_9",
       "is_io_channel": true,
       "module_type": "DO"
     },
     {
       "rack_id": 0,
-      "slot_id": 8,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 10,
-      "address": "1_8_DO_10",
+      "address": "1_9_DO_10",
       "is_io_channel": true,
       "module_type": "DO"
     },
     {
       "rack_id": 0,
-      "slot_id": 8,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 11,
-      "address": "1_8_DO_11",
+      "address": "1_9_DO_11",
       "is_io_channel": true,
       "module_type": "DO"
     },
     {
       "rack_id": 0,
-      "slot_id": 8,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 12,
-      "address": "1_8_DO_12",
+      "address": "1_9_DO_12",
       "is_io_channel": true,
       "module_type": "DO"
     },
     {
       "rack_id": 0,
-      "slot_id": 8,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 13,
-      "address": "1_8_DO_13",
+      "address": "1_9_DO_13",
       "is_io_channel": true,
       "module_type": "DO"
     },
     {
       "rack_id": 0,
-      "slot_id": 8,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 14,
-      "address": "1_8_DO_14",
+      "address": "1_9_DO_14",
       "is_io_channel": true,
       "module_type": "DO"
     },
     {
       "rack_id": 0,
-      "slot_id": 8,
+      "slot_id": 9,
       "model": "LK710",
       "type": "DO",
       "channel": 15,
-      "address": "1_8_DO_15",
+      "address": "1_9_DO_15",
       "is_io_channel": true,
       "module_type": "DO"
     }

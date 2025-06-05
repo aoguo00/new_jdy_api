@@ -191,23 +191,41 @@ class SystemInfoWidget(QWidget):
             self.system_type_label.setStyleSheet(self.system_type_label.styleSheet() + 
                                                 "QLabel { color: #1890ff; }")
     
-    def update_config_status(self, configured_count: int, total_slots: int):
+    def update_config_status(self, configured_count: int, total_slots: int, system_type: str = "LK"):
         """更新配置状态"""
-        if configured_count == 0:
-            status_text = "未配置"
-            color = "#8c8c8c"
-            # 没有配置时禁用应用按钮
-            self.apply_btn.setEnabled(False)
-        elif configured_count < total_slots * 0.5:
-            status_text = f"部分配置 ({configured_count}/{total_slots})"
-            color = "#fa8c16"
-            # 有配置时启用应用按钮
-            self.apply_btn.setEnabled(True)
+        # LE_CPU系统的特殊处理
+        if system_type == "LE_CPU":
+            # LE_CPU系统：只要有任何配置就可以应用（因为CPU是内置的）
+            if configured_count == 0:
+                status_text = "未配置"
+                color = "#8c8c8c"
+                # LE_CPU系统即使没有配置也可以应用（只有CPU）
+                self.apply_btn.setEnabled(True)
+            elif configured_count < total_slots * 0.5:
+                status_text = f"部分配置 ({configured_count}/{total_slots})"
+                color = "#fa8c16"
+                self.apply_btn.setEnabled(True)
+            else:
+                status_text = f"已配置 ({configured_count}/{total_slots})"
+                color = "#52c41a"
+                self.apply_btn.setEnabled(True)
         else:
-            status_text = f"已配置 ({configured_count}/{total_slots})"
-            color = "#52c41a"
-            # 有配置时启用应用按钮
-            self.apply_btn.setEnabled(True)
+            # LK系统的原有逻辑
+            if configured_count == 0:
+                status_text = "未配置"
+                color = "#8c8c8c"
+                # 没有配置时禁用应用按钮
+                self.apply_btn.setEnabled(False)
+            elif configured_count < total_slots * 0.5:
+                status_text = f"部分配置 ({configured_count}/{total_slots})"
+                color = "#fa8c16"
+                # 有配置时启用应用按钮
+                self.apply_btn.setEnabled(True)
+            else:
+                status_text = f"已配置 ({configured_count}/{total_slots})"
+                color = "#52c41a"
+                # 有配置时启用应用按钮
+                self.apply_btn.setEnabled(True)
         
         self.config_status_label.setText(f"配置状态: {status_text}")
         self.config_status_label.setStyleSheet(self.config_status_label.styleSheet() + 
@@ -626,7 +644,7 @@ class PLCConfigWidget(QWidget):
             
             # 更新显示
             self.system_info.update_system_info(system_type, rack_count)
-            self.system_info.update_config_status(configured_count, total_available_slots)
+            self.system_info.update_config_status(configured_count, total_available_slots, system_type)
             self.system_info.update_io_count(io_count)
             self.system_info.update_save_status(is_saved, current_site if current_site else "")
             
@@ -657,28 +675,20 @@ class PLCConfigWidget(QWidget):
                 
                 if system_type == 'LE_CPU':
                     # LE_CPU系统：槽位0固定为LE5118 CPU
-                    # 检查是否有LE5118模块
-                    le5118_found = False
+                    config[(rack_id, 0)] = 'LE5118'
+
+                    # 其他模块从槽位1开始
+                    slot_index = 1
                     for module in rack_modules:
                         clean_title = module.title.replace(' 🔒', '') if hasattr(module, 'title') else ''
+                        # 跳过LE5118（如果存在的话）
                         if 'LE5118' in module.key.upper() or 'LE5118' in clean_title.upper():
-                            config[(rack_id, 0)] = 'LE5118'
-                            le5118_found = True
-                            break
-                    
-                    if le5118_found:
-                        # 其他模块从槽位1开始
-                        slot_index = 1
-                        for module in rack_modules:
-                            clean_title = module.title.replace(' 🔒', '') if hasattr(module, 'title') else ''
-                            # 跳过LE5118
-                            if 'LE5118' in module.key.upper() or 'LE5118' in clean_title.upper():
-                                continue
-                            
-                            if slot_index < slots_per_rack:
-                                model_name = module.model if hasattr(module, 'model') and module.model else module.title.split('(')[0].strip()
-                                config[(rack_id, slot_index)] = model_name
-                                slot_index += 1
+                            continue
+
+                        if slot_index < slots_per_rack:
+                            model_name = module.model if hasattr(module, 'model') and module.model else module.title.split('(')[0].strip()
+                            config[(rack_id, slot_index)] = model_name
+                            slot_index += 1
                 else:
                     # LK系统：槽位1固定为PROFIBUS-DP
                     config[(rack_id, 1)] = 'PROFIBUS-DP'

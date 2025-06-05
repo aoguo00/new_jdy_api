@@ -22,7 +22,7 @@ _module_data_load_error_get_data: Optional[Exception] = None
 # 注意：DeviceDataProcessor 中也有一份类似的 IO_TYPE_MAPPINGS，但用途不同，
 # MODULE_TYPE_PREFIXES_DEF 主要用于基于型号前缀严格推断和利时模块类型。
 MODULE_TYPE_PREFIXES_DEF = {
-    "CPU": ["LE5118"],
+    "CPU": ["LE5118", "LE51"],  # 增强LE系列CPU识别
     "AI": ["LK41", "LE5611", "LE531", "LE534"],
     "AO": ["LK51", "LE5621", "LE532"],
     "AI/AO": ["LE533"],
@@ -354,7 +354,14 @@ class DeviceDataProcessor:
             # 如果是和利时产品，尝试更具体的型号前缀匹配 (使用在 get_data.py 中定义的 MODULE_TYPE_PREFIXES_DEF)
             for type_key, prefixes_list in MODULE_TYPE_PREFIXES_DEF.items(): # 修改这里
                 if any(model_str.startswith(p.upper()) for p in prefixes_list):
-                    if type_key in self.IO_TYPE_MAPPINGS: return type_key
+                    if type_key in self.IO_TYPE_MAPPINGS:
+                        logger.debug(f"通过前缀匹配识别设备类型: {model_str} -> {type_key}")
+                        return type_key
+
+            # 特殊处理LE5118的识别
+            if 'LE5118' in model_str or 'LE5118' in all_text_content:
+                logger.info(f"特殊识别LE5118 CPU设备: {model_str}")
+                return 'CPU'
         
         # 通用关键字匹配
         for io_type, keywords in self.IO_TYPE_MAPPINGS.items():
@@ -439,9 +446,20 @@ class DeviceDataProcessor:
             is_hollysys_by_keyword = any(keyword.upper() in all_text_upper for keyword in known_hollysys_keywords)
             is_hollysys_by_prefix = any(model_upper.startswith(prefix.upper()) for prefix in self.hollysys_prefixes)
 
-            if is_hollysys_by_keyword or is_hollysys_by_prefix:
+            # 特殊处理LE系列设备识别
+            is_le_series = model_upper.startswith('LE') or 'LE5118' in all_text_upper
+
+            if is_hollysys_by_keyword or is_hollysys_by_prefix or is_le_series:
+                # 记录识别到的和利时设备
+                if is_le_series:
+                    logger.info(f"识别到LE系列设备: {model_upper} (通过LE系列特殊识别)")
+                elif is_hollysys_by_prefix:
+                    logger.debug(f"识别到和利时设备: {model_upper} (通过前缀识别)")
+                elif is_hollysys_by_keyword:
+                    logger.debug(f"识别到和利时设备: {model_upper} (通过关键字识别)")
+
                 # 如果是和利时产品，再检查是否为LK117机架
-                if "LK117" == model_upper: 
+                if "LK117" == model_upper:
                     device['model'] = 'LK117' # 标准化型号名称
                     quantity_str = device.get('quantity', '1')
                     # 确保数量为有效正整数，否则默认为1
@@ -452,9 +470,14 @@ class DeviceDataProcessor:
                         quantity_val = 1
                     device['quantity'] = str(quantity_val) # 存回字符串形式，或统一为整数
                     rack_devices_lk117.append(device)
+                    logger.debug(f"添加LK117机架设备: {device}")
                 else:
                     # 其他和利时模块直接添加
                     hollysys_devices.append(device)
+                    if is_le_series:
+                        logger.info(f"添加LE系列设备到和利时设备列表: {device}")
+                    else:
+                        logger.debug(f"添加和利时设备: {model_upper}")
         
         # 如果找到了LK117机架，将它们添加到结果列表的末尾（或开头，根据需求）
         if rack_devices_lk117:
@@ -493,25 +516,34 @@ class DeviceDataProcessor:
                     update_fields = {
                         'type': module_definition.get('type'),
                         # 假设预定义模块的'type'字段就是其IO类型，用于统一
-                        'io_type': module_definition.get('type'), 
+                        'io_type': module_definition.get('type'),
                         'channels': module_definition.get('channels'),
                         # 使用'predefined_description'作为键，以避免覆盖设备本身可能已有的、更具体的描述
-                        'predefined_description': module_definition.get('description') 
+                        'predefined_description': module_definition.get('description')
                     }
                     # 复制其他重要的结构性字段（如果预定义模块中存在这些字段）
                     for key in ['sub_channels', 'power_supply', 'is_master', 'slot_required']:
                         if key in module_definition:
                             update_fields[key] = module_definition[key]
-                    
+
                     # 应用更新
                     enriched_device.update(update_fields)
-                    
+
                     # 如果设备原始描述为空，并且预定义模块有描述，则使用预定义的描述
                     if not enriched_device.get('description') and update_fields.get('predefined_description'):
                         enriched_device['description'] = update_fields['predefined_description']
-                    
-                    logger.debug(f"Device '{model_str}' enriched. Final type: {enriched_device.get('type')}, "
-                                 f"Channels: {enriched_device.get('channels')}, SubChannels: {enriched_device.get('sub_channels')}")
+
+                # 特殊处理LE5118设备 - 确保其类型被正确设置为CPU
+                model_upper = model_str.upper()
+                if 'LE5118' in model_upper:
+                    enriched_device['type'] = 'CPU'
+                    enriched_device['io_type'] = 'CPU'
+                    if not enriched_device.get('description'):
+                        enriched_device['description'] = 'LE系列CPU模块'
+                    logger.info(f"强制设置LE5118设备类型为CPU: {model_str} -> {enriched_device}")
+
+                logger.debug(f"Device '{model_str}' enriched. Final type: {enriched_device.get('type')}, "
+                             f"Channels: {enriched_device.get('channels')}, SubChannels: {enriched_device.get('sub_channels')}")
             enriched_list.append(enriched_device)
         return enriched_list
 
@@ -552,16 +584,50 @@ class SystemSetupManager:
                                                                此列表应用于已包含准确的模块型号和类型信息。
         """
         self.system_type = "LK" # 每次重新计算前，重置系统类型为默认值 "LK"
-        
-        # 检查是否存在 LE5118 CPU模块，以确定系统是否为 "LE_CPU" 类型
-        le5118_cpus = [m for m in processed_enriched_devices if m.get('model', '').upper() == 'LE5118' and m.get('type') == 'CPU']
-        
-        if le5118_cpus:
+
+        # 增强的LE系列CPU检测逻辑
+        le_cpu_devices = []
+
+        # 检查是否存在 LE5118 或其他LE系列CPU模块
+        for device in processed_enriched_devices:
+            model = device.get('model', '').upper()
+            device_type = device.get('type', '').upper()
+
+            # 多种方式检测LE系列CPU
+            is_le_cpu = False
+
+            # 1. 精确匹配LE5118
+            if model == 'LE5118' and device_type == 'CPU':
+                is_le_cpu = True
+                logger.info(f"检测到LE5118 CPU模块: {device}")
+
+            # 2. 模糊匹配LE5118（处理可能的变体）
+            elif 'LE5118' in model and device_type == 'CPU':
+                is_le_cpu = True
+                logger.info(f"检测到LE5118变体CPU模块: {device}")
+
+            # 3. 检查LE系列前缀且类型为CPU
+            elif model.startswith('LE51') and device_type == 'CPU':
+                is_le_cpu = True
+                logger.info(f"检测到LE51系列CPU模块: {device}")
+
+            # 4. 检查设备名称或描述中是否包含LE5118
+            elif device_type == 'CPU':
+                name = device.get('name', '').upper()
+                description = device.get('description', '').upper()
+                if 'LE5118' in name or 'LE5118' in description:
+                    is_le_cpu = True
+                    logger.info(f"通过名称/描述检测到LE5118 CPU: {device}")
+
+            if is_le_cpu:
+                le_cpu_devices.append(device)
+
+        if le_cpu_devices:
             self.system_type = "LE_CPU"
             # LE5118 CPU 系统通常只有一个主单元（即一个机架）。
             # 如果项目中列出了多个LE5118 CPU，这里仍按1个机架处理，因为它们不能组成多机架。
-            self.rack_count = 1 
-            logger.info(f"LE5118 CPU detected. System type set to '{self.system_type}'. Rack count set to {self.rack_count}.")
+            self.rack_count = 1
+            logger.info(f"检测到 {len(le_cpu_devices)} 个LE系列CPU设备，系统类型设置为 '{self.system_type}'，机架数量设置为 {self.rack_count}")
         else:
             # 对于 LK 或其他非LE_CPU系统，根据 LK117 背板模块的数量来计算实际的机架数量
             lk117_racks_devices = [m for m in processed_enriched_devices if m.get('model', '').upper() == 'LK117']
@@ -908,17 +974,33 @@ class PLCConfigurationHandler:
         
         for (rack_id, slot_id), model_name in sorted_config:
             # ------------------------------
-            # 槽号改为 0 基：内部使用的是 1 基槽位号（除了LE_CPU系统从槽位0开始）
-            # 在地址字符串中使用 0 基槽号显示
-            # LE_CPU系统：槽位0保持为0，槽位1及以上减1
-            # LK系统：槽位1变为0，槽位2变为1，以此类推
+            # 槽号转换逻辑：根据系统类型确定正确的槽位号
+            # LE_CPU系统：槽位0是CPU，槽位1及以上是用户模块，地址中保持原槽位号
+            # LK系统：槽位1是DP，槽位0和槽位2+是用户模块，地址中槽位1变为0，槽位2+减1
             # ------------------------------
-            if slot_id == 0:
-                # LE_CPU系统的槽位0保持为0
-                zero_based_slot_id = 0
+
+            # 获取系统类型来确定槽位转换规则
+            system_type = "LK"  # 默认值
+            if processed_devices_context:
+                # 检查是否有LE5118 CPU设备来判断系统类型
+                le_cpu_devices = [d for d in processed_devices_context
+                                if d.get('model', '').upper() == 'LE5118']
+                if le_cpu_devices:
+                    system_type = "LE_CPU"
+
+            if system_type == "LE_CPU":
+                # LE_CPU系统：槽位号保持不变
+                # 槽位0 = CPU，槽位1+ = 用户模块
+                zero_based_slot_id = slot_id
             else:
-                # 其他槽位都减1变为0基
-                zero_based_slot_id = slot_id - 1
+                # LK系统：需要转换槽位号
+                # 槽位0保持为0，槽位1变为0（但这里槽位1是DP，通常不生成IO地址），槽位2+减1
+                if slot_id == 0:
+                    zero_based_slot_id = 0
+                elif slot_id == 1:
+                    zero_based_slot_id = 0  # DP模块，但通常不会到这里因为DP不生成IO地址
+                else:
+                    zero_based_slot_id = slot_id - 1
                 
             # 机架号显示从1开始（内部rack_id从0开始，显示时+1）
             display_rack_id = rack_id + 1

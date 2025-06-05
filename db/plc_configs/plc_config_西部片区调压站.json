@@ -1,18 +1,18 @@
 {
   "site_name": "西部片区调压站",
-  "save_time": "2025-05-27T10:42:29.670756",
+  "save_time": "2025-06-05T11:48:26.294377",
   "version": "1.1",
   "config": {
     "0,1": "PROFIBUS-DP",
     "0,2": "LK411",
-    "0,3": "LK411",
+    "0,3": "LK610",
     "0,4": "LK610",
     "0,5": "LK610",
     "0,6": "LK610",
-    "0,7": "LK610",
+    "0,7": "LK238",
     "0,8": "LK710",
-    "0,9": "LK710",
-    "0,10": "LK238"
+    "0,9": "LK411",
+    "0,10": "LK710"
   },
   "system_info": {
     "system_type": "LK",
@@ -44,24 +44,6 @@
         "is_fixed": false
       },
       {
-        "key": "LK411_2",
-        "title": "LK411",
-        "model": "LK411",
-        "module_type": "AI",
-        "channels": 8,
-        "description": "LK411 - AI (8通道)",
-        "is_fixed": false
-      },
-      {
-        "key": "LK610_1",
-        "title": "LK610",
-        "model": "LK610",
-        "module_type": "DI",
-        "channels": 16,
-        "description": "LK610 - DI (16通道)",
-        "is_fixed": false
-      },
-      {
         "key": "LK610_2",
         "title": "LK610",
         "model": "LK610",
@@ -89,21 +71,12 @@
         "is_fixed": false
       },
       {
-        "key": "LK710_1",
-        "title": "LK710",
-        "model": "LK710",
-        "module_type": "DO",
+        "key": "LK610_1",
+        "title": "LK610",
+        "model": "LK610",
+        "module_type": "DI",
         "channels": 16,
-        "description": "LK710 - DO (16通道)",
-        "is_fixed": false
-      },
-      {
-        "key": "LK710_2",
-        "title": "LK710",
-        "model": "LK710",
-        "module_type": "DO",
-        "channels": 16,
-        "description": "LK710 - DO (16通道)",
+        "description": "LK610 - DI (16通道)",
         "is_fixed": false
       },
       {
@@ -113,6 +86,33 @@
         "module_type": "COM",
         "channels": 0,
         "description": "LK238 - COM",
+        "is_fixed": false
+      },
+      {
+        "key": "LK710_1",
+        "title": "LK710",
+        "model": "LK710",
+        "module_type": "DO",
+        "channels": 16,
+        "description": "LK710 - DO (16通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK411_2",
+        "title": "LK411",
+        "model": "LK411",
+        "module_type": "AI",
+        "channels": 8,
+        "description": "LK411 - AI (8通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK710_2",
+        "title": "LK710",
+        "model": "LK710",
+        "module_type": "DO",
+        "channels": 16,
+        "description": "LK710 - DO (16通道)",
         "is_fixed": false
       }
     ]
