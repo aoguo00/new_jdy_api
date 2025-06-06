@@ -1247,24 +1247,23 @@ class ChannelAssignmentWidget(QWidget):
                 QMessageBox.warning(self, "无分配数据", "请先分配点位到通道")
                 return
 
-            # 检查是否有PLC模板数据
+            # 🔥 修复：去掉验证弹窗，但仍需要模板数据
+            # 用户可以直接使用设计文件导入或之前生成的IO模板
             if not hasattr(self, 'plc_template_data') or not self.plc_template_data:
                 from PySide6.QtWidgets import QMessageBox
-                QMessageBox.warning(self, "缺少模板数据", "缺少PLC模板数据，无法生成IO点表")
+                QMessageBox.warning(self, "缺少模板数据",
+                                  "请先导入IO模板文件。\n\n"
+                                  "您可以：\n"
+                                  "1. 导入之前生成的IO模板文件\n"
+                                  "2. 先生成IO模板，再进行通道分配")
                 return
 
-            # 自动获取场站信息
-            site_name, site_no = self._get_site_info_from_main_window()
-            if not site_name or not site_no:
-                from PySide6.QtWidgets import QMessageBox
-                QMessageBox.warning(self, "场站信息缺失",
-                                  "无法获取场站信息。请确保：\n"
-                                  "1. 已选择项目/场站\n"
-                                  "2. 已在查询区域填写场站编号")
-                return
+            # 🔥 修复：优先从原始模板获取场站信息，避免使用默认值覆盖
+            site_name, site_no = self._get_site_info_from_template_or_main_window()
+            logger.info(f"最终使用的场站信息: 名称='{site_name}', 编号='{site_no}'")
 
             # 基于分配结果和PLC模板生成填写的IO点表
-            filled_plc_data = self.generate_filled_plc_data(site_name, site_no)
+            filled_plc_data = self.generate_filled_plc_data()
 
             if not filled_plc_data:
                 from PySide6.QtWidgets import QMessageBox
@@ -1328,47 +1327,127 @@ class ChannelAssignmentWidget(QWidget):
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "错误", f"完成分配失败：\n{str(e)}")
 
-    def generate_filled_plc_data(self, site_name: str, site_no: str) -> List[Dict[str, Any]]:
-        """基于分配结果生成填写的PLC数据"""
+    def generate_filled_plc_data(self) -> List[Dict[str, Any]]:
+        """基于分配结果生成填写的PLC数据 - 只处理灰色高亮字段"""
         try:
             filled_data = []
 
-            # 遍历所有分配
-            for point_id, channel_id in self.assignments.items():
-                # 找到对应的解析点位
-                point = next((p for p in self.parsed_points if p.id == point_id), None)
-                if not point:
-                    continue
+            # 🔥 修复：遍历原始模板的所有通道，而不是只遍历已分配的点位
+            # 这样可以确保生成的IO点表包含所有通道，与原始模板保持一致
+            for template_point in self.plc_template_data:
+                channel_id = template_point.get('address', '')
 
-                # 找到对应的PLC模板通道
-                template_channel = None
-                for template_point in self.plc_template_data:
-                    if template_point.get('address', '') == channel_id:
-                        template_channel = template_point
+                # 🔥 修复：完整保留原始模板数据，并正确映射字段名
+                filled_point = template_point.copy()
+
+                # 🔥 修复：映射导出器需要的所有字段，但只在灰色高亮字段中填入分配数据
+                # 策略：给导出器提供完整的数据结构，但保持原始模板数据不变
+
+                # === 导出器必需的字段映射（保持原始数据）===
+                # 模块名称字段映射 (Excel导出器必需 'model')
+                if 'module_name' in filled_point:
+                    filled_point['model'] = filled_point['module_name']
+                elif '模块名称' in filled_point:
+                    filled_point['model'] = filled_point['模块名称']
+
+                # 模块类型字段映射 (Excel导出器必需 'type')
+                if 'module_type' in filled_point:
+                    filled_point['type'] = filled_point['module_type']
+                elif '模块类型' in filled_point:
+                    filled_point['type'] = filled_point['模块类型']
+
+                # 通道位号字段映射 (Excel导出器必需 'address')
+                if 'channel_address' in filled_point:
+                    filled_point['address'] = filled_point['channel_address']
+                elif '通道位号' in filled_point:
+                    filled_point['address'] = filled_point['通道位号']
+
+                # 场站信息字段映射 (Excel导出器需要 'site_name', 'site_no')
+                if '场站名' in filled_point:
+                    filled_point['site_name'] = filled_point['场站名']
+                if '场站编号' in filled_point:
+                    filled_point['site_no'] = filled_point['场站编号']
+
+                # === 灰色高亮字段映射（这些字段会被分配数据覆盖）===
+                # 供电类型字段映射 (Excel导出器期望 'power_supply') - 灰色高亮字段
+                if '供电类型（有源/无源）' in filled_point:
+                    filled_point['power_supply'] = filled_point['供电类型（有源/无源）']
+                elif '供电类型' in filled_point:
+                    filled_point['power_supply'] = filled_point['供电类型']
+
+                # 线制字段映射 (Excel导出器期望 'wiring') - 灰色高亮字段
+                if '线制' in filled_point:
+                    filled_point['wiring'] = filled_point['线制']
+
+                # 变量名称字段映射 (Excel导出器期望 'hmi_variable') - 灰色高亮字段
+                if 'variable_name' in filled_point:
+                    filled_point['hmi_variable'] = filled_point['variable_name']
+                elif '变量名称（HMI）' in filled_point:
+                    filled_point['hmi_variable'] = filled_point['变量名称（HMI）']
+                elif '变量名称' in filled_point:
+                    filled_point['hmi_variable'] = filled_point['变量名称']
+
+                # 变量描述字段映射 (Excel导出器期望 'description') - 灰色高亮字段
+                if '变量描述' in filled_point:
+                    filled_point['description'] = filled_point['变量描述']
+                elif '描述' in filled_point:
+                    filled_point['description'] = filled_point['描述']
+
+                # 单位字段映射 (Excel导出器期望 'units') - 灰色高亮字段
+                if '单位' in filled_point:
+                    filled_point['units'] = filled_point['单位']
+
+                # 🔥 调试：输出第一个通道的映射信息
+                if channel_id == list(self.plc_template_data)[0].get('address', ''):
+                    logger.info(f"原始模板数据键: {list(template_point.keys())}")
+                    logger.info(f"映射后数据键: {list(filled_point.keys())}")
+                    logger.info(f"供电类型映射: {filled_point.get('power_supply', 'N/A')}")
+                    logger.info(f"线制映射: {filled_point.get('wiring', 'N/A')}")
+                    # 🔥 删除：不再处理模块名称、场站信息等非高亮字段
+
+                # 检查这个通道是否有分配的点位
+                assigned_point = None
+
+                # 查找分配给这个通道的点位
+                for point_id, assigned_channel_id in self.assignments.items():
+                    if assigned_channel_id == channel_id:
+                        assigned_point = next((p for p in self.parsed_points if p.id == point_id), None)
                         break
 
-                if not template_channel:
-                    continue
+                # 如果有分配的点位，则填写灰色字段
+                if assigned_point:
+                    logger.debug(f"通道 {channel_id} 已分配点位 {assigned_point.instrument_tag}")
 
-                # 合并数据：模板数据 + 解析点位数据
-                filled_point = template_channel.copy()
+                    # 🔥 修复：只更新真正的灰色高亮字段，完全不处理非高亮字段
+                    # 灰色高亮字段：变量名称（HMI）、变量描述、单位、量程低限、量程高限、供电类型、线制、设定值
+                    # 非高亮字段：模块名称、模块类型、通道位号、场站名、场站编号等 - 完全不处理
+                    filled_point.update({
+                        'hmi_variable': assigned_point.instrument_tag,  # 变量名称（HMI）- 灰色字段
+                        'description': assigned_point.description,      # 变量描述 - 灰色字段
+                        'units': assigned_point.units or '',            # 单位 - 灰色字段
+                        'range_low': self._extract_range_low(assigned_point.data_range),           # 量程低限 - 灰色字段
+                        'range_high': self._extract_range_high(assigned_point.data_range),         # 量程高限 - 灰色字段
+                        # 🔥 删除：不再处理供电类型和线制，让原始模板数据保持不变
+                        # 🔥 删除：不再处理场站信息，让原始模板数据保持不变
+                    })
+                else:
+                    logger.debug(f"通道 {channel_id} 未分配点位，清空所有灰色字段")
 
-                # 自动填写灰色字段 - 只填写有明确数据的字段，不要乱推断
-                filled_point.update({
-                    'hmi_variable': point.instrument_tag,  # 变量名称（HMI）
-                    'description': point.description,      # 变量描述
-                    'units': point.units or '',            # 单位
-                    'power_supply': self._get_power_supply_info(point.power_supply),  # 供电类型 - 只有明确信息才填写
-                    'wiring': self._get_wiring_info(point.signal_range),              # 线制 - 从信号范围获取，不乱推断
-                    'range_low': self._extract_range_low(point.data_range),           # 量程低限
-                    'range_high': self._extract_range_high(point.data_range),         # 量程高限
-                    'site_name': site_name,
-                    'site_no': site_no
-                })
+                    # 🔥 修复：未分配的通道只清空灰色字段，完全不处理非高亮字段
+                    # 只清空：变量名称（HMI）、变量描述、单位、量程低限、量程高限
+                    # 完全不处理：模块名称、模块类型、供电类型、线制、通道位号、场站名、场站编号等
+                    filled_point.update({
+                        'hmi_variable': '',      # 清空变量名称 - 灰色字段
+                        'description': '',       # 清空变量描述 - 灰色字段
+                        'units': '',            # 清空单位 - 灰色字段
+                        'range_low': '',        # 清空量程低限 - 灰色字段
+                        'range_high': '',       # 清空量程高限 - 灰色字段
+                        # 🔥 删除：不再处理任何非高亮字段
+                    })
 
                 filled_data.append(filled_point)
 
-            logger.info(f"生成了 {len(filled_data)} 个填写的PLC数据")
+            logger.info(f"生成了 {len(filled_data)} 个PLC数据（包含 {len(self.assignments)} 个已分配点位）")
             return filled_data
 
         except Exception as e:
@@ -1469,6 +1548,56 @@ class ChannelAssignmentWidget(QWidget):
 
         return ""
 
+    def _get_site_info_from_template_or_main_window(self) -> tuple[str, str]:
+        """优先从模板获取场站信息，如果模板中没有则从主窗口获取"""
+        try:
+            # 🔥 修复：优先从原始模板数据中获取场站信息
+            template_site_name = ""
+            template_site_no = ""
+
+            if hasattr(self, 'plc_template_data') and self.plc_template_data:
+                # 从第一个模板数据中获取场站信息
+                first_template = self.plc_template_data[0]
+
+                # 尝试获取场站名称
+                if '场站名' in first_template and first_template['场站名']:
+                    template_site_name = first_template['场站名']
+                elif 'site_name' in first_template and first_template['site_name']:
+                    template_site_name = first_template['site_name']
+
+                # 尝试获取场站编号
+                if '场站编号' in first_template and first_template['场站编号']:
+                    template_site_no = first_template['场站编号']
+                elif 'site_no' in first_template and first_template['site_no']:
+                    template_site_no = first_template['site_no']
+
+                logger.info(f"从模板获取到场站信息: 名称='{template_site_name}', 编号='{template_site_no}'")
+
+            # 如果模板中有完整的场站信息，直接使用
+            if template_site_name and template_site_no:
+                return template_site_name, template_site_no
+
+            # 如果模板中信息不完整，从主窗口获取补充
+            main_site_name, main_site_no = self._get_site_info_from_main_window()
+
+            # 优先使用模板中的信息，缺失的部分用主窗口信息补充
+            final_site_name = template_site_name if template_site_name else main_site_name
+            final_site_no = template_site_no if template_site_no else main_site_no
+
+            # 如果还是没有信息，使用默认值
+            if not final_site_name:
+                final_site_name = "未知场站"
+                logger.warning("无法获取场站名称，使用默认值")
+            if not final_site_no:
+                final_site_no = "未知编号"
+                logger.warning("无法获取场站编号，使用默认值")
+
+            return final_site_name, final_site_no
+
+        except Exception as e:
+            logger.error(f"获取场站信息失败: {e}")
+            return "未知场站", "未知编号"
+
     def _get_site_info_from_main_window(self) -> tuple[str, str]:
         """从主窗口获取场站信息"""
         try:
@@ -1501,11 +1630,11 @@ class ChannelAssignmentWidget(QWidget):
                 if hasattr(main_window.query_area, 'station_input'):
                     site_no = main_window.query_area.station_input.text().strip()
 
-            logger.info(f"获取到场站信息: 名称='{site_name}', 编号='{site_no}'")
+            logger.info(f"从主窗口获取到场站信息: 名称='{site_name}', 编号='{site_no}'")
             return site_name, site_no
 
         except Exception as e:
-            logger.error(f"获取场站信息失败: {e}")
+            logger.error(f"从主窗口获取场站信息失败: {e}")
             return "", ""
 
     def _get_third_party_data(self) -> Optional[List[Dict[str, Any]]]:
@@ -1880,70 +2009,95 @@ class ChannelAssignmentWidget(QWidget):
                     continue
 
                 try:
-                    # 解析通道信息 - 根据实际的Excel列名
+                    # 🔥 修复：完整保留原始模板的所有列数据
                     channel_data = {}
 
-                    # 通道位号 (address)
-                    if '通道位号' in df.columns:
-                        channel_data['address'] = str(row['通道位号']).strip()
-                    elif '通道' in df.columns:
-                        channel_data['address'] = str(row['通道']).strip()
-                    else:
-                        # 如果没有找到通道位号列，跳过这行
-                        continue
+                    # 首先保存所有列的原始数据
+                    for col in df.columns:
+                        # 保存原始列名和值
+                        value = str(row[col]).strip() if pd.notna(row[col]) else ''
+                        channel_data[col] = value
 
-                    # 模块类型 (type) - 从模块类型列获取
+                    # 然后检查必要字段并进行标准化映射
+
+                    # 通道位号 (address) - 必须字段
+                    address = None
+                    if '通道位号' in df.columns:
+                        address = str(row['通道位号']).strip()
+                    elif '通道' in df.columns:
+                        address = str(row['通道']).strip()
+
+                    if not address:
+                        continue  # 跳过没有通道位号的行
+
+                    channel_data['address'] = address
+
+                    # 模块类型 (type) - 必须字段
+                    module_type = None
                     if '模块类型' in df.columns:
                         module_type = str(row['模块类型']).strip()
-                        # 将模块类型映射到IO类型
-                        if module_type in ['AI', 'DI', 'AO', 'DO']:
-                            channel_data['type'] = module_type
-                        else:
-                            # 如果模块类型不是标准的IO类型，跳过
-                            continue
-                    else:
-                        # 如果没有模块类型列，跳过
-                        continue
 
-                    # 变量描述 (description)
+                    if module_type not in ['AI', 'DI', 'AO', 'DO']:
+                        continue  # 跳过不是标准IO类型的行
+
+                    channel_data['type'] = module_type
+
+                    # 标准化其他重要字段的映射（保持向后兼容）
+
+                    # 变量描述
                     if '变量描述' in df.columns:
                         channel_data['description'] = str(row['变量描述']).strip()
                     elif '描述' in df.columns:
                         channel_data['description'] = str(row['描述']).strip()
-                    else:
-                        channel_data['description'] = ''
 
                     # 变量名称
                     if '变量名称（HMI）' in df.columns:
                         channel_data['variable_name'] = str(row['变量名称（HMI）']).strip()
                     elif '变量名称' in df.columns:
                         channel_data['variable_name'] = str(row['变量名称']).strip()
-                    else:
-                        channel_data['variable_name'] = ''
 
                     # PLC地址
                     if 'PLC绝对地址' in df.columns:
                         channel_data['plc_address'] = str(row['PLC绝对地址']).strip()
-                    else:
-                        channel_data['plc_address'] = ''
 
                     # 模块名称
                     if '模块名称' in df.columns:
                         channel_data['module_name'] = str(row['模块名称']).strip()
-                    else:
-                        channel_data['module_name'] = ''
 
-                    # 验证必要字段
-                    if (channel_data.get('address') and
-                        channel_data.get('type') in ['AI', 'DI', 'AO', 'DO']):
-                        template_data.append(channel_data)
-                        logger.debug(f"解析通道: {channel_data['address']} ({channel_data['type']})")
+                    # 场站名称
+                    if '场站名' in df.columns:
+                        channel_data['site_name'] = str(row['场站名']).strip()
+
+                    # 场站编号
+                    if '场站编号' in df.columns:
+                        channel_data['site_no'] = str(row['场站编号']).strip()
+
+                    # 供电类型
+                    if '供电类型（有源/无源）' in df.columns:
+                        channel_data['power_supply'] = str(row['供电类型（有源/无源）']).strip()
+                    elif '供电类型' in df.columns:
+                        channel_data['power_supply'] = str(row['供电类型']).strip()
+
+                    # 线制
+                    if '线制' in df.columns:
+                        channel_data['wiring'] = str(row['线制']).strip()
+
+                    # 验证必要字段后添加到结果中
+                    template_data.append(channel_data)
+                    logger.debug(f"解析通道: {channel_data['address']} ({channel_data['type']})")
 
                 except Exception as e:
                     logger.warning(f"解析第 {index+1} 行时出错: {e}")
                     continue
 
             logger.info(f"从Excel文件解析到 {len(template_data)} 个有效通道")
+
+            # 🔥 调试：输出前几个模板数据的结构
+            if template_data:
+                logger.info(f"模板数据示例（前3个）:")
+                for i, data in enumerate(template_data[:3]):
+                    logger.info(f"  通道 {i+1}: {data}")
+
             return template_data
 
         except Exception as e:
