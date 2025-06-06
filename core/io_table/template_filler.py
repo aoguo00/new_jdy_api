@@ -37,7 +37,7 @@ class TemplateFiller:
         try:
             # 导入数据访问对象
             from core.data_storage.parsed_data_dao import ParsedDataDAO
-            from core.data_storage.assignment_dao import AssignmentDAO
+            from core.channel_assignment.persistence.assignment_dao import AssignmentDAO
             
             parsed_data_dao = ParsedDataDAO()
             assignment_dao = AssignmentDAO()

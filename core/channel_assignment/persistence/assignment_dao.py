@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 from .data_models import ChannelAssignment, PointChannelMapping, ProjectData
-from .parsed_data_dao import ParsedDataDAO
+from ...data_storage.parsed_data_dao import ParsedDataDAO
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class AssignmentDAO:
         """初始化DAO"""
         if data_dir is None:
             # 默认使用项目根目录下的data文件夹
-            project_root = Path(__file__).resolve().parents[2]
+            project_root = Path(__file__).resolve().parents[3]
             data_dir = project_root / "data" / "parsed_documents"
         
         self.data_dir = Path(data_dir)
@@ -234,7 +234,7 @@ class AssignmentDAO:
             'total_points': len(parsed_points),
             'coverage': len(assignment.assignments) / len(parsed_points) if parsed_points else 0
         }
-    
+
     def update_assignments(self, scheme_id: str, assignments_dict: Dict[str, str]) -> bool:
         """批量更新分配方案的所有分配
 

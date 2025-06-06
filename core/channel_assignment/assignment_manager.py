@@ -7,9 +7,9 @@ import logging
 from typing import List, Dict, Set, Optional, Tuple
 from datetime import datetime
 
-from ..data_storage.data_models import ParsedPoint, ChannelAssignment, PointChannelMapping
+from .persistence.data_models import ParsedPoint, ChannelAssignment, PointChannelMapping
 from ..data_storage.parsed_data_dao import ParsedDataDAO
-from ..data_storage.assignment_dao import AssignmentDAO
+from .persistence.assignment_dao import AssignmentDAO
 from .channel_provider import ChannelProvider, ChannelInfo
 
 logger = logging.getLogger(__name__)
@@ -94,9 +94,15 @@ class AssignmentManager:
         
         return success
     
-    def auto_assign_by_type(self, project_id: str, scheme_id: str, 
+    def auto_assign_by_type(self, project_id: str, scheme_id: str,
                           signal_type: str = None, start_channel: str = None) -> Dict[str, any]:
-        """按类型自动分配通道"""
+        """按类型自动分配通道 - 优化版本，确保连续分配
+
+        修复问题：
+        1. 按信号类型顺序分配（AI, DI, AO, DO, COMM）确保连续性
+        2. 对点位按仪表位号排序，确保分配顺序一致
+        3. 为每种类型连续分配通道，避免跳跃和空隙
+        """
         # 获取点位数据
         points = self.parsed_data_dao.get_parsed_points(project_id)
         if signal_type:
@@ -122,38 +128,71 @@ class AssignmentManager:
             'errors': []
         }
         
-        # 按信号类型分组
+        # 按信号类型分组并排序（确保分配顺序一致）
         points_by_type = {}
         for point in unassigned_points:
             if point.signal_type not in points_by_type:
                 points_by_type[point.signal_type] = []
             points_by_type[point.signal_type].append(point)
-        
-        # 为每种类型分配通道
-        for sig_type, type_points in points_by_type.items():
-            available_channels = self.channel_provider.get_available_channels(sig_type, used_channels)
-            available_channels = [ch for ch in available_channels if ch.is_available]
-            
+
+        # 对每种类型的点位按仪表位号排序，确保分配顺序一致
+        for sig_type in points_by_type:
+            points_by_type[sig_type].sort(key=lambda p: p.instrument_tag)
+
+        # 按信号类型顺序分配（AI, DI, AO, DO, COMM）确保连续性
+        type_order = ['AI', 'DI', 'AO', 'DO', 'COMM']
+        sorted_types = []
+
+        # 先添加有序的类型
+        for t in type_order:
+            if t in points_by_type:
+                sorted_types.append(t)
+
+        # 再添加其他类型
+        for t in points_by_type:
+            if t not in sorted_types:
+                sorted_types.append(t)
+
+        # 为每种类型连续分配通道
+        for sig_type in sorted_types:
+            type_points = points_by_type[sig_type]
+
+            # 获取该类型的所有通道（按索引排序）
+            all_channels = self.channel_provider.get_available_channels(sig_type, set())
+
+            # 找到第一个可用的连续通道段
+            available_channels = []
+            for channel in all_channels:
+                if channel.id not in used_channels:
+                    available_channels.append(channel)
+
             # 如果指定了起始通道，从该通道开始
             if start_channel and sig_type == signal_type:
                 start_info = self.channel_provider.get_channel_info(start_channel)
                 if start_info and start_info.type == sig_type:
                     # 过滤出从起始通道开始的可用通道
                     available_channels = [ch for ch in available_channels if ch.index >= start_info.index]
-            
-            # 分配通道
+
+            # 检查是否有足够的连续通道
+            if len(available_channels) < len(type_points):
+                error_msg = f"Not enough available {sig_type} channels: need {len(type_points)}, available {len(available_channels)}"
+                results['errors'].append(error_msg)
+                logger.warning(error_msg)
+                # 仍然尝试分配可用的通道
+
+            # 连续分配通道
             for i, point in enumerate(type_points):
                 if i >= len(available_channels):
-                    error_msg = f"Not enough available {sig_type} channels"
+                    error_msg = f"No more available {sig_type} channels for point {point.instrument_tag}"
                     results['errors'].append(error_msg)
                     results['failed'] += 1
                     continue
-                
+
                 channel = available_channels[i]
                 success = self.assignment_dao.add_point_assignment(
                     project_id, scheme_id, point.id, channel.id, channel.type
                 )
-                
+
                 if success:
                     results['assigned'] += 1
                     results['assignments'].append({
@@ -162,6 +201,7 @@ class AssignmentManager:
                         'channel_id': channel.id
                     })
                     used_channels.add(channel.id)
+                    logger.debug(f"Assigned {point.instrument_tag} to {channel.id}")
                 else:
                     results['failed'] += 1
                     results['errors'].append(f"Failed to assign {point.instrument_tag} to {channel.id}")

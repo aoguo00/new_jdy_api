@@ -251,7 +251,7 @@ class ChannelAssignmentWidget(QWidget):
         self.assignments = {}  # point_id -> channel_id
 
         # 初始化数据访问对象
-        from core.data_storage.assignment_dao import AssignmentDAO
+        from core.channel_assignment.persistence.assignment_dao import AssignmentDAO
         from core.data_storage.parsed_data_dao import ParsedDataDAO
         self.assignment_dao = AssignmentDAO()
         self.parsed_data_dao = ParsedDataDAO()
@@ -610,7 +610,7 @@ class ChannelAssignmentWidget(QWidget):
 
             # 导入数据访问对象
             from core.data_storage.parsed_data_dao import ParsedDataDAO
-            from core.data_storage.assignment_dao import AssignmentDAO
+            from core.channel_assignment.persistence.assignment_dao import AssignmentDAO
 
             self.parsed_data_dao = ParsedDataDAO()
             self.assignment_dao = AssignmentDAO()
@@ -1858,8 +1858,8 @@ class ChannelAssignmentWidget(QWidget):
         try:
             # 导入数据访问对象
             from core.data_storage.parsed_data_dao import ParsedDataDAO
-            from core.data_storage.assignment_dao import AssignmentDAO
-            from core.data_storage.data_models import ParsedPoint
+            from core.channel_assignment.persistence.assignment_dao import AssignmentDAO
+            from core.channel_assignment.persistence.data_models import ParsedPoint
             from datetime import datetime
 
             parsed_data_dao = ParsedDataDAO()

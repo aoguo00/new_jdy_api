@@ -1155,7 +1155,7 @@ class DocumentImportWidget(QWidget):
                 return
 
             # 创建默认的分配方案
-            from core.data_storage.assignment_dao import AssignmentDAO
+            from core.channel_assignment.persistence.assignment_dao import AssignmentDAO
             assignment_dao = AssignmentDAO()
 
             # 检查是否已有分配方案
