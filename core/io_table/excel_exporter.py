@@ -361,6 +361,7 @@ class PLCSheetExporter(BaseSheetExporter):
     def _initialize_row_data(self, point_data: Dict[str, Any], idx: int, site_name: Optional[str], site_no: Optional[str]) -> tuple[List[Any], str, str]:
         """
         初始化行数据列表并填充基础信息。
+        支持从分配数据自动填写灰色高亮字段。
         返回: (final_row_data, channel_io_type, data_type_value)
         """
         final_row_data = ["" for _ in range(len(self.headers_plc))]
@@ -373,21 +374,24 @@ class PLCSheetExporter(BaseSheetExporter):
         channel_io_type = point_data.get('type', '')
         final_row_data[2] = channel_io_type
 
-        # 3. 供电类型（有源/无源）- 用户填写，高亮
-        # 4. 线制 - 用户填写，高亮
+        # 3. 供电类型（有源/无源）- 支持自动填写
+        final_row_data[3] = point_data.get('power_supply', '')
+
+        # 4. 线制 - 支持自动填写
+        final_row_data[4] = point_data.get('wiring', '')
 
         # 5. 通道位号 (来自原始数据)
         final_row_data[5] = point_data.get('address', '')
-        # 6. 场站名 (来自传入参数)
-        final_row_data[6] = site_name if site_name else ""
-        # 7. 场站编号 (来自传入参数)
-        final_row_data[7] = site_no if site_no else ""
+        # 6. 场站名 (来自传入参数或数据)
+        final_row_data[6] = point_data.get('site_name', site_name if site_name else "")
+        # 7. 场站编号 (来自传入参数或数据)
+        final_row_data[7] = point_data.get('site_no', site_no if site_no else "")
 
-        # 8. 变量名称（HMI）- 用户填写，高亮，Excel公式会引用此列
-        final_row_data[8] = ""
+        # 8. 变量名称（HMI）- 支持自动填写
+        final_row_data[8] = point_data.get('hmi_variable', '')
 
-        # 9. 变量描述 - 用户填写，高亮
-        final_row_data[9] = point_data.get('description', '') # 允许预填，但仍标记为用户输入
+        # 9. 变量描述 - 支持自动填写
+        final_row_data[9] = point_data.get('description', '')
 
         # 10. 数据类型 (根据模块类型推断)
         data_type_value = ""
@@ -397,17 +401,43 @@ class PLCSheetExporter(BaseSheetExporter):
             data_type_value = "BOOL"
         final_row_data[10] = data_type_value
 
-        # 11. 单位 - AI/AO模块用户填写，高亮
-        final_row_data[11] = ""
+        # 11. 单位 - 支持自动填写
+        final_row_data[11] = point_data.get('units', '')
+
         # 12. 保存历史 (硬编码为 是)
         final_row_data[12] = "是"
         # 13. 掉电保护 (硬编码为 是)
         final_row_data[13] = "是"
 
-        # 14. 量程低限 - AI模块用户填写，高亮
-        # 15. 量程高限 - AI模块用户填写，高亮
-        # 16. SLL设定值 - AI模块用户填写，高亮
-        # ... 其他设定值和报警名称列将由后续方法根据HMI名称填充Excel公式 ...
+        # 14. 量程低限 - 支持自动填写
+        final_row_data[14] = point_data.get('range_low', '')
+        # 15. 量程高限 - 支持自动填写
+        final_row_data[15] = point_data.get('range_high', '')
+
+        # 16. SLL设定值 - 支持自动填写
+        final_row_data[16] = point_data.get('sll_setpoint', '')
+
+        # 其他设定值字段
+        if 'sl_setpoint' in point_data:
+            try:
+                sl_idx = self.headers_plc.index('SL设定值')
+                final_row_data[sl_idx] = point_data['sl_setpoint']
+            except ValueError:
+                pass
+
+        if 'sh_setpoint' in point_data:
+            try:
+                sh_idx = self.headers_plc.index('SH设定值')
+                final_row_data[sh_idx] = point_data['sh_setpoint']
+            except ValueError:
+                pass
+
+        if 'shh_setpoint' in point_data:
+            try:
+                shh_idx = self.headers_plc.index('SHH设定值')
+                final_row_data[shh_idx] = point_data['shh_setpoint']
+            except ValueError:
+                pass
 
         return final_row_data, channel_io_type, data_type_value
 

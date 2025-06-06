@@ -48,6 +48,7 @@ from ui.components.query_area import QueryArea
 from ui.components.project_list_area import ProjectListArea
 from ui.components.device_list_area import DeviceListArea
 from ui.components.third_party_device_area import ThirdPartyDeviceArea
+# 移除文档导入组件的导入，功能已整合到通道分配页面
 
 # Dialogs - 修改：导入PLC配置组件
 from ui.dialogs.plc_config_dialog import PLCConfigEmbeddedWidget
@@ -310,7 +311,7 @@ class MainWindow(QMainWindow):
         )
         main_tab_widget.addTab(self.third_party_area, "第三方设备配置") # 第三方移到前面
 
-        # --- IO点表模板生成标签页 (放到最后) ---
+        # --- IO点表模板生成标签页 (移到前面) ---
         io_template_tab = QWidget()
         io_template_layout = QVBoxLayout(io_template_tab)
         io_template_layout.setContentsMargins(20, 20, 20, 20)
@@ -329,7 +330,12 @@ class MainWindow(QMainWindow):
         io_template_layout.addWidget(self.generate_io_template_btn, alignment=Qt.AlignmentFlag.AlignCenter)
         io_template_layout.addStretch(2)
 
-        main_tab_widget.addTab(io_template_tab, "IO点表模板生成") # IO模板生成在最后
+        main_tab_widget.addTab(io_template_tab, "IO点表模板生成") # IO模板生成移到前面
+
+        # --- 通道分配标签页（已整合文档导入功能）---
+        from ui.components.channel_assignment_widget import ChannelAssignmentWidget
+        self.channel_assignment_widget = ChannelAssignmentWidget()
+        main_tab_widget.addTab(self.channel_assignment_widget, "通道分配")
 
         # --- 将 QTabWidget 设置为 central_widget 的布局 (使其充满central_widget) ---
         # 为了让 QTabWidget 充满 central_widget，我们需要给 central_widget 也设置一个布局
@@ -473,6 +479,8 @@ class MainWindow(QMainWindow):
                 self.modern_plc_config_widget.configuration_reset.connect(self._handle_plc_config_reset)
                 logger.info("已连接对比模式PLC配置组件的重置信号")
 
+        # 文档导入功能已整合到通道分配页面，无需单独连接信号
+
     def _handle_query(self, project_no: str):
         """处理查询请求"""
         # 新增: 校验项目编号是否为空
@@ -593,6 +601,10 @@ class MainWindow(QMainWindow):
                                                    site_name=self.current_site_name,
                                                    site_no=site_no)
                 if success:
+                    # 保存PLC模板数据供通道分配使用
+                    self.last_generated_plc_template = plc_io_points
+                    self.channel_assignment_widget.set_plc_template_data(plc_io_points)
+
                     QMessageBox.information(self, "成功", f"IO点表模板已成功导出到:\\n{file_path}")
                     self.status_bar.showMessage(f"IO点表模板已导出: {file_path}", 7000)
                 else:
@@ -648,6 +660,8 @@ class MainWindow(QMainWindow):
             # 更新第三方设备区域的当前场站信息
             if hasattr(self, 'third_party_area') and self.third_party_area:
                 self.third_party_area.set_current_site_name(site_name)
+
+            # 文档导入功能已整合到通道分配页面
 
             # 更新内嵌的PLC配置区域的设备数据
             if hasattr(self, 'embedded_plc_config_widget') and self.embedded_plc_config_widget:
@@ -1309,4 +1323,30 @@ class MainWindow(QMainWindow):
             logger.error(f"处理PLC配置重置失败: {e}", exc_info=True)
             QMessageBox.critical(self, "重置处理失败", f"重新加载数据时发生错误：\n{str(e)}")
             self.status_bar.showMessage("数据重新加载失败")
+
+    def _handle_document_import_completed(self, result_file_path: str):
+        """
+        处理文档导入完成信号
+
+        Args:
+            result_file_path (str): 生成的结果文件路径
+        """
+        logger.info(f"文档导入完成，生成文件: {result_file_path}")
+        self.status_bar.showMessage(f"文档导入完成: {os.path.basename(result_file_path)}", 5000)
+
+        # 可以在这里添加其他后续处理逻辑
+        # 例如：更新其他组件状态、发送通知等
+
+    def _handle_document_import_status_changed(self, status_message: str):
+        """
+        处理文档导入状态变化信号
+
+        Args:
+            status_message (str): 状态信息
+        """
+        self.status_bar.showMessage(status_message, 3000)
+        logger.debug(f"文档导入状态更新: {status_message}")
+
+    # 文档导入功能已整合到通道分配页面，无需单独的切换方法
+
 
