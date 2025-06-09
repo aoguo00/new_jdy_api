@@ -123,21 +123,40 @@ class PointSelectionDialog(QDialog):
             logger.error(f"加载点位数据失败: {e}")
 
     def filter_points(self):
-        """过滤点位"""
-        search_text = self.search_input.text().lower()
+        """过滤点位 - 支持类型过滤和搜索过滤"""
+        try:
+            # 获取过滤条件
+            selected_type = self.type_filter.currentText()
+            search_text = self.search_input.text().lower().strip()
 
-        for row in range(self.points_table.rowCount()):
-            # 获取仪表位号和描述
-            tag_item = self.points_table.item(row, 0)
-            desc_item = self.points_table.item(row, 1)
+            for row in range(self.points_table.rowCount()):
+                # 获取行数据
+                tag_item = self.points_table.item(row, 0)  # 仪表位号
+                desc_item = self.points_table.item(row, 1)  # 描述
+                signal_type_item = self.points_table.item(row, 2)  # 信号类型
 
-            if tag_item and desc_item:
-                tag_text = tag_item.text().lower()
-                desc_text = desc_item.text().lower()
+                if not tag_item or not desc_item:
+                    continue
 
-                # 检查是否匹配
-                visible = (search_text in tag_text or search_text in desc_text)
+                # 类型过滤
+                type_match = True
+                if selected_type != "全部" and signal_type_item:
+                    signal_type = signal_type_item.text().upper()
+                    type_match = (signal_type == selected_type.upper())
+
+                # 搜索过滤
+                search_match = True
+                if search_text:
+                    tag_text = tag_item.text().lower()
+                    desc_text = desc_item.text().lower()
+                    search_match = (search_text in tag_text or search_text in desc_text)
+
+                # 显示/隐藏行
+                visible = type_match and search_match
                 self.points_table.setRowHidden(row, not visible)
+
+        except Exception as e:
+            logger.error(f"过滤点位失败: {e}")
 
     def on_selection_changed(self):
         """选择变化"""
@@ -1093,10 +1112,45 @@ class ChannelAssignmentWidget(QWidget):
     # 占位方法 - 后续实现具体逻辑
     def on_point_selection_changed(self): pass
     def on_channel_selection_changed(self): pass
-    def filter_points(self): pass
     def update_channels_display(self):
         """更新通道显示"""
         self.load_channels_table()
+
+    def filter_points(self):
+        """过滤点位 - 支持类型过滤和搜索过滤"""
+        try:
+            # 获取过滤条件
+            selected_type = self.type_filter.currentText()
+            search_text = self.search_input.text().lower().strip()
+
+            for row in range(self.points_table.rowCount()):
+                # 获取行数据
+                tag_item = self.points_table.item(row, 0)  # 仪表位号
+                desc_item = self.points_table.item(row, 1)  # 描述
+                signal_type_item = self.points_table.item(row, 2)  # 信号类型
+
+                if not tag_item or not desc_item:
+                    continue
+
+                # 类型过滤
+                type_match = True
+                if selected_type != "全部" and signal_type_item:
+                    signal_type = signal_type_item.text().upper()
+                    type_match = (signal_type == selected_type.upper())
+
+                # 搜索过滤
+                search_match = True
+                if search_text:
+                    tag_text = tag_item.text().lower()
+                    desc_text = desc_item.text().lower()
+                    search_match = (search_text in tag_text or search_text in desc_text)
+
+                # 显示/隐藏行
+                visible = type_match and search_match
+                self.points_table.setRowHidden(row, not visible)
+
+        except Exception as e:
+            logger.error(f"过滤点位失败: {e}")
 
 
     def assign_point_to_channel(self, point_id: str, channel_id: str, allow_reassign: bool = False) -> bool:
