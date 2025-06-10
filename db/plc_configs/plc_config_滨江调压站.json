@@ -1,0 +1,264 @@
+{
+  "site_name": "滨江调压站",
+  "save_time": "2025-06-10T17:49:25.621538",
+  "version": "1.1",
+  "config": {
+    "0,1": "PROFIBUS-DP",
+    "0,2": "LK411S",
+    "0,3": "LK630S",
+    "0,4": "LK630S",
+    "0,5": "LK710S",
+    "0,6": "LK710S",
+    "1,1": "PROFIBUS-DP",
+    "1,2": "LK411",
+    "1,3": "LK411",
+    "1,4": "LK411",
+    "1,5": "LK411",
+    "1,6": "LK512",
+    "1,7": "LK610",
+    "1,8": "LK710",
+    "1,9": "LK238",
+    "2,1": "PROFIBUS-DP",
+    "2,2": "LK610",
+    "2,3": "LK610",
+    "2,4": "LK610",
+    "2,5": "LK610",
+    "2,6": "LK610",
+    "2,7": "LK610",
+    "2,8": "LK710",
+    "2,9": "LK710"
+  },
+  "system_info": {
+    "system_type": "LK",
+    "rack_count": 3,
+    "racks_data": [
+      {
+        "rack_id": 1,
+        "rack_name": "机架1",
+        "total_slots": 11,
+        "available_slots": 10,
+        "start_slot": 2,
+        "modules": [],
+        "system_type": "LK"
+      },
+      {
+        "rack_id": 2,
+        "rack_name": "机架2",
+        "total_slots": 11,
+        "available_slots": 10,
+        "start_slot": 2,
+        "modules": [],
+        "system_type": "LK"
+      },
+      {
+        "rack_id": 3,
+        "rack_name": "机架3",
+        "total_slots": 11,
+        "available_slots": 10,
+        "start_slot": 2,
+        "modules": [],
+        "system_type": "LK"
+      }
+    ]
+  },
+  "io_count": 240,
+  "addresses_count": 240,
+  "processed_devices_count": 95,
+  "rack_configurations": {
+    "0": [
+      {
+        "key": "LK411S_1",
+        "title": "LK411S",
+        "model": "LK411S",
+        "module_type": "AI",
+        "channels": 8,
+        "description": "LK411S - AI (8通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK630S_2",
+        "title": "LK630S",
+        "model": "LK630S",
+        "module_type": "DI",
+        "channels": 8,
+        "description": "LK630S - DI (8通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK630S_1",
+        "title": "LK630S",
+        "model": "LK630S",
+        "module_type": "DI",
+        "channels": 8,
+        "description": "LK630S - DI (8通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK710S_1",
+        "title": "LK710S",
+        "model": "LK710S",
+        "module_type": "DO",
+        "channels": 8,
+        "description": "LK710S - DO (8通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK710S_2",
+        "title": "LK710S",
+        "model": "LK710S",
+        "module_type": "DO",
+        "channels": 8,
+        "description": "LK710S - DO (8通道)",
+        "is_fixed": false
+      }
+    ],
+    "1": [
+      {
+        "key": "LK411_1",
+        "title": "LK411",
+        "model": "LK411",
+        "module_type": "AI",
+        "channels": 8,
+        "description": "LK411 - AI (8通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK411_2",
+        "title": "LK411",
+        "model": "LK411",
+        "module_type": "AI",
+        "channels": 8,
+        "description": "LK411 - AI (8通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK411_3",
+        "title": "LK411",
+        "model": "LK411",
+        "module_type": "AI",
+        "channels": 8,
+        "description": "LK411 - AI (8通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK411_4",
+        "title": "LK411",
+        "model": "LK411",
+        "module_type": "AI",
+        "channels": 8,
+        "description": "LK411 - AI (8通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK512_1",
+        "title": "LK512",
+        "model": "LK512",
+        "module_type": "AO",
+        "channels": 8,
+        "description": "LK512 - AO (8通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK610_1",
+        "title": "LK610",
+        "model": "LK610",
+        "module_type": "DI",
+        "channels": 16,
+        "description": "LK610 - DI (16通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK710_3",
+        "title": "LK710",
+        "model": "LK710",
+        "module_type": "DO",
+        "channels": 16,
+        "description": "LK710 - DO (16通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK238_1",
+        "title": "LK238",
+        "model": "LK238",
+        "module_type": "COM",
+        "channels": 0,
+        "description": "LK238 - COM",
+        "is_fixed": false
+      }
+    ],
+    "2": [
+      {
+        "key": "LK610_2",
+        "title": "LK610",
+        "model": "LK610",
+        "module_type": "DI",
+        "channels": 16,
+        "description": "LK610 - DI (16通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK610_3",
+        "title": "LK610",
+        "model": "LK610",
+        "module_type": "DI",
+        "channels": 16,
+        "description": "LK610 - DI (16通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK610_4",
+        "title": "LK610",
+        "model": "LK610",
+        "module_type": "DI",
+        "channels": 16,
+        "description": "LK610 - DI (16通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK610_5",
+        "title": "LK610",
+        "model": "LK610",
+        "module_type": "DI",
+        "channels": 16,
+        "description": "LK610 - DI (16通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK610_6",
+        "title": "LK610",
+        "model": "LK610",
+        "module_type": "DI",
+        "channels": 16,
+        "description": "LK610 - DI (16通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK610_7",
+        "title": "LK610",
+        "model": "LK610",
+        "module_type": "DI",
+        "channels": 16,
+        "description": "LK610 - DI (16通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK710_2",
+        "title": "LK710",
+        "model": "LK710",
+        "module_type": "DO",
+        "channels": 16,
+        "description": "LK710 - DO (16通道)",
+        "is_fixed": false
+      },
+      {
+        "key": "LK710_1",
+        "title": "LK710",
+        "model": "LK710",
+        "module_type": "DO",
+        "channels": 16,
+        "description": "LK710 - DO (16通道)",
+        "is_fixed": false
+      }
+    ]
+  }
+}
