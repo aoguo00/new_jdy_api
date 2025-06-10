@@ -11,6 +11,7 @@ from .persistence.data_models import ParsedPoint, ChannelAssignment, PointChanne
 from ..data_storage.parsed_data_dao import ParsedDataDAO
 from .persistence.assignment_dao import AssignmentDAO
 from .channel_provider import ChannelProvider, ChannelInfo
+from .algorithms.smart_assignment import SmartChannelAssignmentEngine
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +24,9 @@ class AssignmentManager:
         self.parsed_data_dao = ParsedDataDAO(data_dir)
         self.assignment_dao = AssignmentDAO(data_dir)
         self.channel_provider = ChannelProvider()
-        
-        logger.info("AssignmentManager initialized")
+        self.smart_engine = SmartChannelAssignmentEngine()
+
+        logger.info("AssignmentManager initialized with smart assignment engine")
     
     def create_assignment_scheme(self, project_id: str, scheme_name: str, 
                                description: str = "") -> Optional[str]:
@@ -208,6 +210,127 @@ class AssignmentManager:
         
         logger.info(f"Auto assignment completed: {results['assigned']} assigned, {results['failed']} failed")
         return results
+
+    def smart_auto_assign(self, project_id: str, scheme_id: str, template_data: List[Dict[str, any]] = None) -> Dict[str, any]:
+        """智能自动分配通道 - 支持模块感知、DIDO配对、机架级约束等"""
+        try:
+            # 获取点位数据
+            points = self.parsed_data_dao.get_parsed_points(project_id)
+            if not points:
+                return {
+                    'total_points': 0,
+                    'assigned': 0,
+                    'failed': 0,
+                    'assignments': [],
+                    'errors': ['没有找到点位数据']
+                }
+
+            # 获取已分配的点位
+            assignment = self.assignment_dao.load_assignment(project_id, scheme_id)
+            assigned_points = set()
+            if assignment:
+                assigned_points = {mapping.point_id for mapping in assignment.assignments}
+
+            # 过滤未分配的点位
+            unassigned_points = [p for p in points if p.id not in assigned_points]
+
+            if not unassigned_points:
+                return {
+                    'total_points': len(points),
+                    'assigned': 0,
+                    'failed': 0,
+                    'assignments': [],
+                    'errors': [],
+                    'message': '所有点位都已分配'
+                }
+
+            # 如果没有提供模板数据，返回错误
+            if not template_data:
+                return {
+                    'total_points': len(unassigned_points),
+                    'assigned': 0,
+                    'failed': len(unassigned_points),
+                    'assignments': [],
+                    'errors': ['需要提供IO模板数据进行智能分配']
+                }
+
+            # 使用智能分配引擎
+            smart_result = self.smart_engine.smart_assign_channels(unassigned_points, template_data)
+
+            if not smart_result.get('success', False):
+                return {
+                    'total_points': len(unassigned_points),
+                    'assigned': 0,
+                    'failed': len(unassigned_points),
+                    'assignments': [],
+                    'errors': [smart_result.get('error', '智能分配失败')]
+                }
+
+            # 保存分配结果到数据库
+            assignments_data = smart_result.get('assignments', {})
+            saved_assignments = []
+            save_errors = []
+
+            for point_id, channel_id in assignments_data.items():
+                # 推断通道类型
+                channel_type = self._infer_channel_type_from_id(channel_id)
+
+                success = self.assignment_dao.add_point_assignment(
+                    project_id, scheme_id, point_id, channel_id, channel_type
+                )
+
+                if success:
+                    # 查找点位信息用于返回结果
+                    point = next((p for p in unassigned_points if p.id == point_id), None)
+                    if point:
+                        saved_assignments.append({
+                            'point_id': point_id,
+                            'point_tag': point.instrument_tag,
+                            'channel_id': channel_id,
+                            'channel_type': channel_type
+                        })
+                else:
+                    save_errors.append(f"保存分配失败: {point_id} -> {channel_id}")
+
+            # 构建返回结果
+            statistics = smart_result.get('statistics', {})
+            result = {
+                'total_points': len(unassigned_points),
+                'assigned': len(saved_assignments),
+                'failed': len(unassigned_points) - len(saved_assignments),
+                'assignments': saved_assignments,
+                'errors': smart_result.get('errors', []) + save_errors,
+                'statistics': statistics
+            }
+
+            logger.info(f"Smart assignment completed: {result['assigned']} assigned, {result['failed']} failed")
+            logger.info(f"Device groups: {statistics.get('device_groups', 0)}, DIDO devices: {statistics.get('dido_devices', 0)}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Smart auto assignment failed: {e}")
+            return {
+                'total_points': 0,
+                'assigned': 0,
+                'failed': 0,
+                'assignments': [],
+                'errors': [f"智能分配过程中出错: {str(e)}"]
+            }
+
+    def _infer_channel_type_from_id(self, channel_id: str) -> str:
+        """从通道ID推断通道类型"""
+        if '-' in channel_id:
+            return channel_id.split('-')[0]
+        elif '_' in channel_id:
+            parts = channel_id.split('_')
+            for part in parts:
+                if part.upper() in ['AI', 'DI', 'AO', 'DO']:
+                    return part.upper()
+
+        # 默认返回AI
+        logger.warning(f"无法从通道ID {channel_id} 推断类型，默认为AI")
+        return 'AI'
     
     def get_assignment_overview(self, project_id: str, scheme_id: str) -> Dict[str, any]:
         """获取分配方案概览"""

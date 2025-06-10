@@ -4,13 +4,13 @@
 """
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox,
     QSplitter, QComboBox, QLineEdit,
     QFrame, QCheckBox,
-    QDialog, QDialogButtonBox, QAbstractItemView
+    QDialog, QDialogButtonBox, QAbstractItemView, QApplication
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QColor
@@ -2222,42 +2222,32 @@ class ChannelAssignmentWidget(QWidget):
 
             current_progress = 0
 
-            # 为每种类型的点位分配通道
-            for signal_type, type_points in points_by_type.items():
-                # 获取该类型的可用通道
-                available_channels = self.get_available_channels_for_type(signal_type)
+            # 尝试使用智能分配
+            try:
+                smart_result = self.smart_auto_assign_points(unassigned_points)
 
-                if len(available_channels) < len(type_points):
-                    logger.warning(f"可用 {signal_type} 通道不足：需要 {len(type_points)}，可用 {len(available_channels)}")
+                if smart_result and smart_result.get('success', False):
+                    # 智能分配成功
+                    assigned_count = smart_result.get('assigned', 0)
+                    failed_count = smart_result.get('failed', 0)
+                    failed_points = smart_result.get('errors', [])
 
-                # 分配通道
-                for i, point in enumerate(type_points):
-                    if progress.wasCanceled():
-                        break
+                    progress.setValue(len(unassigned_points))
+                    progress.setLabelText("智能分配完成")
 
-                    progress.setValue(current_progress)
-                    progress.setLabelText(f"正在分配 {signal_type} 点位: {point.instrument_tag}")
+                    logger.info(f"智能分配完成: 成功 {assigned_count}, 失败 {failed_count}")
+                else:
+                    # 智能分配失败，回退到传统分配
+                    logger.warning("智能分配失败，使用传统分配方法")
+                    assigned_count, failed_count, failed_points = self._fallback_traditional_assign(
+                        points_by_type, progress, current_progress
+                    )
 
-                    if i < len(available_channels):
-                        channel_id = available_channels[i]['address']
-                        success = self.assign_point_to_channel(point.id, channel_id)
-
-                        if success:
-                            assigned_count += 1
-                            logger.info(f"自动分配成功: {point.instrument_tag} -> {channel_id}")
-                        else:
-                            failed_count += 1
-                            failed_points.append(f"{point.instrument_tag} ({signal_type})")
-                            logger.error(f"自动分配失败: {point.instrument_tag}")
-                    else:
-                        failed_count += 1
-                        failed_points.append(f"{point.instrument_tag} ({signal_type}) - 无可用通道")
-                        logger.warning(f"无可用通道: {point.instrument_tag}")
-
-                    current_progress += 1
-
-                if progress.wasCanceled():
-                    break
+            except Exception as e:
+                logger.error(f"智能分配出错: {e}，使用传统分配方法")
+                assigned_count, failed_count, failed_points = self._fallback_traditional_assign(
+                    points_by_type, progress, current_progress
+                )
 
             progress.close()
 
@@ -2271,9 +2261,19 @@ class ChannelAssignmentWidget(QWidget):
 
             QMessageBox.information(self, "自动分配结果", result_msg)
 
-            # 更新界面显示
+            # 🔥 修复：强制刷新界面显示
             self.load_channels_table()
-            # self.update_assignment_info()  # 这个方法不存在，暂时注释掉
+            self.load_points_table()  # 同时更新点位表格
+            self.update_channel_statistics()  # 更新通道统计
+
+            # 更新进度信息
+            progress = int((len(self.assignments) / len(self.parsed_points)) * 100) if self.parsed_points else 0
+            self.assigned_info_label.setText(f"已分配：{len(self.assignments)} 个")
+            self.progress_label.setText(f"进度：{progress}%")
+
+            # 强制刷新界面
+            self.update()
+            QApplication.processEvents()
 
             logger.info(f"自动分配完成: 成功 {assigned_count}, 失败 {failed_count}")
 
@@ -2480,6 +2480,104 @@ class ChannelAssignmentWidget(QWidget):
         except Exception as e:
             logger.error(f"获取可用通道失败: {e}")
             return []
+
+    def smart_auto_assign_points(self, points: List[Any]) -> Optional[Dict[str, Any]]:
+        """智能自动分配点位"""
+        try:
+            if not hasattr(self, 'plc_template_data') or not self.plc_template_data:
+                logger.warning("没有IO模板数据，无法进行智能分配")
+                return None
+
+            # 使用AssignmentManager的智能分配功能
+            from core.channel_assignment.assignment_manager import AssignmentManager
+
+            assignment_manager = AssignmentManager()
+
+            result = assignment_manager.smart_auto_assign(
+                project_id=self.current_project_id,
+                scheme_id=self.current_scheme_id,
+                template_data=self.plc_template_data
+            )
+
+            if result.get('assigned', 0) > 0:
+                # 更新本地分配记录
+                for assignment in result.get('assignments', []):
+                    point_id = assignment['point_id']
+                    channel_id = assignment['channel_id']
+                    self.assignments[point_id] = channel_id
+
+                return {
+                    'success': True,
+                    'assigned': result.get('assigned', 0),
+                    'failed': result.get('failed', 0),
+                    'errors': result.get('errors', []),
+                    'statistics': result.get('statistics', {})
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': '智能分配未能分配任何点位',
+                    'errors': result.get('errors', [])
+                }
+
+        except Exception as e:
+            logger.error(f"智能分配失败: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'errors': [str(e)]
+            }
+
+    def _fallback_traditional_assign(self, points_by_type: Dict[str, List[Any]],
+                                   progress, current_progress: int) -> Tuple[int, int, List[str]]:
+        """传统分配方法（回退方案）"""
+        assigned_count = 0
+        failed_count = 0
+        failed_points = []
+
+        try:
+            # 为每种类型的点位分配通道
+            for signal_type, type_points in points_by_type.items():
+                # 获取该类型的可用通道
+                available_channels = self.get_available_channels_for_type(signal_type)
+
+                if len(available_channels) < len(type_points):
+                    logger.warning(f"可用 {signal_type} 通道不足：需要 {len(type_points)}，可用 {len(available_channels)}")
+
+                # 分配通道
+                for i, point in enumerate(type_points):
+                    if progress.wasCanceled():
+                        break
+
+                    progress.setValue(current_progress)
+                    progress.setLabelText(f"正在分配 {signal_type} 点位: {point.instrument_tag}")
+
+                    if i < len(available_channels):
+                        channel_id = available_channels[i]['address']
+                        success = self.assign_point_to_channel(point.id, channel_id)
+
+                        if success:
+                            assigned_count += 1
+                            logger.info(f"传统分配成功: {point.instrument_tag} -> {channel_id}")
+                        else:
+                            failed_count += 1
+                            failed_points.append(f"{point.instrument_tag} ({signal_type})")
+                            logger.error(f"传统分配失败: {point.instrument_tag}")
+                    else:
+                        failed_count += 1
+                        failed_points.append(f"{point.instrument_tag} ({signal_type}) - 无可用通道")
+                        logger.warning(f"无可用通道: {point.instrument_tag}")
+
+                    current_progress += 1
+
+                if progress.wasCanceled():
+                    break
+
+        except Exception as e:
+            logger.error(f"传统分配过程出错: {e}")
+            failed_count += len([p for points in points_by_type.values() for p in points]) - assigned_count
+
+        return assigned_count, failed_count, failed_points
 
     # 其他占位方法已删除
 
