@@ -230,7 +230,7 @@ class SafetyHollysysGenerator:
 
             if len(comm_addr_str) > 1:
                 try:
-                    offset_val = int(comm_addr_str[1:])
+                    offset_val = int(comm_addr_str[:])
                     offset_str = str(offset_val)
                 except ValueError:
                     logger.warning(f"Modbus (Safety): 点 '{point.hmi_variable_name}' 的通讯地址 '{comm_addr_str}' 格式无效 (偏移部分非数字)，跳过。")
