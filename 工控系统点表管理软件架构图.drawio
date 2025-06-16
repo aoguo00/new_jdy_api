@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2025-06-16T00:00:00.000Z" agent="5.0" etag="" version="24.7.17" type="device">
+  <diagram name="工控系统点表管理软件架构图" id="architecture">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="2336" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+        <!-- 用户界面层 -->
+        <mxCell id="ui-layer" value="用户界面层 (UI Layer)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1560" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="A1" value="主窗口&#xa;MainWindow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;" vertex="1" parent="ui-layer">
+          <mxGeometry x="20" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="A2" value="登录界面&#xa;LoginDialog" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;" vertex="1" parent="ui-layer">
+          <mxGeometry x="160" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="A3" value="项目管理界面&#xa;ProjectArea" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;" vertex="1" parent="ui-layer">
+          <mxGeometry x="300" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="A4" value="设备管理界面&#xa;DeviceArea" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;" vertex="1" parent="ui-layer">
+          <mxGeometry x="440" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="A5" value="第三方设备配置界面&#xa;ThirdPartyDeviceArea" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;" vertex="1" parent="ui-layer">
+          <mxGeometry x="580" y="40" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="A6" value="通道分配界面&#xa;ChannelAssignmentWidget" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;" vertex="1" parent="ui-layer">
+          <mxGeometry x="740" y="40" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="A7" value="查询区域&#xa;QueryArea" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;" vertex="1" parent="ui-layer">
+          <mxGeometry x="900" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="A8" value="状态栏&#xa;StatusBar" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;" vertex="1" parent="ui-layer">
+          <mxGeometry x="1040" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        
+        <!-- 业务逻辑层 -->
+        <mxCell id="business-layer" value="业务逻辑层 (Business Logic Layer)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="1560" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="B1" value="用户管理服务&#xa;UserService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;" vertex="1" parent="business-layer">
+          <mxGeometry x="20" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="B2" value="权限管理服务&#xa;PermissionService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;" vertex="1" parent="business-layer">
+          <mxGeometry x="160" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="B3" value="项目管理服务&#xa;ProjectService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;" vertex="1" parent="business-layer">
+          <mxGeometry x="300" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="B4" value="设备管理服务&#xa;DeviceService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;" vertex="1" parent="business-layer">
+          <mxGeometry x="440" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="B5" value="第三方设备服务&#xa;ThirdPartyDeviceService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;" vertex="1" parent="business-layer">
+          <mxGeometry x="580" y="40" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="B6" value="IO点表处理服务&#xa;IOTableService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;" vertex="1" parent="business-layer">
+          <mxGeometry x="740" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="B7" value="通道分配服务&#xa;ChannelAssignmentService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;" vertex="1" parent="business-layer">
+          <mxGeometry x="880" y="40" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="B8" value="点表生成服务&#xa;TableGenerationService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;" vertex="1" parent="business-layer">
+          <mxGeometry x="1040" y="40" width="140" height="60" as="geometry" />
+        </mxCell>
+        
+        <!-- 数据处理层 -->
+        <mxCell id="data-layer" value="数据处理层 (Data Processing Layer)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#388e3c;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="360" width="1560" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="C1" value="文件解析器&#xa;FileParser" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#388e3c;" vertex="1" parent="data-layer">
+          <mxGeometry x="20" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="C2" value="数据验证器&#xa;DataValidator" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#388e3c;" vertex="1" parent="data-layer">
+          <mxGeometry x="160" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="C3" value="数据转换器&#xa;DataConverter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#388e3c;" vertex="1" parent="data-layer">
+          <mxGeometry x="300" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="C4" value="智能分配引擎&#xa;SmartAssignmentEngine" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#388e3c;" vertex="1" parent="data-layer">
+          <mxGeometry x="440" y="40" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="C5" value="点表生成器&#xa;TableGenerator" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#388e3c;" vertex="1" parent="data-layer">
+          <mxGeometry x="600" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="C6" value="模板填写器&#xa;TemplateFiller" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#388e3c;" vertex="1" parent="data-layer">
+          <mxGeometry x="740" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        
+        <!-- 数据访问层 -->
+        <mxCell id="dao-layer" value="数据访问层 (Data Access Layer)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#388e3c;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="880" y="360" width="720" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="D1" value="用户数据访问&#xa;UserDAO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#388e3c;" vertex="1" parent="dao-layer">
+          <mxGeometry x="20" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="D2" value="项目数据访问&#xa;ProjectDAO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#388e3c;" vertex="1" parent="dao-layer">
+          <mxGeometry x="140" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="D3" value="设备数据访问&#xa;DeviceDAO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#388e3c;" vertex="1" parent="dao-layer">
+          <mxGeometry x="260" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="D4" value="模板数据访问&#xa;TemplateDAO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#388e3c;" vertex="1" parent="dao-layer">
+          <mxGeometry x="380" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="D5" value="分配数据访问&#xa;AssignmentDAO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#388e3c;" vertex="1" parent="dao-layer">
+          <mxGeometry x="500" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="D6" value="解析数据访问&#xa;ParsedDataDAO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#388e3c;" vertex="1" parent="dao-layer">
+          <mxGeometry x="620" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- 数据存储层 -->
+        <mxCell id="storage-layer" value="数据存储层 (Data Storage Layer)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#616161;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="520" width="600" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="E1" value="用户数据库&#xa;UserDB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#616161;" vertex="1" parent="storage-layer">
+          <mxGeometry x="20" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="E2" value="项目数据库&#xa;ProjectDB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#616161;" vertex="1" parent="storage-layer">
+          <mxGeometry x="140" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="E3" value="配置文件&#xa;ConfigFiles" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#616161;" vertex="1" parent="storage-layer">
+          <mxGeometry x="260" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="E4" value="缓存系统&#xa;CacheSystem" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#616161;" vertex="1" parent="storage-layer">
+          <mxGeometry x="380" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="E5" value="日志文件&#xa;LogFiles" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#616161;" vertex="1" parent="storage-layer">
+          <mxGeometry x="500" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- 核心算法模块 -->
+        <mxCell id="algorithm-layer" value="核心算法模块 (Core Algorithms)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#f57c00;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="680" y="520" width="920" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="F1" value="智能分配算法" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#f57c00;" vertex="1" parent="algorithm-layer">
+          <mxGeometry x="20" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="F2" value="模块感知分配器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#f57c00;" vertex="1" parent="algorithm-layer">
+          <mxGeometry x="160" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="F3" value="DIDO配对器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#f57c00;" vertex="1" parent="algorithm-layer">
+          <mxGeometry x="300" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="F4" value="机架级约束处理器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#f57c00;" vertex="1" parent="algorithm-layer">
+          <mxGeometry x="440" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="F5" value="负载均衡器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#f57c00;" vertex="1" parent="algorithm-layer">
+          <mxGeometry x="580" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="F6" value="连续性优化器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#f57c00;" vertex="1" parent="algorithm-layer">
+          <mxGeometry x="720" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- 生成器模块 -->
+        <mxCell id="generator-layer" value="生成器模块 (Generators)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c2185b;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="680" width="920" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="G1" value="和利时PLC生成器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c2185b;" vertex="1" parent="generator-layer">
+          <mxGeometry x="20" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="G2" value="安全PLC生成器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c2185b;" vertex="1" parent="generator-layer">
+          <mxGeometry x="160" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="G3" value="亚控HMI生成器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c2185b;" vertex="1" parent="generator-layer">
+          <mxGeometry x="300" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="G4" value="力控HMI生成器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c2185b;" vertex="1" parent="generator-layer">
+          <mxGeometry x="440" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="G5" value="通讯表生成器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c2185b;" vertex="1" parent="generator-layer">
+          <mxGeometry x="580" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="G6" value="FAT表生成器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c2185b;" vertex="1" parent="generator-layer">
+          <mxGeometry x="720" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- 文件处理模块 -->
+        <mxCell id="file-layer" value="文件处理模块 (File Processing)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#f1f8e9;strokeColor=#689f38;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="680" width="600" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="H1" value="Excel读写器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f8e9;strokeColor=#689f38;" vertex="1" parent="file-layer">
+          <mxGeometry x="20" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="H2" value="CSV处理器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f8e9;strokeColor=#689f38;" vertex="1" parent="file-layer">
+          <mxGeometry x="140" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="H3" value="文本文件处理器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f8e9;strokeColor=#689f38;" vertex="1" parent="file-layer">
+          <mxGeometry x="260" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="H4" value="配置文件管理器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f8e9;strokeColor=#689f38;" vertex="1" parent="file-layer">
+          <mxGeometry x="380" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="H5" value="模板文件处理器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f8e9;strokeColor=#689f38;" vertex="1" parent="file-layer">
+          <mxGeometry x="500" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- 安全模块 -->
+        <mxCell id="security-layer" value="安全模块 (Security)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#d32f2f;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="840" width="600" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="I1" value="身份认证" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#d32f2f;" vertex="1" parent="security-layer">
+          <mxGeometry x="20" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="I2" value="权限验证" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#d32f2f;" vertex="1" parent="security-layer">
+          <mxGeometry x="140" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="I3" value="会话管理" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#d32f2f;" vertex="1" parent="security-layer">
+          <mxGeometry x="260" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="I4" value="操作审计" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#d32f2f;" vertex="1" parent="security-layer">
+          <mxGeometry x="380" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="I5" value="数据加密" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#d32f2f;" vertex="1" parent="security-layer">
+          <mxGeometry x="500" y="40" width="100" height="60" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

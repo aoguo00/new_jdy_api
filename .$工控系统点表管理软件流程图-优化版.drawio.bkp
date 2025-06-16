@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2024-01-01T00:00:00.000Z" agent="5.0" etag="xxx" version="22.1.16" type="device">
+  <diagram name="工控系统点表管理软件实际流程图" id="flow-diagram">
+    <mxGraphModel dx="2074" dy="1114" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+        <!-- 系统启动和登录 -->
+        <mxCell id="A1" value="系统启动" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1f5fe;strokeColor=#01579b;strokeWidth=2;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="100" y="50" width="140" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="A2" value="用户登录" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="100" y="180" width="140" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="A3" value="登录验证" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;strokeWidth=2;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="100" y="310" width="140" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="A4" value="显示错误信息" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#d32f2f;strokeWidth=2;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="320" y="320" width="140" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="A5" value="进入主界面" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="100" y="460" width="140" height="70" as="geometry" />
+        </mxCell>
+        
+        <!-- 第一步：数据查询 -->
+        <mxCell id="B1" value="第一步：数据查询" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#2e7d32;strokeWidth=3;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="590" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="B2" value="输入项目编号" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="100" y="720" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="B3" value="调用简道云API\n查询项目信息" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="100" y="800" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="B4" value="显示项目列表" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="100" y="880" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="B5" value="选择场站" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="100" y="960" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="B6" value="查询设备清单" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="100" y="1040" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="B7" value="显示设备列表" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="100" y="1120" width="160" height="50" as="geometry" />
+        </mxCell>
+        
+        <!-- 第二步：PLC硬件配置 -->
+        <mxCell id="C1" value="第二步：PLC硬件配置" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#f57c00;strokeWidth=3;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="590" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="C2" value="切换到PLC配置页面" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="720" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C3" value="处理设备数据\n更新IODataLoader" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="800" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C4" value="显示系统信息\n和机架配置" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="880" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C5" value="用户配置PLC模块\n（穿梭框界面）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="960" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C6" value="验证配置合法性" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="1040" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="C7" value="保存PLC配置\n生成通道地址" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="1120" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C8" value="配置验证失败" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#d32f2f;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="600" y="1050" width="120" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- 第三步：第三方设备配置 -->
+        <mxCell id="D1" value="第三步：第三方设备配置" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c2185b;strokeWidth=3;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="700" y="590" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="D2" value="切换到第三方设备页面" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="700" y="720" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="D3" value="创建/选择设备模板" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="700" y="800" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="D4" value="配置设备实例\n（IP地址、端口等）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="700" y="880" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="D5" value="验证设备配置" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c2185b;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="700" y="960" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="D6" value="保存第三方设备配置" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="700" y="1040" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="D7" value="设备配置错误" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#d32f2f;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="900" y="970" width="120" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- 第四步：通道分配 -->
+        <mxCell id="E1" value="第四步：通道分配" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=3;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="590" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="E2" value="切换到通道分配页面" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="720" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="E3" value="检查数据准备状态\n（PLC配置、设备配置）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="800" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="E4" value="创建分配方案" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="880" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="E5" value="选择分配方式\n（自动/手动）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="960" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="E6" value="执行通道分配\n（模块感知、负载均衡）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="1040" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="E7" value="保存分配方案" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="1120" width="160" height="50" as="geometry" />
+        </mxCell>
+        
+        <!-- 第五步：上传IO点表 -->
+        <mxCell id="F1" value="第五步：上传IO点表" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f8e9;strokeColor=#689f38;strokeWidth=3;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="590" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="F2" value="选择IO点表文件" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="720" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="F3" value="验证文件格式\n（Excel格式检查）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="800" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="F4" value="解析Excel文件\n提取IO点数据" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="880" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="F5" value="数据验证" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f1f8e9;strokeColor=#689f38;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="960" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="F6" value="存储IO点表数据\n更新数据库" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="1040" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="F7" value="数据验证失败" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#d32f2f;strokeWidth=2;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1500" y="970" width="120" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- 第六步：生成点表 -->
+        <mxCell id="G1" value="第六步：生成点表\n（用户按需选择）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#d32f2f;strokeWidth=3;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="590" width="160" height="70" as="geometry" />
+        </mxCell>
+        
+        <!-- 生成选项 -->
+        <mxCell id="G2" value="生成和利时PLC点表" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1520" y="720" width="130" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="G3" value="生成安全PLC点表" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1670" y="720" width="130" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="G4" value="生成亚控HMI点表" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1520" y="780" width="130" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="G5" value="生成力控HMI点表" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1670" y="780" width="130" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="G6" value="生成上下位通讯点表" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1520" y="840" width="130" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="G7" value="生成FAT测试点表" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;strokeWidth=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1670" y="840" width="130" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- 输出结果 -->
+        <mxCell id="H1" value="文件输出" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e8;strokeColor=#2e7d32;strokeWidth=2;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="1620" y="920" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="H2" value="完成" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1f5fe;strokeColor=#01579b;strokeWidth=2;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="1620" y="1000" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- 连接线 -->
+        <!-- 登录流程 -->
+        <mxCell id="edge1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;" edge="1" parent="1" source="A1" target="A2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;" edge="1" parent="1" source="A2" target="A3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge3" value="登录成功" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#2e7d32;" edge="1" parent="1" source="A3" target="A5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge4" value="登录失败" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#d32f2f;" edge="1" parent="1" source="A3" target="A4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;" edge="1" parent="1" source="A5" target="B1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <!-- 主要步骤连接 -->
+        <mxCell id="edge6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="B1" target="B2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 数据查询内部流程 -->
+        <mxCell id="edge6a" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="B2" target="B3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge6b" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="B3" target="B4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge6c" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="B4" target="B5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge6d" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="B5" target="B6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge6e" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="B6" target="B7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edge7" value="数据准备完成" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#2e7d32;" edge="1" parent="1" source="B7" target="C1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="280" y="1145" />
+              <mxPoint x="280" y="625" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="C1" target="C2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- PLC配置内部流程 -->
+        <mxCell id="edge8a" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="C2" target="C3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge8b" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="C3" target="C4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge8c" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="C4" target="C5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge8d" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="C5" target="C6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge8e" value="验证通过" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2e7d32;" edge="1" parent="1" source="C6" target="C7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge8f" value="验证失败" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d32f2f;" edge="1" parent="1" source="C6" target="C8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edge9" value="PLC配置完成" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#f57c00;" edge="1" parent="1" source="C7" target="D1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="580" y="1145" />
+              <mxPoint x="580" y="625" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="D1" target="D2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 第三方设备配置内部流程 -->
+        <mxCell id="edge10a" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="D2" target="D3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge10b" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="D3" target="D4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge10c" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="D4" target="D5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge10d" value="验证通过" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2e7d32;" edge="1" parent="1" source="D5" target="D6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge10e" value="验证失败" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d32f2f;" edge="1" parent="1" source="D5" target="D7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edge11" value="设备配置完成" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#c2185b;" edge="1" parent="1" source="D6" target="E1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="880" y="1065" />
+              <mxPoint x="880" y="625" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="E1" target="E2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 通道分配内部流程 -->
+        <mxCell id="edge12a" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="E2" target="E3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge12b" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="E3" target="E4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge12c" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="E4" target="E5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge12d" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="E5" target="E6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge12e" value="确认分配" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2e7d32;" edge="1" parent="1" source="E6" target="E7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge12f" value="重新分配" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#f57c00;" edge="1" parent="1" source="E6" target="E8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edge13" value="通道分配完成" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#1976d2;" edge="1" parent="1" source="E7" target="F1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1180" y="1145" />
+              <mxPoint x="1180" y="625" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge14" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="F1" target="F2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- IO点表上传内部流程 -->
+        <mxCell id="edge14a" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="F2" target="F3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge14b" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="F3" target="F4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge14c" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="F4" target="F5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge14d" value="验证通过" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2e7d32;" edge="1" parent="1" source="F5" target="F6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge14e" value="验证失败" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d32f2f;" edge="1" parent="1" source="F5" target="F7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edge15" value="IO数据准备完成" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#689f38;" edge="1" parent="1" source="F6" target="G1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1480" y="1065" />
+              <mxPoint x="1480" y="625" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- 生成点表选项连接 -->
+        <mxCell id="edge16" value="用户选择" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d32f2f;strokeWidth=1;dashed=1;" edge="1" parent="1" source="G1" target="G2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge17" value="用户选择" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d32f2f;strokeWidth=1;dashed=1;" edge="1" parent="1" source="G1" target="G3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge18" value="用户选择" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d32f2f;strokeWidth=1;dashed=1;" edge="1" parent="1" source="G1" target="G4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge19" value="用户选择" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d32f2f;strokeWidth=1;dashed=1;" edge="1" parent="1" source="G1" target="G5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge20" value="用户选择" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d32f2f;strokeWidth=1;dashed=1;" edge="1" parent="1" source="G1" target="G6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge21" value="用户选择" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d32f2f;strokeWidth=1;dashed=1;" edge="1" parent="1" source="G1" target="G7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <!-- 生成结果到输出 -->
+        <mxCell id="edge22" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="G2" target="H1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge23" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="G3" target="H1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge24" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="G4" target="H1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge25" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="G5" target="H1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge26" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="G6" target="H1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge27" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="G7" target="H1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <!-- 最终完成 -->
+        <mxCell id="edge28" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;" edge="1" parent="1" source="H1" target="H2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
