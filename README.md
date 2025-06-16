@@ -1,8 +1,5 @@
 # 工控系统点表管理软件V1.0
 
-![Python](https://img.shields.io/badge/Python-3.7+-blue.svg)
-![PySide6](https://img.shields.io/badge/PySide6-6.5.0+-green.svg)
-![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 ## 🚀 项目简介
 
