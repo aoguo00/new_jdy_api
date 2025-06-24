@@ -268,13 +268,13 @@ class NumericValueRule(ValidationRule):
         return errors
 
 class RangeNumericAiRule(NumericValueRule):
-    """规则：非预留AI模块点位，量程上下限（如果存在）必须为数字。"""
+    """规则：AI模块点位，量程上下限（如果存在）必须为数字。"""
     def __init__(self, column: str, column_name_cn: str):
         super().__init__(column, column_name_cn)
 
     def validate(self, context: ValidationContext) -> List[str]:
-        # 只对非预留 AI 模块应用此规则
-        if not context.is_main_reserved and context.module_type == C.MODULE_TYPE_AI:
+        # 对所有 AI 模块应用此规则（包括预留和非预留）
+        if context.module_type == C.MODULE_TYPE_AI:
             return super().validate(context)
         return []
 
@@ -461,8 +461,8 @@ MAIN_IO_RULES: List[ValidationRule] = [
     WiringSystemValueRule(),
 
     # 针对预留 AI 点位特定列必须为空的规则 (其他列，非供电和线制)
-    ReservedAiSpecificEmptyRule(C.RANGE_LOW_LIMIT_COL, "量程低限"),
-    ReservedAiSpecificEmptyRule(C.RANGE_HIGH_LIMIT_COL, "量程高限"),
+    # ReservedAiSpecificEmptyRule(C.RANGE_LOW_LIMIT_COL, "量程低限"),  # 取消量程空值强制要求
+    # ReservedAiSpecificEmptyRule(C.RANGE_HIGH_LIMIT_COL, "量程高限"),  # 取消量程空值强制要求
     ReservedAiSpecificEmptyRule(C.SLL_SET_COL, "SLL设定值"),
     ReservedAiSpecificEmptyRule(C.SL_SET_COL, "SL设定值"),
     ReservedAiSpecificEmptyRule(C.SH_SET_COL, "SH设定值"),
@@ -472,7 +472,7 @@ MAIN_IO_RULES: List[ValidationRule] = [
     NonReservedRequiredRule(C.MODULE_TYPE_COL, C.MODULE_TYPE_COL), # 模块类型对非预留点仍是必填
 
     # 针对非预留 AI 点位
-    RangeRequiredAiRule(),
+    # RangeRequiredAiRule(),  # 取消量程必填验证
     RangeNumericAiRule(C.RANGE_LOW_LIMIT_COL, "量程低限"),
     RangeNumericAiRule(C.RANGE_HIGH_LIMIT_COL, "量程高限"),
     SetpointNumericAiRule(C.SLL_SET_COL, "SLL设定值"),
