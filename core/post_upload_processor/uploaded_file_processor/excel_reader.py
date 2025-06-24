@@ -251,6 +251,12 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
         main_point_data['source_sheet_name'] = sheet_title
         main_point_data['source_type'] = "main_io"
 
+        # 处理量程限制的默认值：如果量程低限和高限为空，则设置默认值0-100
+        if _is_value_empty(main_point_data.get('range_low_limit')):
+            main_point_data['range_low_limit'] = "0"
+        if _is_value_empty(main_point_data.get('range_high_limit')):
+            main_point_data['range_high_limit'] = "100"
+
         try:
             main_point = UploadedIOPoint(**main_point_data) # type: ignore
             if _is_value_empty(main_point.hmi_variable_name):
