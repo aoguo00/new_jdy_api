@@ -789,16 +789,319 @@ class LikongGenerator:
             logger.error(error_msg, exc_info=True)
             return False, None, error_msg
 
-    def generate_all_csvs(self, 
-                            output_dir: str, 
+    def _is_derived_point(self, point: UploadedIOPoint) -> bool:
+        """
+        判断是否为派生点位（报警点位、维护值等）或预留点位
+        趋势表只要本体点位，不要派生点位和预留点位
+        """
+        if not point.hmi_variable_name:
+            return False
+
+        variable_name = point.hmi_variable_name.strip()
+        description = str(point.variable_description or "").strip()
+
+        # 检查是否为报警设定点位后缀
+        alarm_suffixes = ['_LoLoLimit', '_LoLimit', '_HiLimit', '_HiHiLimit',
+                         '_SLL', '_SL', '_SH', '_SHH', '_LL', '_L', '_H', '_HH']
+        for suffix in alarm_suffixes:
+            if variable_name.endswith(suffix):
+                return True
+
+        # 检查是否为维护值相关点位
+        maintenance_suffixes = ['_whz', '_whzzt', '_MAINV', '_MAIN_EN']
+        for suffix in maintenance_suffixes:
+            if variable_name.endswith(suffix):
+                return True
+
+        # 检查source_type是否为派生类型
+        if point.source_type == "intermediate_from_main":
+            return True
+
+        # 检查是否为预留点位
+        # 1. 变量名包含YLDW（预留点位）
+        if 'YLDW' in variable_name.upper():
+            return True
+
+        # 2. 描述为空或包含"预留"关键字
+        if not description or '预留' in description:
+            return True
+
+        return False
+
+    def _classify_points_for_trend(self, points: List[UploadedIOPoint]) -> Dict[str, List[UploadedIOPoint]]:
+        """
+        智能分类点位用于趋势表生成。
+        只保留流量计、可燃气体、温度、压力相关的点位。
+        只包含本体点位，过滤掉派生点位。
+        """
+        classified_groups = {}
+
+        # 定义趋势表需要的分类规则 - 只保留流量计、可燃气体、温度、压力
+        classification_rules = [
+            {
+                'name': '流量计',
+                'keywords': ['流量', '计量', 'LLJ', 'flow', '瞬时', '累计', '标况', '工况'],
+                'priority': 1
+            },
+            {
+                'name': '可燃气体',
+                'keywords': ['可燃', '燃气', '甲烷', 'CH4', '天然气', '气体浓度', '爆炸', 'LEL'],
+                'priority': 1
+            },
+            {
+                'name': '温度监测',
+                'keywords': ['温度', '温', 'WD', 'temp', 'temperature', '℃'],
+                'priority': 2
+            },
+            {
+                'name': '压力监测',
+                'keywords': ['压力', '压', 'YL', 'pressure', 'MPa', 'kPa', 'Pa'],
+                'priority': 2
+            }
+        ]
+
+        # 为每个点位找到最佳分类
+        for point in points:
+            if not point.hmi_variable_name or not point.hmi_variable_name.strip():
+                continue
+
+            # 只处理模拟量点位用于趋势
+            point_data_type_upper = str(point.data_type or "").upper().strip()
+            if point_data_type_upper not in ["REAL", "FLOAT"]:
+                continue
+
+            # 过滤掉派生点位
+            if self._is_derived_point(point):
+                logger.debug(f"趋势表跳过派生点位: {point.hmi_variable_name}")
+                continue
+
+            description = str(point.variable_description or "").strip()
+            variable_name = str(point.hmi_variable_name or "").strip()
+
+            # 组合搜索文本
+            search_text = f"{description} {variable_name}".lower()
+
+            # 找到最佳匹配的分类
+            best_match = None
+            best_priority = 999
+
+            for rule in classification_rules:
+                for keyword in rule['keywords']:
+                    if keyword.lower() in search_text:
+                        if rule['priority'] < best_priority:
+                            best_match = rule['name']
+                            best_priority = rule['priority']
+                        break
+
+            # 如果没有匹配到任何规则，跳过该点位（不包含在趋势表中）
+            if best_match is None:
+                logger.debug(f"趋势表跳过非目标类型点位: {point.hmi_variable_name} ({description})")
+                continue
+
+            # 额外过滤：排除调压器相关的点位（即使匹配到压力监测）
+            if any(keyword in search_text for keyword in ['调压', '调节', 'tyq']):
+                logger.debug(f"趋势表跳过调压器相关点位: {point.hmi_variable_name} ({description})")
+                continue
+
+            # 添加到对应分组
+            if best_match not in classified_groups:
+                classified_groups[best_match] = []
+            classified_groups[best_match].append(point)
+
+        # 过滤掉空分组并按点位数量排序
+        filtered_groups = {k: v for k, v in classified_groups.items() if v}
+        sorted_groups = dict(sorted(filtered_groups.items(), key=lambda x: len(x[1]), reverse=True))
+
+        logger.info(f"趋势表分类完成，共分为 {len(sorted_groups)} 个组：{list(sorted_groups.keys())}")
+        for group_name, group_points in sorted_groups.items():
+            logger.debug(f"  {group_name}: {len(group_points)} 个点位")
+
+        return sorted_groups
+
+    def generate_trend_csv(self,
+                          output_dir: str,
+                          points_by_sheet: Dict[str, List[UploadedIOPoint]]
+                          ) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        生成力控趋势配置文件: 趋势.csv (以场站名为前缀)
+        根据点位描述和变量名智能分类生成趋势组。
+        文件编码为 GBK。
+        """
+        # 获取场站信息
+        default_site_name, default_site_number = self._get_site_defaults(points_by_sheet)
+
+        # 生成文件名，以场站名为前缀
+        site_prefix = default_site_name if default_site_name else "未知场站"
+        file_name = f"{site_prefix}趋势.csv"
+        file_path = os.path.join(output_dir, file_name)
+
+        # 收集所有有效的模拟量点位
+        all_real_points = []
+        if points_by_sheet:
+            for _, points_list in points_by_sheet.items():
+                for point in points_list:
+                    point_data_type_upper = str(point.data_type or "").upper().strip()
+                    hmi_name_from_point = str(point.hmi_variable_name or "").strip()
+
+                    if (_is_value_empty_for_hmi(hmi_name_from_point) or
+                        point_data_type_upper not in ["REAL", "FLOAT"]):
+                        continue
+
+                    all_real_points.append(point)
+
+        if not all_real_points:
+            logger.warning("趋势表生成：未找到有效的模拟量点位，跳过生成。")
+            return True, None, "无有效模拟量点位"
+
+        # 智能分类点位
+        classified_groups = self._classify_points_for_trend(all_real_points)
+
+        if not classified_groups:
+            logger.warning("趋势表生成：点位分类后无有效分组，跳过生成。")
+            return True, None, "无有效分组"
+
+        try:
+            with open(file_path, 'w', newline='', encoding='gbk') as csvfile:
+                writer = csv.writer(csvfile)
+
+                # 写入每个分组
+                for group_name, group_points in classified_groups.items():
+                    # 写入分组标题行：分组名称、点位数量、0、0
+                    writer.writerow([group_name, len(group_points), 0, 0])
+
+                    # 写入该分组的所有点位
+                    for point in group_points:
+                        current_point_site_name = (point.site_name if point.site_name and point.site_name.strip()
+                                                 else default_site_name).strip()
+                        current_point_site_number = (point.site_number if point.site_number and point.site_number.strip()
+                                                    else default_site_number).strip()
+
+                        # 构建节点路径和点名（与Basic.csv保持一致）
+                        node_path = f"{current_point_site_name}\\" if current_point_site_name else ""
+                        lk_hmi_name = _convert_lk_alarm_suffix(point.hmi_variable_name.strip())
+                        full_point_name = f"{node_path}{current_point_site_number}{lk_hmi_name}.PV"
+
+                        # 点位描述
+                        description = point.variable_description or ""
+
+                        # 写入点位行：完整点名、描述
+                        writer.writerow([full_point_name, description])
+
+            # 计算实际写入的点位数量
+            total_trend_points = sum(len(group_points) for group_points in classified_groups.values())
+
+            logger.info(f"成功生成力控趋势配置文件: {file_path}")
+            logger.info(f"趋势表包含 {len(classified_groups)} 个分组，共 {total_trend_points} 个点位")
+            return True, file_path, None
+
+        except Exception as e:
+            error_msg = f"生成趋势表文件失败: {e}"
+            logger.error(error_msg, exc_info=True)
+            return False, None, error_msg
+
+    def generate_alarm_settings_csv(self,
+                                   output_dir: str,
+                                   points_by_sheet: Dict[str, List[UploadedIOPoint]]
+                                   ) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        生成力控报警设定表: 报警设定.csv (以场站名为前缀)
+        包含所有可以设定报警值的模拟量本体点位（排除派生点位和预留点位）。
+        文件编码为 GBK。
+        """
+        # 获取场站信息
+        default_site_name, default_site_number = self._get_site_defaults(points_by_sheet)
+
+        # 生成文件名，以场站名为前缀
+        site_prefix = default_site_name if default_site_name else "未知场站"
+        file_name = f"{site_prefix}报警设定.csv"
+        file_path = os.path.join(output_dir, file_name)
+
+        # 收集所有可以设定报警值的模拟量本体点位
+        alarm_points = []
+        total_real_points = 0
+        total_points_checked = 0
+
+        if points_by_sheet:
+            for sheet_name, points_list in points_by_sheet.items():
+                logger.info(f"检查工作表 '{sheet_name}' 中的 {len(points_list)} 个点位")
+                for point in points_list:
+                    total_points_checked += 1
+
+                    # 只处理模拟量点位
+                    point_data_type_upper = str(point.data_type or "").upper().strip()
+                    if point_data_type_upper not in ["REAL", "FLOAT"]:
+                        logger.debug(f"跳过非模拟量点位: {point.hmi_variable_name} (类型: {point_data_type_upper})")
+                        continue
+
+                    total_real_points += 1
+
+                    # 跳过空的HMI变量名
+                    hmi_name_from_point = str(point.hmi_variable_name or "").strip()
+                    if _is_value_empty_for_hmi(hmi_name_from_point):
+                        logger.debug(f"跳过空HMI变量名点位")
+                        continue
+
+                    # 过滤掉派生点位（报警设定点位本身）和预留点位
+                    if self._is_derived_point(point):
+                        logger.debug(f"跳过派生点位: {point.hmi_variable_name}")
+                        continue
+
+                    # 所有通过筛选的模拟量本体点位都可以设定报警值
+                    alarm_points.append(point)
+                    logger.debug(f"报警设定表包含点位: {point.hmi_variable_name} - {point.variable_description}")
+
+        logger.info(f"报警设定表统计: 总点位={total_points_checked}, 模拟量点位={total_real_points}, 可设定报警的点位={len(alarm_points)}")
+
+        if not alarm_points:
+            logger.warning("报警设定表生成：未找到可设定报警的模拟量点位，跳过生成。")
+            return True, None, "无可设定报警的模拟量点位"
+
+        try:
+            with open(file_path, 'w', newline='', encoding='gbk') as csvfile:
+                writer = csv.writer(csvfile)
+
+                # 写入表头
+                writer.writerow(['数据源名称', '节点名称', '点名称'])
+
+                # 写入每个有报警设定的点位
+                for point in alarm_points:
+                    current_point_site_name = (point.site_name if point.site_name and point.site_name.strip()
+                                             else default_site_name).strip()
+                    current_point_site_number = (point.site_number if point.site_number and point.site_number.strip()
+                                                else default_site_number).strip()
+
+                    # 数据源名称：固定为"系统"
+                    data_source_name = "系统"
+
+                    # 节点名称：场站名
+                    node_name = current_point_site_name if current_point_site_name else "未知场站"
+
+                    # 点名称：场站编号+HMI变量名（经过LK后缀转换）
+                    lk_hmi_name = _convert_lk_alarm_suffix(point.hmi_variable_name.strip())
+                    point_name = f"{current_point_site_number}{lk_hmi_name}"
+
+                    # 写入行数据
+                    writer.writerow([data_source_name, node_name, point_name])
+
+            logger.info(f"成功生成力控报警设定表: {file_path}")
+            logger.info(f"报警设定表包含 {len(alarm_points)} 个有报警设定的点位")
+            return True, file_path, None
+
+        except Exception as e:
+            error_msg = f"生成报警设定表文件失败: {e}"
+            logger.error(error_msg, exc_info=True)
+            return False, None, error_msg
+
+    def generate_all_csvs(self,
+                            output_dir: str,
                             points_by_sheet: Dict[str, List[UploadedIOPoint]]
                             ) -> List[Tuple[str, bool, Optional[str], Optional[str]]]:
         """
-        生成所有力控相关的CSV文件 (Basic.csv, His.csv, Link.csv)。
+        生成所有力控相关的CSV文件 (Basic.csv, His.csv, Link.csv, 趋势.csv, 报警设定.csv)。
         返回每个文件生成结果的列表。
         """
         results = []
-        
+
         # 生成 Basic.csv
         logger.info("开始生成 Basic.csv...")
         basic_success, basic_file_path, basic_err_msg = self.generate_basic_csv(output_dir, points_by_sheet)
@@ -814,9 +1117,17 @@ class LikongGenerator:
         logger.info("开始生成 Link.csv...")
         link_success, link_file_path, link_err_msg = self.generate_link_csv(output_dir, points_by_sheet)
         results.append(("Link.csv", link_success, link_file_path, link_err_msg))
-        
-        # 未来可以扩展以生成其他CSV文件，例如 Alm.csv
-        
+
+        # 生成趋势表
+        logger.info("开始生成趋势表...")
+        trend_success, trend_file_path, trend_err_msg = self.generate_trend_csv(output_dir, points_by_sheet)
+        results.append(("趋势表", trend_success, trend_file_path, trend_err_msg))
+
+        # 生成报警设定表
+        logger.info("开始生成报警设定表...")
+        alarm_success, alarm_file_path, alarm_err_msg = self.generate_alarm_settings_csv(output_dir, points_by_sheet)
+        results.append(("报警设定表", alarm_success, alarm_file_path, alarm_err_msg))
+
         return results
 
 if __name__ == '__main__':
@@ -827,42 +1138,65 @@ if __name__ == '__main__':
     if not os.path.exists(test_output_dir):
         os.makedirs(test_output_dir)
 
-    # 示例：构建一些包含量程、报警设定和通讯地址的测试点
+    # 示例：构建一些包含量程、报警设定和通讯地址的测试点，增加更多样化的点位用于测试趋势表分类
     # 注意: UploadedIOPoint 需要有 channel_tag 属性才能正确生成 Link.csv
     points_data_s1_extended: Dict[str, List[UploadedIOPoint]] = {
         "IO点表": [
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_01", data_type="REAL", 
-                            variable_description="模拟量输入1-正常范围", channel_tag="CH01", hmi_communication_address="40001", # channel_tag 修改为示例，hmi_communication_address 为实际通讯地址
-                            range_low_limit="0", range_high_limit="100", 
+            # 进站监测相关
+            UploadedIOPoint(site_name="路口铺门站", site_number="A281009", hmi_variable_name="YLDW1_1_AI_1", data_type="REAL",
+                            variable_description="进站压力", channel_tag="CH01", hmi_communication_address="40001",
+                            range_low_limit="0", range_high_limit="100",
                             sll_set_value="5", sl_set_value="10", sh_set_value="90", shh_set_value="95"),
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_02", data_type="REAL", 
-                            variable_description="模拟量输入2-低值超范围", channel_tag="CH02", hmi_communication_address="40002",
-                            range_low_limit="10", range_high_limit="50", 
-                            sll_set_value="5", sl_set_value="8"), # LL, LO会钳位到10
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_03", data_type="REAL", 
-                            variable_description="模拟量输入3-高值超范围", channel_tag="CH03", hmi_communication_address="43210",
-                            range_low_limit="0", range_high_limit="200", 
-                            sh_set_value="210", shh_set_value="220"), # HI, HH会钳位到200
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_04", data_type="REAL", 
-                            variable_description="模拟量输入4-量程无效", channel_tag="CH04", hmi_communication_address="40004",
-                            range_low_limit="TEXT", range_high_limit="100", 
-                            sll_set_value="5"), # 报警不钳位，用默认值
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="AI_Value_05", data_type="REAL", 
-                            variable_description="模拟量输入5-报警值无效", channel_tag="CH05", hmi_communication_address="4000A", # 无效数字地址测试
-                            range_low_limit="0", range_high_limit="100", 
-                            sl_set_value="TEXT"), # LO用默认值10.000
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="DI_Status_01", data_type="BOOL", 
-                            variable_description="数字量状态1", channel_tag="CH06", hmi_communication_address="1001"),
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="DI_NoCommAddr", data_type="BOOL",  # Renamed for clarity
-                            variable_description="数字量状态2-无通讯地址", channel_tag="CH07", hmi_communication_address=None), # 测试无通讯地址
-            UploadedIOPoint(site_name="LK测试站", site_number="LKS01", hmi_variable_name="", data_type="BOOL", 
-                            variable_description="数字量状态3-无HMI名称", channel_tag="CH08", hmi_communication_address="1003"), # 测试无HMI名称
+            UploadedIOPoint(site_name="路口铺门站", site_number="A281009", hmi_variable_name="YLDW1_1_AI_2", data_type="REAL",
+                            variable_description="进站温度", channel_tag="CH02", hmi_communication_address="40002",
+                            range_low_limit="10", range_high_limit="50",
+                            sll_set_value="5", sl_set_value="8"),
+            UploadedIOPoint(site_name="路口铺门站", site_number="A281009", hmi_variable_name="YLDW1_1_AI_3", data_type="REAL",
+                            variable_description="进站流量", channel_tag="CH03", hmi_communication_address="40003",
+                            range_low_limit="0", range_high_limit="200",
+                            sh_set_value="180", shh_set_value="190"),
 
+            # 出站监测相关
+            UploadedIOPoint(site_name="路口铺门站", site_number="A281009", hmi_variable_name="YLDW1_1_AI_4", data_type="REAL",
+                            variable_description="出站压力", channel_tag="CH04", hmi_communication_address="40004",
+                            range_low_limit="0", range_high_limit="100",
+                            sll_set_value="5"),
+            UploadedIOPoint(site_name="路口铺门站", site_number="A281009", hmi_variable_name="YLDW1_1_AI_5", data_type="REAL",
+                            variable_description="出站温度", channel_tag="CH05", hmi_communication_address="40005",
+                            range_low_limit="0", range_high_limit="100"),
+
+            # 压缩机相关
+            UploadedIOPoint(site_name="路口铺门站", site_number="A281009", hmi_variable_name="YSJ1_YL", data_type="REAL",
+                            variable_description="1#压缩机出口压力", channel_tag="CH06", hmi_communication_address="40006"),
+            UploadedIOPoint(site_name="路口铺门站", site_number="A281009", hmi_variable_name="YSJ1_WD", data_type="REAL",
+                            variable_description="1#压缩机温度", channel_tag="CH07", hmi_communication_address="40007"),
+
+            # 流量计相关
+            UploadedIOPoint(site_name="路口铺门站", site_number="A281009", hmi_variable_name="LLJ1_LL", data_type="REAL",
+                            variable_description="1#流量计瞬时流量", channel_tag="CH08", hmi_communication_address="40008"),
+            UploadedIOPoint(site_name="路口铺门站", site_number="A281009", hmi_variable_name="LLJ1_JL", data_type="REAL",
+                            variable_description="1#流量计累计流量", channel_tag="CH09", hmi_communication_address="40009"),
+
+            # 调压器相关
+            UploadedIOPoint(site_name="路口铺门站", site_number="A281009", hmi_variable_name="TYQ1_YL", data_type="REAL",
+                            variable_description="1#调压器压力", channel_tag="CH10", hmi_communication_address="40010"),
+
+            # 数字量点位（不会出现在趋势表中）
+            UploadedIOPoint(site_name="路口铺门站", site_number="A281009", hmi_variable_name="YSJ1_RUN", data_type="BOOL",
+                            variable_description="1#压缩机运行状态", channel_tag="CH11", hmi_communication_address="1001"),
+            UploadedIOPoint(site_name="路口铺门站", site_number="A281009", hmi_variable_name="YSJ1_FAULT", data_type="BOOL",
+                            variable_description="1#压缩机故障报警", channel_tag="CH12", hmi_communication_address="1002"),
+
+            # 预留点位
+            UploadedIOPoint(site_name="路口铺门站", site_number="A281009", hmi_variable_name="YLDW1_1_AI_7", data_type="REAL",
+                            variable_description="", channel_tag="CH13", hmi_communication_address="40013"),
         ],
          "第三方设备A": [
-            UploadedIOPoint(site_name="TP_设备A", site_number="TPA01", hmi_variable_name="TP_REAL_1", data_type="REAL", 
-                            variable_description="第三方实数点1", channel_tag="TP_CH01", hmi_communication_address="40101",
-                            range_low_limit="-10", range_high_limit="10", sh_set_value="12") # HI 会被钳位到10
+            UploadedIOPoint(site_name="路口铺门站", site_number="A281009", hmi_variable_name="TP_TEMP_1", data_type="REAL",
+                            variable_description="第三方温度传感器1", channel_tag="TP_CH01", hmi_communication_address="40101",
+                            range_low_limit="-10", range_high_limit="10", sh_set_value="12"),
+            UploadedIOPoint(site_name="路口铺门站", site_number="A281009", hmi_variable_name="TP_PRESSURE_1", data_type="REAL",
+                            variable_description="第三方压力变送器1", channel_tag="TP_CH02", hmi_communication_address="40102")
         ]
     }
 
