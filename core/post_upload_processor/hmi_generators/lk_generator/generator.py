@@ -729,8 +729,15 @@ class LikongGenerator:
                     if target_hmi_name_val:
                         # 力控专用：转换目标点的报警设定点位后缀
                         lk_target_hmi_name = _convert_lk_alarm_suffix(target_hmi_name_val)
-                        # LinkLongTagName 结构: SourceNodePath + SiteNumber + TargetHMIVariableName
-                        # (假设目标点与源点在同一NodePath下，使用相同的SiteNumber前缀)
+
+                        # 特殊处理：如果target_hmi_name_val只是后缀（如_LoLoLimit），需要补充完整的源点位名称
+                        if target_hmi_name_val.startswith('_') and point.hmi_variable_name:
+                            # 如果是纯后缀，构建完整的目标HMI名称
+                            full_target_name = f"{point.hmi_variable_name}{target_hmi_name_val}"
+                            lk_target_hmi_name = _convert_lk_alarm_suffix(full_target_name)
+
+                        # LinkLongTagName 结构: SourceNodePath + SiteNumber + 转换后目标HMI变量名
+                        # 确保包含场站编号前缀（如A281009YLDW1_1_AI_7_SLL）
                         link_long_tag_name = f"{source_np}{current_point_site_number}{lk_target_hmi_name}"
                         inter_link_entries.append([source_np, source_tn, par_name, link_long_tag_name, "PV"])
                         logger.debug(f"Link.csv: 为点 '{source_tn}' 的参数 '{par_name}' 生成内部链接: 原始='{target_hmi_name_val}' -> 转换后='{lk_target_hmi_name}' -> 完整='{link_long_tag_name}'")
