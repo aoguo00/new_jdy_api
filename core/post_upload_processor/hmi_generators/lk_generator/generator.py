@@ -152,33 +152,50 @@ class LikongGenerator:
     def _get_dev_name_from_site_name(self, site_name_chinese: Optional[str]) -> str:
         """
         从中文场站名获取拼音首字母大写缩写作为DevName。
+        支持中英文混合处理：中文转拼音首字母，英文直接取首字母。
         如果pypinyin库不可用或发生错误，则返回空字符串。
         """
-        if not PYPINYIN_AVAILABLE:
-            # 这个错误只在第一次尝试使用时记录，避免重复日志
-            if not hasattr(self, '_pypinyin_error_logged'):
-                logger.error("pypinyin库未安装或无法导入。无法动态生成DevName。请运行 'pip install pypinyin' 安装。")
-                self._pypinyin_error_logged = True # 标记已记录错误
-            return ""
-
         if not site_name_chinese or not site_name_chinese.strip():
             logger.debug("场站名为空，无法从中生成DevName。")
             return ""
-        
+
         try:
             first_letters = []
-            # strict=False 更健壮; errors='ignore' 会忽略无法转换的字符
-            pinyin_list_of_lists = pinyin(site_name_chinese, style=Style.FIRST_LETTER, strict=False, errors='ignore') 
-            
-            for char_pinyins in pinyin_list_of_lists:
-                # char_pinyins 是一个列表, e.g., ['x'] for '西'
-                if char_pinyins and char_pinyins[0]: 
-                    first_letters.append(char_pinyins[0][0].upper()) # 取首字母列表的第一个元素 (字符串), 再取其第一个字符并大写
-            
+            site_name = site_name_chinese.strip()
+
+            # 逐字符处理，区分中文和英文
+            i = 0
+            while i < len(site_name):
+                char = site_name[i]
+
+                # 检查是否为英文字母
+                if char.isalpha() and ord(char) < 128:  # ASCII英文字母
+                    first_letters.append(char.upper())
+                    i += 1
+                # 检查是否为中文字符
+                elif '\u4e00' <= char <= '\u9fff':  # 中文Unicode范围
+                    if PYPINYIN_AVAILABLE:
+                        # 使用pypinyin处理中文字符
+                        char_pinyin = pinyin(char, style=Style.FIRST_LETTER, strict=False, errors='ignore')
+                        if char_pinyin and char_pinyin[0] and char_pinyin[0][0]:
+                            first_letters.append(char_pinyin[0][0].upper())
+                    else:
+                        # 如果pypinyin不可用，记录警告但继续处理其他字符
+                        if not hasattr(self, '_pypinyin_error_logged'):
+                            logger.error("pypinyin库未安装或无法导入。中文字符将被跳过。请运行 'pip install pypinyin' 安装。")
+                            self._pypinyin_error_logged = True
+                    i += 1
+                else:
+                    # 跳过其他字符（数字、符号等）
+                    i += 1
+
             generated_name = "".join(first_letters)
             if not generated_name:
-                 logger.warning(f"从场站名 '{site_name_chinese}' 生成的DevName为空字符串（可能包含非中文字符或pypinyin处理结果为空）。")
+                logger.warning(f"从场站名 '{site_name_chinese}' 生成的DevName为空字符串。")
+            else:
+                logger.debug(f"从场站名 '{site_name_chinese}' 生成DevName: '{generated_name}'")
             return generated_name
+
         except Exception as e:
             logger.error(f"使用pypinyin从场站名 '{site_name_chinese}' 生成DevName时发生意外错误: {e}")
             return "" # 发生转换错误也返回空
