@@ -24,6 +24,37 @@ logger = logging.getLogger(__name__)
 # MAIN_IO_SHEET_NAME_DEFAULT 用于在无法从外部导入时提供一个默认值
 MAIN_IO_SHEET_NAME_DEFAULT = "IO点表"
 
+def _convert_lk_alarm_suffix(hmi_name: str) -> str:
+    """
+    力控专用：转换报警设定点位的后缀名称
+    _HiHiLimit -> _SHH
+    _HiLimit -> _SH
+    _LoLimit -> _SL
+    _LoLoLimit -> _SLL
+    _whzzt -> _MAIN_EN (维护值开关)
+    _whz -> _MAINV (维护值)
+    """
+    if not hmi_name:
+        return hmi_name
+
+    # 按照从长到短的顺序替换，避免部分匹配问题
+    replacements = [
+        ('_HiHiLimit', '_SHH'),
+        ('_LoLoLimit', '_SLL'),
+        ('_whzzt', '_MAIN_EN'),  # 维护值开关，必须在_whz之前
+        ('_HiLimit', '_SH'),
+        ('_LoLimit', '_SL'),
+        ('_whz', '_MAINV')       # 维护值
+    ]
+
+    result = hmi_name
+    for old_suffix, new_suffix in replacements:
+        if result.endswith(old_suffix):
+            result = result[:-len(old_suffix)] + new_suffix
+            break  # 只替换一次，找到匹配就停止
+
+    return result
+
 # CSV 文件中模拟量 (REAL) 的列定义 (来自 Basic.csv)
 # TagType,0,TagTypeName,模拟I/O量,Count,动态计算,ParCount,62
 LK_REAL_COLUMNS = [
@@ -249,7 +280,9 @@ class LikongGenerator:
                         current_point_site_number = (point.site_number if point.site_number and point.site_number.strip() else default_site_number).strip()
                         
                         row_data['NodePath'] = f"{current_point_site_name}\\" if current_point_site_name else ""
-                        row_data['NAME'] = f"{current_point_site_number}{point.hmi_variable_name.strip()}"
+                        # 力控专用：转换报警设定点位后缀
+                        lk_hmi_name = _convert_lk_alarm_suffix(point.hmi_variable_name.strip())
+                        row_data['NAME'] = f"{current_point_site_number}{lk_hmi_name}"
                         row_data['DESC'] = point.variable_description or ""
                         row_data['FORMAT'] = "3" 
                         row_data['LASTPV'] = "0.000"
@@ -372,7 +405,9 @@ class LikongGenerator:
 
                         row_data['NodePath'] = f"{current_point_site_name}\\" if current_point_site_name else ""
                         hmi_name = point.hmi_variable_name.strip() if point.hmi_variable_name else ""
-                        row_data['NAME'] = f"{current_point_site_number}{hmi_name}"
+                        # 力控专用：转换报警设定点位后缀
+                        lk_hmi_name = _convert_lk_alarm_suffix(hmi_name)
+                        row_data['NAME'] = f"{current_point_site_number}{lk_hmi_name}"
                         row_data['DESC'] = point.variable_description or ""
                         
                         is_maintenance_switch = hmi_name.endswith("_whzzt")
@@ -508,7 +543,9 @@ class LikongGenerator:
                         current_point_site_number = (point.site_number if point.site_number and point.site_number.strip() else default_site_number).strip()
                         
                         nodepath = f"{current_point_site_name}\\" if current_point_site_name else ""
-                        tagname = f"{current_point_site_number}{hmi_name_from_point}"
+                        # 力控专用：转换报警设定点位后缀
+                        lk_hmi_name = _convert_lk_alarm_suffix(hmi_name_from_point)
+                        tagname = f"{current_point_site_number}{lk_hmi_name}"
                         
                         history_entries.append([
                             nodepath,
@@ -612,7 +649,9 @@ class LikongGenerator:
             current_point_site_number = (point.site_number if point.site_number and point.site_number.strip() else default_site_number).strip()
 
             row_dict['NodePath'] = f"{current_point_site_name}\\" if current_point_site_name else ""
-            row_dict['TagName'] = f"{current_point_site_number}{hmi_name_from_point}" # 注意：示例文件中的TagName似乎不含场站编号，这里暂按原逻辑
+            # 力控专用：转换报警设定点位后缀
+            lk_hmi_name = _convert_lk_alarm_suffix(hmi_name_from_point)
+            row_dict['TagName'] = f"{current_point_site_number}{lk_hmi_name}" # 注意：示例文件中的TagName似乎不含场站编号，这里暂按原逻辑
             row_dict['TagDesc'] = point.variable_description or ""
             row_dict['ParName'] = "PV"
 
@@ -688,11 +727,13 @@ class LikongGenerator:
                 for par_name, target_hmi_name_attr in alarm_link_configs:
                     target_hmi_name_val = str(target_hmi_name_attr or "").strip()
                     if target_hmi_name_val:
+                        # 力控专用：转换目标点的报警设定点位后缀
+                        lk_target_hmi_name = _convert_lk_alarm_suffix(target_hmi_name_val)
                         # LinkLongTagName 结构: SourceNodePath + SiteNumber + TargetHMIVariableName
                         # (假设目标点与源点在同一NodePath下，使用相同的SiteNumber前缀)
-                        link_long_tag_name = f"{source_np}{current_point_site_number}{target_hmi_name_val}"
+                        link_long_tag_name = f"{source_np}{current_point_site_number}{lk_target_hmi_name}"
                         inter_link_entries.append([source_np, source_tn, par_name, link_long_tag_name, "PV"])
-                        logger.debug(f"Link.csv: 为点 '{source_tn}' 的参数 '{par_name}' 生成内部链接到 '{link_long_tag_name}'")
+                        logger.debug(f"Link.csv: 为点 '{source_tn}' 的参数 '{par_name}' 生成内部链接: 原始='{target_hmi_name_val}' -> 转换后='{lk_target_hmi_name}' -> 完整='{link_long_tag_name}'")
 
         try:
             with open(file_path, 'w', newline='', encoding='gbk') as csvfile:
