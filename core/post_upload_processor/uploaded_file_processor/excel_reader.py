@@ -203,6 +203,17 @@ def _clean_str(value: Any) -> Optional[str]:
         return None
     return str(value).strip()
 
+def _normalize_variable_name(value: Any) -> Optional[str]:
+    """
+    标准化变量名：清理字符串并将中划线转换为下划线。
+    用于处理HMI变量名等需要符合变量命名规范的字段。
+    """
+    cleaned = _clean_str(value)
+    if cleaned is None:
+        return None
+    # 将中划线替换为下划线
+    return cleaned.replace('-', '_')
+
 def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Worksheet) -> List[UploadedIOPoint]:
     """
     将单个符合IO点表结构的工作表 (openpyxl.worksheet) 解析为 UploadedIOPoint 对象列表。
@@ -240,9 +251,14 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
             logger.debug(f"主IO表 '{sheet_title}' 第 {row_idx} 行为空，跳过。")
             continue
 
-        main_point_data: Dict[str, Optional[str]] = {
-            attr: _clean_str(raw_row_data.get(attr)) for attr in HEADER_TO_ATTRIBUTE_MAP.values()
-        }
+        main_point_data: Dict[str, Optional[str]] = {}
+        for attr in HEADER_TO_ATTRIBUTE_MAP.values():
+            raw_value = raw_row_data.get(attr)
+            # 对HMI变量名字段使用特殊的标准化处理
+            if attr == 'hmi_variable_name':
+                main_point_data[attr] = _normalize_variable_name(raw_value)
+            else:
+                main_point_data[attr] = _clean_str(raw_value)
         for field_name in UploadedIOPoint.__annotations__.keys():
             if field_name not in main_point_data:
                 main_point_data[field_name] = None
@@ -267,6 +283,7 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
 
                     # 新的HMI名称生成规则："YLDW" + 通道位号 (已移除场站编号)
                     if channel_tag_str: # 确保通道位号存在才进行拼接
+                        # 预留点位名称是系统生成的，不需要标准化处理
                         main_point.hmi_variable_name = f"YLDW{channel_tag_str}"
                         main_point.variable_description = f"预留点位_{channel_tag_str}" # 描述保持不变或按需调整
                         # logger.info(f"主IO表行 {row_idx}: HMI名称为空，视为预留点，按规则 'YLDW{channel_tag_str}' 生成名称: {main_point.hmi_variable_name}")
@@ -337,7 +354,8 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
                         generated_hmi_name = f"{default_error_name_prefix}_{definition.get('hmi_generation_suffix', definition['desc_suffix'])}_{main_point.channel_tag or f'Row{row_idx}'}"
                         logger.error(f"主IO表行 {row_idx}: 主点HMI名称为空或无效 ('{main_point.hmi_variable_name}')，导致中间点 '{definition['point_type_name']}' HMI名称生成异常: {generated_hmi_name}")
 
-                    intermediate_point_dict['hmi_variable_name'] = generated_hmi_name
+                    # 对生成的HMI名称也进行标准化处理
+                    intermediate_point_dict['hmi_variable_name'] = _normalize_variable_name(generated_hmi_name)
                     # --- HMI 名称处理逻辑结束 ---
 
                     # --- 变量描述处理逻辑 ---
@@ -389,7 +407,12 @@ def _parse_third_party_df_to_uploaded_points(df: pd.DataFrame, sheet_name: str) 
         for df_header, attr_name in THIRD_PARTY_HEADER_TO_ATTRIBUTE_MAP.items():
             if df_header in df.columns:
                 cell_value = row.get(df_header)
-                cleaned_value = _clean_str(cell_value if not pd.isna(cell_value) else None)
+                raw_value = cell_value if not pd.isna(cell_value) else None
+                # 对HMI变量名字段使用特殊的标准化处理
+                if attr_name == 'hmi_variable_name':
+                    cleaned_value = _normalize_variable_name(raw_value)
+                else:
+                    cleaned_value = _clean_str(raw_value)
                 point_data_dict[attr_name] = cleaned_value
                 if not _is_value_empty(cleaned_value):
                     has_data = True
