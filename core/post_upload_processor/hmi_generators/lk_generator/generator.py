@@ -200,16 +200,49 @@ class LikongGenerator:
             logger.error(f"使用pypinyin从场站名 '{site_name_chinese}' 生成DevName时发生意外错误: {e}")
             return "" # 发生转换错误也返回空
 
-    def _clamp_alarm_value(self, 
-                           value_str: Optional[str], 
-                           default_value_str: str, 
-                           eulo_float: Optional[float], 
+    def _calculate_smart_alarm_defaults(self, eulo_float: Optional[float], euhi_float: Optional[float]) -> Dict[str, str]:
+        """
+        根据工程量程智能计算报警默认值 - 适用于任何量程
+        按固定百分比分配：LL=8%, LO=10%, HI=92%, HH=94%
+        """
+        if eulo_float is None or euhi_float is None or eulo_float >= euhi_float:
+            # 量程无效时使用原始默认值（假设0-100量程）
+            logger.debug("工程量程无效，使用原始硬编码默认报警值")
+            return {
+                "LL": "8.000",
+                "LO": "10.000",
+                "HI": "92.000",
+                "HH": "94.000"
+            }
+
+        range_span = euhi_float - eulo_float  # 计算量程跨度
+
+        # 按固定百分比计算默认值（适用于任何量程）
+        ll_value = eulo_float + range_span * 0.08  # 低低限：量程的8%位置
+        lo_value = eulo_float + range_span * 0.10  # 低限：量程的10%位置
+        hi_value = eulo_float + range_span * 0.92  # 高限：量程的92%位置
+        hh_value = eulo_float + range_span * 0.94  # 高高限：量程的94%位置
+
+        result = {
+            "LL": f"{ll_value:.3f}",
+            "LO": f"{lo_value:.3f}",
+            "HI": f"{hi_value:.3f}",
+            "HH": f"{hh_value:.3f}"
+        }
+
+        logger.debug(f"根据工程量程 [{eulo_float}, {euhi_float}] 计算智能报警默认值: {result}")
+        return result
+
+    def _clamp_alarm_value(self,
+                           value_str: Optional[str],
+                           default_value_str: str,
+                           eulo_float: Optional[float],
                            euhi_float: Optional[float],
                            alarm_type_name: str,
                            point_hmi_name: str) -> str:
         """辅助方法：检查、转换并钳位单个报警值到工程单位范围内。"""
         if value_str is None or value_str.strip() == "":
-            return default_value_str # 用户未设置，使用硬编码默认值
+            return default_value_str # 用户未设置，使用智能计算的默认值
 
         try:
             value_float = float(value_str.strip())
@@ -227,10 +260,10 @@ class LikongGenerator:
             elif value_float > euhi_float:
                 final_value_str = str(euhi_float) # 使用 EUHI 的字符串形式
                 clamped = True
-            
+
             if clamped:
                 logger.warning(f"点 '{point_hmi_name}' 的报警值 '{alarm_type_name}' ('{value_str}') 超出工程范围 [{eulo_float}, {euhi_float}]，已被钳位到 '{final_value_str}'。")
-        
+
         return final_value_str
 
     def generate_basic_csv(self,
@@ -340,13 +373,16 @@ class LikongGenerator:
                         else:
                             row_data['ALMENAB'] = "0"
                             
-                        row_data['DEADBAND'] = "0.000" 
-                        
-                        # 应用钳位逻辑到报警值
-                        row_data['LL'] = self._clamp_alarm_value(point.sll_set_value, "8.000", eulo_float, euhi_float, "LL", row_data['NAME'])
-                        row_data['LO'] = self._clamp_alarm_value(point.sl_set_value, "10.000", eulo_float, euhi_float, "LO", row_data['NAME'])
-                        row_data['HI'] = self._clamp_alarm_value(point.sh_set_value, "92.000", eulo_float, euhi_float, "HI", row_data['NAME'])
-                        row_data['HH'] = self._clamp_alarm_value(point.shh_set_value, "94.000", eulo_float, euhi_float, "HH", row_data['NAME'])
+                        row_data['DEADBAND'] = "0.000"
+
+                        # 根据工程量程智能计算报警默认值
+                        smart_defaults = self._calculate_smart_alarm_defaults(eulo_float, euhi_float)
+
+                        # 应用钳位逻辑到报警值，使用智能计算的默认值
+                        row_data['LL'] = self._clamp_alarm_value(point.sll_set_value, smart_defaults["LL"], eulo_float, euhi_float, "LL", row_data['NAME'])
+                        row_data['LO'] = self._clamp_alarm_value(point.sl_set_value, smart_defaults["LO"], eulo_float, euhi_float, "LO", row_data['NAME'])
+                        row_data['HI'] = self._clamp_alarm_value(point.sh_set_value, smart_defaults["HI"], eulo_float, euhi_float, "HI", row_data['NAME'])
+                        row_data['HH'] = self._clamp_alarm_value(point.shh_set_value, smart_defaults["HH"], eulo_float, euhi_float, "HH", row_data['NAME'])
                         row_data['RATE'] = "0.000" 
                         row_data['DEV'] = "0.000"  
                         
@@ -403,16 +439,17 @@ class LikongGenerator:
                     logger.info(f"力控 Basic.csv: 开始写入 {lk_bool_count} 个数字量点位...")
                     
                     alarm_suffixes_map = {
-                        "_LL": "sll_set_value", 
-                        "_L": "sl_set_value", 
-                        "_H": "sh_set_value", 
+                        "_LL": "sll_set_value",
+                        "_L": "sl_set_value",
+                        "_H": "sh_set_value",
                         "_HH": "shh_set_value"
                     }
-                    default_alarm_values_map = {
-                        "_LL": "8.000", 
-                        "_L": "10.000", 
-                        "_H": "92.000", 
-                        "_HH": "94.000"
+                    # 映射后缀到智能默认值的键名
+                    alarm_suffix_to_default_key = {
+                        "_LL": "LL",
+                        "_L": "LO",
+                        "_H": "HI",
+                        "_HH": "HH"
                     }
 
                     for point in bool_points:
@@ -450,23 +487,39 @@ class LikongGenerator:
 
                                         if parent_analog_point:
                                             raw_alarm_value_from_excel_str = getattr(parent_analog_point, raw_value_attr_name, None)
-                                            
+
+                                            # 获取父模拟量点的工程量程，计算智能默认值
+                                            parent_eulo_str = str(parent_analog_point.range_low_limit) if parent_analog_point.range_low_limit is not None and parent_analog_point.range_low_limit.strip() else "0.000"
+                                            parent_euhi_str = str(parent_analog_point.range_high_limit) if parent_analog_point.range_high_limit is not None and parent_analog_point.range_high_limit.strip() else "100.000"
+
+                                            try:
+                                                parent_eulo_float = float(parent_eulo_str)
+                                                parent_euhi_float = float(parent_euhi_str)
+                                            except ValueError:
+                                                parent_eulo_float = None
+                                                parent_euhi_float = None
+
+                                            # 计算父模拟量点的智能默认值
+                                            parent_smart_defaults = self._calculate_smart_alarm_defaults(parent_eulo_float, parent_euhi_float)
+                                            default_key = alarm_suffix_to_default_key[suffix]  # 获取对应的默认值键名
+                                            expected_default_value = parent_smart_defaults[default_key]
+
                                             if raw_alarm_value_from_excel_str is not None and raw_alarm_value_from_excel_str.strip() != "":
-                                                if raw_alarm_value_from_excel_str.strip() == default_alarm_values_map[suffix]:
+                                                if raw_alarm_value_from_excel_str.strip() == expected_default_value:
                                                     # current_digital_almenab 保持 "0"
-                                                    # logger.debug(f"数字报警点 '{hmi_name}' 的父模拟量点 '{parent_hmi_name}' 的 '{raw_value_attr_name}' ('{raw_alarm_value_from_excel_str}') 与通用默认值相同，ALMENAB保持为0。")
+                                                    logger.debug(f"数字报警点 '{hmi_name}' 的父模拟量点 '{parent_hmi_name}' 的 '{raw_value_attr_name}' ('{raw_alarm_value_from_excel_str}') 与智能默认值相同，ALMENAB保持为0。")
                                                     pass # 保持为0
                                                 else:
                                                     current_digital_almenab = "1" # 只有这种情况才使能
-                                                    # logger.debug(f"数字报警点 '{hmi_name}' 的父模拟量点 '{parent_hmi_name}' 的 '{raw_value_attr_name}' ('{raw_alarm_value_from_excel_str}') 已设定且非默认，ALMENAB设为1。")
+                                                    logger.debug(f"数字报警点 '{hmi_name}' 的父模拟量点 '{parent_hmi_name}' 的 '{raw_value_attr_name}' ('{raw_alarm_value_from_excel_str}') 已设定且非默认值 ('{expected_default_value}')，ALMENAB设为1。")
                                             else:
                                                 # current_digital_almenab 保持 "0"
-                                                # logger.debug(f"数字报警点 '{hmi_name}' 的父模拟量点 '{parent_hmi_name}' 未设定 '{raw_value_attr_name}'，ALMENAB保持为0。")
+                                                logger.debug(f"数字报警点 '{hmi_name}' 的父模拟量点 '{parent_hmi_name}' 未设定 '{raw_value_attr_name}'，ALMENAB保持为0。")
                                                 pass # 保持为0
                                         else:
                                             # current_digital_almenab 保持 "0"
                                             logger.warning(f"派生数字报警点 '{hmi_name}' 未能找到父模拟量点 '{parent_hmi_name}'，ALMENAB保持为0。")
-                                        break 
+                                        break
                             
                             # 如果不是已识别并成功处理的派生报警类型，ALMENAB 会是初始的 "0"
                             if not is_derived_analog_alarm_point and not is_maintenance_switch: #确保维护开关的逻辑不被覆盖
