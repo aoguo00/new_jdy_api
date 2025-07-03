@@ -761,9 +761,9 @@ class LikongGenerator:
                 row_dict['驱动标志'] = row_dict['LinkDesc']
                 row_dict['数据类型'] = "2"
                 row_dict['I/O数据地址'] = str(int(final_numeric_address_for_real) - 1)
-                row_dict['表示读取数据时需要获取的数据长度'] = "4" 
-                row_dict['文件号'] = "7" 
-                row_dict['显示数据的格式'] = "0"
+                row_dict['表示读取数据时需要获取的数据长度'] = "4"
+                row_dict['文件号'] = "7"
+                row_dict['显示数据的格式'] = "7"
                 io_address_calc_success = True
             else:
                 logger.info(f"Link.csv: 点 '{hmi_name_from_point}' 的数据类型 '{point_data_type_upper}' 非 BOOL 或 REAL，跳过生成Link.csv条目。")
