@@ -214,6 +214,7 @@ def _normalize_variable_name(value: Any) -> Optional[str]:
     # 将中划线替换为下划线
     return cleaned.replace('-', '_')
 
+
 def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Worksheet) -> List[UploadedIOPoint]:
     """
     将单个符合IO点表结构的工作表 (openpyxl.worksheet) 解析为 UploadedIOPoint 对象列表。
@@ -275,9 +276,12 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
 
         try:
             main_point = UploadedIOPoint(**main_point_data) # type: ignore
+            is_reserved_point = False  # 标记是否为预留点位
+            
             if _is_value_empty(main_point.hmi_variable_name):
                 # 检查是否是预留点，即HMI名称为空，但通道位号和PLC绝对地址不为空
                 if not _is_value_empty(main_point.channel_tag) and not _is_value_empty(main_point.plc_absolute_address):
+                    is_reserved_point = True  # 标记为预留点位
                     # site_number_str = main_point.site_number if main_point.site_number else "" # 场站编号暂时不用于HMI命名
                     channel_tag_str = main_point.channel_tag # 通道位号应该是必须的
 
@@ -300,6 +304,11 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
                 all_parsed_points.append(main_point)
             else:
                 logger.debug(f"主IO表行 {row_idx}: 主点位因HMI名、PLC地址、通讯地址均为空而被跳过。")
+                continue
+
+            # 预留点位不生成派生点位
+            if is_reserved_point:
+                logger.debug(f"主IO表行 {row_idx}: 点位 '{main_point.hmi_variable_name}' 为预留点位，跳过派生点位生成。")
                 continue
 
             for definition in INTERMEDIATE_POINT_DEFINITIONS:

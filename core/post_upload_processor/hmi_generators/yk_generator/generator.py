@@ -114,6 +114,34 @@ class KingViewGenerator:
             logger.warning(f"报警限值 '{raw_val_str}' 无法转换为数字，将视为无效并不启用该报警。")
             return None, False 
 
+    def _is_reserved_point(self, point: UploadedIOPoint) -> bool:
+        """
+        判断是否为预留点位
+        
+        预留点位的特征：
+        1. HMI名称以YLDW开头（系统生成的预留点位）
+        2. 描述包含"预留"关键字
+        3. 描述为空或包含"预留"关键字
+        
+        Args:
+            point: UploadedIOPoint对象
+            
+        Returns:
+            bool: 如果是预留点位返回True，否则返回False
+        """
+        hmi_name = point.hmi_variable_name
+        description = point.variable_description
+        
+        # 1. 检查HMI名称是否以YLDW开头（系统生成的预留点位）
+        if hmi_name and str(hmi_name).strip().startswith("YLDW"):
+            return True
+        
+        # 2. 检查描述是否包含"预留"关键字
+        if description and "预留" in str(description):
+            return True
+            
+        return False
+
     def _process_single_point(self, 
                               point: UploadedIOPoint, 
                               apply_main_sheet_logic: bool, 
@@ -130,6 +158,11 @@ class KingViewGenerator:
             site_no_from_file: 从文件中提取的场站编号
             point_index_for_log: 用于日志记录的点位原始索引
         """
+        # 过滤掉预留点位，预留点位不生成到HMI点表中
+        if self._is_reserved_point(point):
+            logger.debug(f"亚控生成器: 跳过预留点位: {point.hmi_variable_name} (来源: {point.source_sheet_name})")
+            return
+        
         # 提取点位属性
         data_type_raw = point.data_type
         point_name_part_raw = point.hmi_variable_name

@@ -294,6 +294,11 @@ class LikongGenerator:
                         logger.warning(f"Basic.csv: 点 (类型:'{point_data_type_upper}', 通道:'{point.channel_tag}') HMI名称为空或无效，跳过。")
                         continue
 
+                    # 过滤掉预留点位
+                    if self._is_derived_point(point):
+                        logger.debug(f"Basic.csv: 跳过预留点位或派生点位: {point.hmi_variable_name}")
+                        continue
+
                     if point_data_type_upper == "REAL" or point_data_type_upper == "FLOAT":
                         real_points.append(point)
                     elif point_data_type_upper == "BOOL":
@@ -608,6 +613,11 @@ class LikongGenerator:
                         # logger.warning(f"His.csv: 点 (类型:'{point_data_type_upper}', 通道:'{point.channel_tag}') HMI名称为空或无效，跳过。")
                         continue # 跳过HMI名称无效的点
 
+                    # 过滤掉预留点位
+                    if self._is_derived_point(point):
+                        logger.debug(f"His.csv: 跳过预留点位或派生点位: {point.hmi_variable_name}")
+                        continue
+
                     if point_data_type_upper == "REAL" or point_data_type_upper == "FLOAT" or point_data_type_upper == "BOOL":
                         current_point_site_name = (point.site_name if point.site_name and point.site_name.strip() else default_site_name).strip()
                         current_point_site_number = (point.site_number if point.site_number and point.site_number.strip() else default_site_number).strip()
@@ -696,6 +706,11 @@ class LikongGenerator:
 
             if _is_value_empty_for_hmi(hmi_name_from_point):
                 logger.debug(f"Link.csv: 点 (类型:'{point_data_type_upper}', 上位机通讯地址:'{communication_address_str}') HMI名称为空或无效，跳过。")
+                continue
+
+            # 过滤掉预留点位
+            if self._is_derived_point(point):
+                logger.debug(f"Link.csv: 跳过预留点位或派生点位: {point.hmi_variable_name}")
                 continue
             
             if not communication_address_str:
