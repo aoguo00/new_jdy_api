@@ -80,7 +80,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'plc_addr_attr': 'sll_set_point_plc_address',
         'comm_addr_attr': 'sll_set_point_comm_address',
         'data_type': 'REAL', # SLL, SL, SH, SHH设定点通常是REAL
-        'desc_suffix': '_SLL设定',
+        'desc_suffix': '_低低报警值设定',
         'hmi_generation_suffix': '_LoLoLimit',
         'required_attrs_for_creation': ('sll_set_point_plc_address', 'sll_set_point_comm_address') # PLC或通讯地址至少有一个
     },
@@ -90,7 +90,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'plc_addr_attr': 'sl_set_point_plc_address',
         'comm_addr_attr': 'sl_set_point_comm_address',
         'data_type': 'REAL',
-        'desc_suffix': '_SL设定',
+        'desc_suffix': '_低报警值设定',
         'hmi_generation_suffix': '_LoLimit',
         'required_attrs_for_creation': ('sl_set_point_plc_address', 'sl_set_point_comm_address')
     },
@@ -100,7 +100,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'plc_addr_attr': 'sh_set_point_plc_address',
         'comm_addr_attr': 'sh_set_point_comm_address',
         'data_type': 'REAL',
-        'desc_suffix': '_SH设定',
+        'desc_suffix': '_高报警值设定',
         'hmi_generation_suffix': '_HiLimit',
         'required_attrs_for_creation': ('sh_set_point_plc_address', 'sh_set_point_comm_address')
     },
@@ -110,7 +110,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'plc_addr_attr': 'shh_set_point_plc_address',
         'comm_addr_attr': 'shh_set_point_comm_address',
         'data_type': 'REAL',
-        'desc_suffix': '_SHH设定',
+        'desc_suffix': '_高高报警值设定',
         'hmi_generation_suffix': '_HiHiLimit',
         'required_attrs_for_creation': ('shh_set_point_plc_address', 'shh_set_point_comm_address')
     },
@@ -120,7 +120,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'plc_addr_attr': 'll_alarm_plc_address',
         'comm_addr_attr': 'll_alarm_comm_address',
         'data_type': 'BOOL', # 报警点通常是BOOL
-        'desc_suffix': '_LL报警',
+        'desc_suffix': '_低低报警',
         'hmi_generation_suffix': '_LL',
         'required_attrs_for_creation': ('ll_alarm_plc_address', 'll_alarm_comm_address')
     },
@@ -130,7 +130,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'plc_addr_attr': 'l_alarm_plc_address',
         'comm_addr_attr': 'l_alarm_comm_address',
         'data_type': 'BOOL',
-        'desc_suffix': '_L报警',
+        'desc_suffix': '_低报警',
         'hmi_generation_suffix': '_L',
         'required_attrs_for_creation': ('l_alarm_plc_address', 'l_alarm_comm_address')
     },
@@ -140,7 +140,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'plc_addr_attr': 'h_alarm_plc_address',
         'comm_addr_attr': 'h_alarm_comm_address',
         'data_type': 'BOOL',
-        'desc_suffix': '_H报警',
+        'desc_suffix': '_高报警',
         'hmi_generation_suffix': '_H',
         'required_attrs_for_creation': ('h_alarm_plc_address', 'h_alarm_comm_address')
     },
@@ -150,7 +150,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'plc_addr_attr': 'hh_alarm_plc_address',
         'comm_addr_attr': 'hh_alarm_comm_address',
         'data_type': 'BOOL',
-        'desc_suffix': '_HH报警',
+        'desc_suffix': '_高高报警',
         'hmi_generation_suffix': '_HH',
         'required_attrs_for_creation': ('hh_alarm_plc_address', 'hh_alarm_comm_address')
     },
