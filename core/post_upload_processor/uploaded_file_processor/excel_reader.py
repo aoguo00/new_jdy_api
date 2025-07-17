@@ -82,6 +82,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'data_type': 'REAL', # SLL, SL, SH, SHH设定点通常是REAL
         'desc_suffix': '_低低报警值设定',
         'hmi_generation_suffix': '_LoLoLimit',
+        'set_value_attr': 'sll_set_value',  # 对应的设定值字段
         'required_attrs_for_creation': ('sll_set_point_plc_address', 'sll_set_point_comm_address') # PLC或通讯地址至少有一个
     },
     {
@@ -92,6 +93,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'data_type': 'REAL',
         'desc_suffix': '_低报警值设定',
         'hmi_generation_suffix': '_LoLimit',
+        'set_value_attr': 'sl_set_value',  # 对应的设定值字段
         'required_attrs_for_creation': ('sl_set_point_plc_address', 'sl_set_point_comm_address')
     },
     {
@@ -102,6 +104,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'data_type': 'REAL',
         'desc_suffix': '_高报警值设定',
         'hmi_generation_suffix': '_HiLimit',
+        'set_value_attr': 'sh_set_value',  # 对应的设定值字段
         'required_attrs_for_creation': ('sh_set_point_plc_address', 'sh_set_point_comm_address')
     },
     {
@@ -112,6 +115,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'data_type': 'REAL',
         'desc_suffix': '_高高报警值设定',
         'hmi_generation_suffix': '_HiHiLimit',
+        'set_value_attr': 'shh_set_value',  # 对应的设定值字段
         'required_attrs_for_creation': ('shh_set_point_plc_address', 'shh_set_point_comm_address')
     },
     {
@@ -122,6 +126,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'data_type': 'BOOL', # 报警点通常是BOOL
         'desc_suffix': '_低低报警',
         'hmi_generation_suffix': '_LL',
+        'set_value_attr': 'sll_set_value',  # LL报警依赖于SLL设定值
         'required_attrs_for_creation': ('ll_alarm_plc_address', 'll_alarm_comm_address')
     },
     {
@@ -132,6 +137,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'data_type': 'BOOL',
         'desc_suffix': '_低报警',
         'hmi_generation_suffix': '_L',
+        'set_value_attr': 'sl_set_value',  # L报警依赖于SL设定值
         'required_attrs_for_creation': ('l_alarm_plc_address', 'l_alarm_comm_address')
     },
     {
@@ -142,6 +148,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'data_type': 'BOOL',
         'desc_suffix': '_高报警',
         'hmi_generation_suffix': '_H',
+        'set_value_attr': 'sh_set_value',  # H报警依赖于SH设定值
         'required_attrs_for_creation': ('h_alarm_plc_address', 'h_alarm_comm_address')
     },
     {
@@ -152,6 +159,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'data_type': 'BOOL',
         'desc_suffix': '_高高报警',
         'hmi_generation_suffix': '_HH',
+        'set_value_attr': 'shh_set_value',  # HH报警依赖于SHH设定值
         'required_attrs_for_creation': ('hh_alarm_plc_address', 'hh_alarm_comm_address')
     },
     {
@@ -162,6 +170,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'data_type': 'REAL', # 假设维护值设定是模拟量
         'desc_suffix': '_维护设定',
         'hmi_generation_suffix': '_whz',
+        'is_maintenance_point': True,  # 标记为维护相关点位
         'required_attrs_for_creation': ('maintenance_set_point_plc_address', 'maintenance_set_point_comm_address')
     },
     {
@@ -172,6 +181,7 @@ INTERMEDIATE_POINT_DEFINITIONS = [
         'data_type': 'BOOL', # 使能开关是数字量
         'desc_suffix': '_维护使能',
         'hmi_generation_suffix': '_whzzt',
+        'is_maintenance_point': True,  # 标记为维护相关点位
         'required_attrs_for_creation': ('maintenance_enable_switch_point_plc_address', 'maintenance_enable_switch_point_comm_address')
     }
 ]
@@ -316,11 +326,36 @@ def _parse_io_sheet_to_uploaded_points(sheet: openpyxl.worksheet.worksheet.Works
                 ip_plc_addr_val = getattr(main_point, definition['plc_addr_attr'], None)
                 ip_comm_addr_val = getattr(main_point, definition['comm_addr_attr'], None)
 
+                # 新的判断逻辑：基于设定值而非地址
                 is_valid_intermediate_point = False
-                for req_attr_key_for_main in definition['required_attrs_for_creation']:
-                    if not _is_value_empty(getattr(main_point, req_attr_key_for_main, None)):
-                        is_valid_intermediate_point = True
-                        break
+                
+                # 检查是否是维护相关点位
+                if definition.get('is_maintenance_point', False):
+                    # 维护点位：只有在所有设定值都不为空时才生成
+                    all_set_values_empty = (
+                        _is_value_empty(getattr(main_point, 'sll_set_value', None)) and
+                        _is_value_empty(getattr(main_point, 'sl_set_value', None)) and
+                        _is_value_empty(getattr(main_point, 'sh_set_value', None)) and
+                        _is_value_empty(getattr(main_point, 'shh_set_value', None))
+                    )
+                    # 如果所有设定值都为空，则不生成维护点位
+                    if not all_set_values_empty:
+                        # 还需要检查地址是否有效
+                        for req_attr_key_for_main in definition['required_attrs_for_creation']:
+                            if not _is_value_empty(getattr(main_point, req_attr_key_for_main, None)):
+                                is_valid_intermediate_point = True
+                                break
+                else:
+                    # 设定点位和报警点位：检查对应的设定值是否不为空
+                    set_value_attr = definition.get('set_value_attr')
+                    if set_value_attr:
+                        set_value = getattr(main_point, set_value_attr, None)
+                        if not _is_value_empty(set_value):
+                            # 设定值不为空，还需要检查地址是否有效
+                            for req_attr_key_for_main in definition['required_attrs_for_creation']:
+                                if not _is_value_empty(getattr(main_point, req_attr_key_for_main, None)):
+                                    is_valid_intermediate_point = True
+                                    break
 
                 if is_valid_intermediate_point:
                     intermediate_point_dict = {
